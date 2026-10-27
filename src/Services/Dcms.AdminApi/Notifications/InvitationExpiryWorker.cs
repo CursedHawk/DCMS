@@ -4,6 +4,7 @@ using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Notifications;
 
 /// <summary>
@@ -69,7 +70,7 @@ public sealed class InvitationExpiryWorker(
             ORDER BY "ExpiresAt"
             FOR UPDATE SKIP LOCKED
             LIMIT 100
-            """).IgnoreQueryFilters().ToListAsync(ct);
+            """).IgnoreTenantFilter().ToListAsync(ct);
 
         if (due.Count == 0)
         {

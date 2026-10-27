@@ -87,6 +87,9 @@ namespace Dcms.Shared.Data.Migrations.Social
                     b.Property<Guid?>("ConnectedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ExternalAccountId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -129,7 +132,7 @@ namespace Dcms.Shared.Data.Migrations.Social
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "Provider", "ExternalAccountId")
+                    b.HasIndex("TenantId", "EnvironmentId", "Provider", "ExternalAccountId")
                         .IsUnique();
 
                     b.ToTable("meta_connections", "social");
@@ -142,6 +145,9 @@ namespace Dcms.Shared.Data.Migrations.Social
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ExternalMediaId")
@@ -162,7 +168,7 @@ namespace Dcms.Shared.Data.Migrations.Social
 
                     b.HasIndex("TenantId", "MediaAssetId");
 
-                    b.HasIndex("TenantId", "ConnectionId", "ExternalMediaId")
+                    b.HasIndex("TenantId", "EnvironmentId", "ConnectionId", "ExternalMediaId")
                         .IsUnique();
 
                     b.ToTable("meta_media_map", "social");
@@ -179,6 +185,9 @@ namespace Dcms.Shared.Data.Migrations.Social
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
@@ -233,6 +242,9 @@ namespace Dcms.Shared.Data.Migrations.Social
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("LastCursor")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
@@ -257,7 +269,7 @@ namespace Dcms.Shared.Data.Migrations.Social
 
                     b.HasIndex("NextAttemptAt");
 
-                    b.HasIndex("TenantId", "PluginInstanceId", "ContentType")
+                    b.HasIndex("TenantId", "EnvironmentId", "PluginInstanceId", "ContentType")
                         .IsUnique();
 
                     b.ToTable("meta_sync_states", "social");

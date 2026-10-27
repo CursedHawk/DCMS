@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Analytics;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Analytics;
 
 /// <summary>
@@ -83,7 +84,7 @@ public static class AnalyticsPruneEndpoints
                 // IgnoreQueryFilters: retention is cross-tenant by nature and this request has
                 // no ambient tenant, exactly as in the worker.
                 var deleted = await db.Events
-                    .IgnoreQueryFilters()
+                    .IgnoreTenantFilter()
                     .Where(e => e.OccurredAt < cutoff)
                     .OrderBy(e => e.Id)
                     .Take(BatchSize)

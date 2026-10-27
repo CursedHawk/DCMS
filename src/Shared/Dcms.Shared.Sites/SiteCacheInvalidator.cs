@@ -9,6 +9,7 @@ using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Shared.Sites;
 
 /// <summary>
@@ -85,7 +86,7 @@ public sealed class SiteCacheInvalidator(
         using var rls = RlsScope.Tenant(evt.TenantId); // ADR 0015: the event's tenant.
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-        var hosts = await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+        var hosts = await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()
             .Where(d => d.SiteId == evt.SiteId)
             .Select(d => d.Hostname)
             .ToListAsync(ct);

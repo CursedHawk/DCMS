@@ -5,10 +5,18 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Shared.Sites;
 
 /// <param name="NoIndex">The domain serves a publishing branch, not release: kept out of search.</param>
-public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, string ArtifactPrefix, bool NoIndex = false);
+public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, string ArtifactPrefix, bool NoIndex = false)
+{
+    /// <summary>The environment the site is one of (ADR 0028); a host serves exactly one.</summary>
+    public Guid EnvironmentId { get; init; }
+
+    /// <summary>Its name, for the <c>X-Dcms-Environment</c> the delivery plane sets from it.</summary>
+    public string EnvironmentName { get; init; } = TenantEnvironment.Production;
+}
 
 /// <summary>
 /// Resolves an incoming Host header to the tenant + active build artifacts.
@@ -44,7 +52,7 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
         using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-        return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+        return await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()
             .AnyAsync(d => d.Hostname == hostname && d.VerifiedAt != null && d.SiteId != null, ct);
     }
 
@@ -68,7 +76,7 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
         using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-        return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+        return await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()
             .Where(d => d.VerifiedAt != null && d.SiteId != null)
             .Select(d => d.Hostname)
             .OrderBy(h => h)
@@ -94,21 +102,22 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
         Domain? domain;
         using (RlsScope.Platform())
         {
-            domain = await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+            domain = await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()
                 .FirstOrDefaultAsync(d => d.Hostname == hostname && d.VerifiedAt != null && d.SiteId != null, ct);
         }
         if (domain?.SiteId is not { } siteId)
         {
             return null;
         }
-        using var rls = RlsScope.Tenant(domain.TenantId);
+        // The site is the domain's environment's (ADR 0028), and so is everything read after it.
+        using var rls = RlsScope.Environment(domain.TenantId, domain.EnvironmentId);
 
-        var site = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
+        var site = await sites.Sites.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == siteId, ct);
         // A domain linked to a publishing branch serves that branch's live build (#277).
         var activeBuildId = domain.Branch is null
             ? site?.ActiveBuildId
-            : await sites.PublishBranches.IgnoreQueryFilters().AsNoTracking()
+            : await sites.PublishBranches.IgnoreTenantFilter().AsNoTracking()
                 .Where(b => b.SiteId == siteId && b.Branch == domain.Branch)
                 .Select(b => b.ActiveBuildId)
                 .FirstOrDefaultAsync(ct);
@@ -117,7 +126,7 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             return null;
         }
 
-        var build = await sites.Builds.IgnoreQueryFilters().AsNoTracking()
+        var build = await sites.Builds.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(b => b.Id == buildId, ct);
         if (build is null)
         {
@@ -144,7 +153,19 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             return null;
         }
 
-        return new SiteRoute(domain.TenantId, tenant.Identifier, siteId, build.ArtifactPrefix, NoIndex: domain.Branch is not null);
+        var environmentName = domain.EnvironmentId == domain.TenantId
+            ? TenantEnvironment.Production
+            : await tenancy.Environments.IgnoreTenantFilter().AsNoTracking()
+                .Where(e => e.Id == domain.EnvironmentId).Select(e => e.Name).FirstOrDefaultAsync(ct);
+        if (environmentName is null)
+        {
+            return null;
+        }
+        return new SiteRoute(domain.TenantId, tenant.Identifier, siteId, build.ArtifactPrefix, NoIndex: domain.Branch is not null)
+        {
+            EnvironmentId = domain.EnvironmentId,
+            EnvironmentName = environmentName,
+        };
     }
 
     private static string Normalize(string host)

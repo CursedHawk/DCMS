@@ -103,7 +103,9 @@ public sealed class OutboxDispatcher(
             // and disposed before the next: two rows in one batch may come from two people.
             var restored = new AuditScope();
             AuditPropagation.Restore(restored, AuditPropagation.FromJson(message.ContextJson), message.TenantId);
+            // In the row's environment, which the publisher stamps on the event (ADR 0028).
             using (ambient.Enter(restored))
+            using (Dcms.Shared.Data.Rls.RlsScope.Environment(message.TenantId, message.EnvironmentId))
             {
                 await PublishAsync(message, ct);
             }

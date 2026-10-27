@@ -14,7 +14,7 @@ namespace Dcms.Shared.Data.Forms;
 /// payload is stored as jsonb exactly as submitted (after per-field validation),
 /// so changing a form's fields never invalidates historical submissions.
 /// </summary>
-public sealed class FormSubmission : TenantEntity
+public sealed class FormSubmission : EnvironmentEntity
 {
     public Guid PluginInstanceId { get; set; }
 
@@ -62,7 +62,8 @@ public class FormsDbContext(DbContextOptions<FormsDbContext> options) : ScopedDb
             e.Property(s => s.DataJson).HasColumnType("jsonb");
             e.Property(s => s.UserAgent).HasMaxLength(512);
             e.HasIndex(s => new { s.TenantId, s.PluginInstanceId, s.FormName, s.SubmittedAt });
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

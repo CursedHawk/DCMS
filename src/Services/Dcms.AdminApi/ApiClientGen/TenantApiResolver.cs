@@ -70,7 +70,7 @@ public sealed class TenantApiResolver(
 
         var contexts = instances.Select(p => new PluginInstanceContext(
             p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
-            JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
+            JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson)) { EnvironmentId = p.EnvironmentId }).ToList();
 
         var tenantSlug = tenant.TenantSlug ?? tenantId.ToString();
         var document = await assembler.BuildAsync(tenantSlug, contexts, services, servers, tagging, ct);

@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Rls;
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -92,7 +93,7 @@ internal static class AnalyticsIngestEndpoints
 
     private static async Task<bool> CachedEnabledAsync(Guid tenantId, CmsDbContext cms, ICacheService cache, CancellationToken ct)
     {
-        var key = $"t:{tenantId}:analytics:enabled";
+        var key = $"t:{RlsScope.EnvironmentFor(tenantId) ?? tenantId}:analytics:enabled";
         if (await cache.GetAsync<bool?>(key, ct) is { } cached)
         {
             return cached;

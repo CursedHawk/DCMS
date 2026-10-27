@@ -8,6 +8,7 @@ using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
@@ -59,7 +60,7 @@ public static class MetaStoriesEndpoints
             // ids are matched together so a tenant id from the caller can never reach another
             // tenant's instance -- and the database is told the same tenant (ADR 0015).
             using var rls = RlsScope.Tenant(body.TenantId);
-            var instance = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+            var instance = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
                 .FirstOrDefaultAsync(
                     p => p.Id == body.InstanceId && p.TenantId == body.TenantId && p.Enabled, ct);
 
@@ -74,7 +75,7 @@ public static class MetaStoriesEndpoints
             // than an error: the site is asking a reasonable question and the answer is "none".
             if (settings is null || !settings.ShowStories) return Ok([]);
 
-            var connection = await social.Connections.IgnoreQueryFilters()
+            var connection = await social.Connections.IgnoreTenantFilter()
                 .FirstOrDefaultAsync(
                     c => c.Id == settings.ConnectionId && c.TenantId == body.TenantId, ct);
 

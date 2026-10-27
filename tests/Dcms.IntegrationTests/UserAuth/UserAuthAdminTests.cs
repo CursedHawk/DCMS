@@ -204,8 +204,8 @@ public sealed class UserAuthAdminTests(ContentFlowFixture fixture)
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO tenancy.domains ("Id","TenantId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt")
-            SELECT gen_random_uuid(), "Id"::uuid, @host, 't', now(), true, @site, now() FROM tenancy.tenants WHERE "Identifier" = @slug
+            INSERT INTO tenancy.domains ("Id","TenantId","EnvironmentId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt")
+            SELECT gen_random_uuid(), "Id"::uuid, "Id"::uuid, @host, 't', now(), true, @site, now() FROM tenancy.tenants WHERE "Identifier" = @slug
             """;
         cmd.Parameters.AddWithValue("host", host);
         cmd.Parameters.AddWithValue("site", site);

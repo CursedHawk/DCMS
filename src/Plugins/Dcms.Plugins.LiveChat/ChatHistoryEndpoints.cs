@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
@@ -22,13 +23,13 @@ internal static class ChatHistoryEndpoints
             var tenantId = context.TenantId;
             // rls: request tenant. tenantId is the request's own, so the database already narrows
             // to it and no RlsScope is needed (ADR 0015).
-            var owned = await chat.Conversations.IgnoreQueryFilters()
+            var owned = await chat.Conversations.IgnoreTenantFilter()
                 .AnyAsync(c => c.Id == conversationId && c.TenantId == tenantId, ct);
             if (!owned)
             {
                 return Results.NotFound();
             }
-            var messages = await chat.Messages.IgnoreQueryFilters()
+            var messages = await chat.Messages.IgnoreTenantFilter()
                 .Where(m => m.TenantId == tenantId && m.ConversationId == conversationId)
                 .OrderBy(m => m.SentAt)
                 .Select(m => new { id = m.Id, sender = m.Sender.ToString(), body = m.Body, sentAt = m.SentAt })

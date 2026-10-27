@@ -9,7 +9,7 @@ namespace Dcms.Shared.Data.Social;
 /// past its cap — only assets listed here were created by sync, so an admin's own
 /// upload can never be collected by that sweep.</para>
 /// </summary>
-public sealed class MetaMediaMap : TenantEntity
+public sealed class MetaMediaMap : EnvironmentEntity
 {
     public Guid ConnectionId { get; set; }
 

@@ -13,7 +13,7 @@ namespace Dcms.Shared.Data.UserAuth;
 /// tenant gives to groups or users of its realm (ADR 0022). The users and groups themselves live
 /// in Identity; this is the policy over them.
 /// </summary>
-public sealed class UserRole : TenantEntity
+public sealed class UserRole : EnvironmentEntity
 {
     /// <summary>snake_case, unique per tenant: how flows and the assistant name it.</summary>
     public string Key { get; set; } = string.Empty;
@@ -39,7 +39,7 @@ public enum GrantSubject
 }
 
 /// <summary>A role given to a realm group (everyone in it) or to one realm user.</summary>
-public sealed class UserGrant : TenantEntity
+public sealed class UserGrant : EnvironmentEntity
 {
     public Guid RoleId { get; set; }
     public GrantSubject SubjectType { get; set; }
@@ -68,7 +68,7 @@ public enum GateAccess
 /// need <see cref="Access"/>. The edge applies a site's rules in <see cref="Position"/> order;
 /// the first that matches decides, and a path no rule matches is public.
 /// </summary>
-public sealed class SiteGate : TenantEntity
+public sealed class SiteGate : EnvironmentEntity
 {
     public Guid SiteId { get; set; }
     public int Position { get; set; }
@@ -102,7 +102,7 @@ public enum ApiAccess
 /// content delivery and its site contracts (ADR 0022). An instance with no rule is public. This
 /// is what protects a single-page app's data: its routes never reach the edge's path rules.
 /// </summary>
-public sealed class ApiRule : TenantEntity
+public sealed class ApiRule : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public ApiAccess Access { get; set; } = ApiAccess.SignedIn;
@@ -137,8 +137,9 @@ public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options) : Sc
             e.Property(r => r.Key).HasMaxLength(64);
             e.Property(r => r.Name).HasMaxLength(120);
             e.Property(r => r.Description).HasMaxLength(1000);
-            e.HasIndex(r => new { r.TenantId, r.Key }).IsUnique();
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.Key }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<UserGrant>(e =>
@@ -146,11 +147,12 @@ public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options) : Sc
             e.ToTable("grants");
             e.HasKey(g => g.Id);
             e.Property(g => g.SubjectType).HasConversion<string>().HasMaxLength(16);
-            e.HasIndex(g => new { g.TenantId, g.RoleId, g.SubjectType, g.SubjectId }).IsUnique();
+            e.HasIndex(g => new { g.TenantId, g.EnvironmentId, g.RoleId, g.SubjectType, g.SubjectId }).IsUnique();
             // What a sign-in needs: every grant of one user, or of their groups.
             e.HasIndex(g => new { g.TenantId, g.SubjectType, g.SubjectId });
             e.HasOne<UserRole>().WithMany().HasForeignKey(g => g.RoleId).OnDelete(DeleteBehavior.Cascade);
-            e.HasQueryFilter(g => g.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, g => g.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, g => CurrentEnvironmentId == null || g.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<SiteGate>(e =>
@@ -159,9 +161,10 @@ public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options) : Sc
             e.HasKey(g => g.Id);
             e.Property(g => g.PathPrefix).HasMaxLength(512);
             e.Property(g => g.Access).HasConversion<string>().HasMaxLength(16);
-            e.HasIndex(g => new { g.TenantId, g.SiteId, g.PathPrefix }).IsUnique();
+            e.HasIndex(g => new { g.TenantId, g.EnvironmentId, g.SiteId, g.PathPrefix }).IsUnique();
             e.HasIndex(g => new { g.TenantId, g.SiteId, g.Position });
-            e.HasQueryFilter(g => g.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, g => g.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, g => CurrentEnvironmentId == null || g.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ApiRule>(e =>
@@ -169,8 +172,9 @@ public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options) : Sc
             e.ToTable("api_rules");
             e.HasKey(r => r.Id);
             e.Property(r => r.Access).HasConversion<string>().HasMaxLength(16);
-            e.HasIndex(r => new { r.TenantId, r.InstanceId }).IsUnique();
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
     }
 }

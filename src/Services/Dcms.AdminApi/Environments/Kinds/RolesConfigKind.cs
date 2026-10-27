@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Environments.Kinds;
 
 /// <summary>
@@ -26,7 +27,7 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
-        var roles = await db.TenantRoles.IgnoreQueryFilters().AsNoTracking()
+        var roles = await db.TenantRoles.IgnoreTenantFilter().AsNoTracking()
             .Where(r => r.TenantId == tenantId)
             .Include(r => r.Permissions)
             .ToListAsync(ct);
@@ -41,14 +42,14 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
     public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
         if (key == TenantProvisioning.OwnerRole) throw new EnvironmentMigrationException("environments.errors.notAllowed", key);
-        var role = await db.TenantRoles.IgnoreQueryFilters()
+        var role = await db.TenantRoles.IgnoreTenantFilter()
             .Include(r => r.Permissions)
             .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == key, ct);
         if (value is null)
         {
             // A system role is every environment's; only a custom one goes.
             if (role is null || role.IsSystem) return;
-            db.MemberRoles.RemoveRange(await db.MemberRoles.IgnoreQueryFilters()
+            db.MemberRoles.RemoveRange(await db.MemberRoles.IgnoreTenantFilter()
                 .Where(m => m.TenantId == tenantId && m.TenantRoleId == role.Id).ToListAsync(ct));
             db.TenantRolePermissions.RemoveRange(role.Permissions);
             db.TenantRoles.Remove(role);
@@ -75,7 +76,7 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
         await db.SaveChangesAsync(ct);
 
         // Whoever holds it now holds something else.
-        var users = await db.Memberships.IgnoreQueryFilters().AsNoTracking()
+        var users = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
             .Where(m => m.TenantId == tenantId).Select(m => m.UserId).ToListAsync(ct);
         foreach (var user in users) await permissions.InvalidateAsync(tenantId, user, ct);
     }

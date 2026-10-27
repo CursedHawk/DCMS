@@ -13,7 +13,7 @@ namespace Dcms.Shared.Data.DynamicApps;
 /// One Dynamic Apps plugin instance's application: the pointers to its open draft and its
 /// published configuration revision (ADR 0021). Exactly one per instance.
 /// </summary>
-public sealed class DynamicApp : TenantEntity
+public sealed class DynamicApp : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
 
@@ -56,7 +56,7 @@ public enum AppChangeSource
 /// under an expected-hash check; once published it never changes again. A rollback is a new
 /// revision copied from an older snapshot, never a step backwards.
 /// </summary>
-public sealed class AppRevision : TenantEntity
+public sealed class AppRevision : EnvironmentEntity
 {
     public Guid AppId { get; set; }
     public int Number { get; set; }
@@ -114,7 +114,7 @@ public sealed class AppRevision : TenantEntity
 // The log is a record of audited actions (configuration.change.applied); auditing its rows
 // as well would record every edit twice.
 [AuditIgnore]
-public sealed class AppChange : TenantEntity
+public sealed class AppChange : EnvironmentEntity
 {
     public Guid RevisionId { get; set; }
     public int Seq { get; set; }
@@ -145,7 +145,7 @@ public sealed class AppChange : TenantEntity
 /// (lookups by relationship id), never by api name: a deleted field's values can then never
 /// resurface under a new field that reuses its name. Read through the published model only.
 /// </summary>
-public sealed class AppRecord : TenantEntity
+public sealed class AppRecord : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public Guid TableId { get; set; }
@@ -168,7 +168,7 @@ public sealed class AppRecord : TenantEntity
 }
 
 /// <summary>One link of a many-to-many relationship.</summary>
-public sealed class AppRelationLink : TenantEntity
+public sealed class AppRelationLink : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public Guid RelationshipId { get; set; }
@@ -183,7 +183,7 @@ public sealed class AppRelationLink : TenantEntity
 /// claim, so two concurrent writers cannot both win.
 /// </summary>
 [AuditIgnore]
-public sealed class AppUniqueKey : TenantEntity
+public sealed class AppUniqueKey : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
 
@@ -203,7 +203,7 @@ public sealed class AppUniqueKey : TenantEntity
 /// </summary>
 // Transport for changes the same transaction already audits.
 [AuditIgnore]
-public sealed class AppOutboxMessage : TenantEntity
+public sealed class AppOutboxMessage : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public string EventName { get; set; } = string.Empty;
@@ -242,7 +242,7 @@ public enum FlowRunStatus
 /// queue — a worker claims a pending run with a lease — and the history. Pinned to the revision
 /// and flow hash it was created for, so a publish never changes what a queued run does.
 /// </summary>
-public sealed class FlowRun : TenantEntity
+public sealed class FlowRun : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public Guid FlowId { get; set; }
@@ -276,7 +276,7 @@ public sealed class FlowRun : TenantEntity
 
 /// <summary>One attempt at one step of a run: what went in, what came out, how long it took.</summary>
 [AuditIgnore]
-public sealed class FlowRunStep : TenantEntity
+public sealed class FlowRunStep : EnvironmentEntity
 {
     public Guid RunId { get; set; }
     public string StepId { get; set; } = string.Empty;
@@ -291,7 +291,7 @@ public sealed class FlowRunStep : TenantEntity
 }
 
 /// <summary>A scheduled flow's next due time; rewritten from the configuration at every publish.</summary>
-public sealed class FlowSchedule : TenantEntity
+public sealed class FlowSchedule : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public Guid FlowId { get; set; }
@@ -305,7 +305,7 @@ public sealed class FlowSchedule : TenantEntity
 /// read-only, with everyone signed in to the tenant's sites, with groups, or with chosen people;
 /// only the owner changes it. Seeing a view never grants the table: each query is judged anew.
 /// </summary>
-public sealed class AppSiteView : TenantEntity
+public sealed class AppSiteView : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public Guid TableId { get; set; }
@@ -329,7 +329,7 @@ public sealed class AppSiteView : TenantEntity
 /// The view a site user opens a table with. <see cref="ViewKey"/> is an <see cref="AppSiteView"/>
 /// id, or one of the app's own views (<c>system:{id}</c>).
 /// </summary>
-public sealed class AppSiteViewDefault : TenantEntity
+public sealed class AppSiteViewDefault : EnvironmentEntity
 {
     public Guid InstanceId { get; set; }
     public Guid TableId { get; set; }
@@ -370,8 +370,9 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
         {
             e.ToTable("apps");
             e.HasKey(a => a.Id);
-            e.HasIndex(a => new { a.TenantId, a.InstanceId }).IsUnique();
-            e.HasQueryFilter(a => a.TenantId == CurrentTenantId);
+            e.HasIndex(a => new { a.TenantId, a.EnvironmentId, a.InstanceId }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, a => a.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, a => CurrentEnvironmentId == null || a.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppRevision>(e =>
@@ -386,8 +387,9 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.Property(r => r.Description).HasMaxLength(2000);
             e.Property(r => r.CreatedBy).HasMaxLength(128);
             e.Property(r => r.PublishedBy).HasMaxLength(128);
-            e.HasIndex(r => new { r.TenantId, r.AppId, r.Number }).IsUnique();
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.AppId, r.Number }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppChange>(e =>
@@ -402,8 +404,9 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.Property(c => c.ActorType).HasConversion<string>().HasMaxLength(16);
             e.Property(c => c.ActorId).HasMaxLength(128);
             e.Property(c => c.ToolCallId).HasMaxLength(128);
-            e.HasIndex(c => new { c.TenantId, c.RevisionId, c.Seq }).IsUnique();
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+            e.HasIndex(c => new { c.TenantId, c.EnvironmentId, c.RevisionId, c.Seq }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, c => c.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, c => CurrentEnvironmentId == null || c.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppRecord>(e =>
@@ -417,16 +420,18 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.HasIndex(r => new { r.TenantId, r.InstanceId, r.TableId, r.CreatedAt });
             // Lookups and filters by containment: Data @> {"<relationshipId>": "<targetId>"}.
             e.HasIndex(r => r.Data).HasMethod("gin").HasOperators("jsonb_path_ops");
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppRelationLink>(e =>
         {
             e.ToTable("relation_links");
             e.HasKey(l => l.Id);
-            e.HasIndex(l => new { l.TenantId, l.InstanceId, l.RelationshipId, l.SourceId, l.TargetId }).IsUnique();
+            e.HasIndex(l => new { l.TenantId, l.EnvironmentId, l.InstanceId, l.RelationshipId, l.SourceId, l.TargetId }).IsUnique();
             e.HasIndex(l => new { l.TenantId, l.InstanceId, l.RelationshipId, l.TargetId });
-            e.HasQueryFilter(l => l.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, l => l.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, l => CurrentEnvironmentId == null || l.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppOutboxMessage>(e =>
@@ -451,12 +456,13 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.Property(r => r.TriggerJson).HasColumnType("jsonb");
             e.Property(r => r.Status).HasConversion<string>().HasMaxLength(16);
             e.Property(r => r.Error).HasMaxLength(4000);
-            e.HasIndex(r => new { r.TenantId, r.InstanceId, r.TriggerEventId, r.FlowId, r.FlowHash }).IsUnique();
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.TriggerEventId, r.FlowId, r.FlowHash }).IsUnique();
             e.HasIndex(r => new { r.TenantId, r.InstanceId, r.CreatedAt });
             e.HasIndex(r => new { r.TenantId, r.CorrelationId });
             // The worker's claim: runnable runs, oldest due first, across tenants.
             e.HasIndex(r => r.NextAttemptAt).HasFilter("\"Status\" IN ('Pending', 'Running')");
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<FlowRunStep>(e =>
@@ -469,17 +475,19 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.Property(s => s.InputJson).HasColumnType("jsonb");
             e.Property(s => s.OutputJson).HasColumnType("jsonb");
             e.Property(s => s.Error).HasMaxLength(4000);
-            e.HasIndex(s => new { s.TenantId, s.RunId, s.StepId, s.Attempt }).IsUnique();
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasIndex(s => new { s.TenantId, s.EnvironmentId, s.RunId, s.StepId, s.Attempt }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<FlowSchedule>(e =>
         {
             e.ToTable("flow_schedules");
             e.HasKey(s => s.Id);
-            e.HasIndex(s => new { s.TenantId, s.InstanceId, s.FlowId }).IsUnique();
+            e.HasIndex(s => new { s.TenantId, s.EnvironmentId, s.InstanceId, s.FlowId }).IsUnique();
             e.HasIndex(s => s.NextRunAt);
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppUniqueKey>(e =>
@@ -487,9 +495,10 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.ToTable("unique_keys");
             e.HasKey(k => k.Id);
             e.Property(k => k.Key).HasMaxLength(256);
-            e.HasIndex(k => new { k.TenantId, k.InstanceId, k.ConstraintId, k.Key }).IsUnique();
+            e.HasIndex(k => new { k.TenantId, k.EnvironmentId, k.InstanceId, k.ConstraintId, k.Key }).IsUnique();
             e.HasIndex(k => new { k.TenantId, k.RecordId });
-            e.HasQueryFilter(k => k.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, k => k.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, k => CurrentEnvironmentId == null || k.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppSiteView>(e =>
@@ -500,7 +509,8 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.Property(v => v.OwnerName).HasMaxLength(200);
             e.Property(v => v.DefinitionJson).HasColumnType("jsonb");
             e.HasIndex(v => new { v.TenantId, v.InstanceId, v.TableId, v.OwnerUserId });
-            e.HasQueryFilter(v => v.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, v => v.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, v => CurrentEnvironmentId == null || v.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<AppSiteViewDefault>(e =>
@@ -508,8 +518,9 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbCo
             e.ToTable("site_view_defaults");
             e.HasKey(d => d.Id);
             e.Property(d => d.ViewKey).HasMaxLength(100);
-            e.HasIndex(d => new { d.TenantId, d.InstanceId, d.TableId, d.UserId }).IsUnique();
-            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+            e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.InstanceId, d.TableId, d.UserId }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

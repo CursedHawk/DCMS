@@ -198,8 +198,8 @@ public sealed class TableViewTests(AdminApiFixture fixture)
         insert.CommandText = """
             INSERT INTO tenancy.tenant_memberships ("Id", "TenantId", "UserId", "Email", "CreatedAt")
             VALUES (@id, @tenant, @user, @email, now());
-            INSERT INTO tenancy.member_roles ("Id", "TenantId", "MembershipId", "TenantRoleId")
-            SELECT gen_random_uuid(), @tenant, @id, r."Id" FROM tenancy.tenant_roles r
+            INSERT INTO tenancy.member_roles ("Id", "TenantId", "EnvironmentId", "MembershipId", "TenantRoleId")
+            SELECT gen_random_uuid(), @tenant, r."EnvironmentId", @id, r."Id" FROM tenancy.tenant_roles r
             WHERE r."TenantId" = @tenant AND r."Name" = @role;
             """;
         insert.Parameters.AddWithValue("id", membershipId);

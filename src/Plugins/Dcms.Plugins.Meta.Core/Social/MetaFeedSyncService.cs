@@ -10,6 +10,7 @@ using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
@@ -48,7 +49,7 @@ public sealed class MetaFeedSyncService(
             return new SyncOutcome(0, 0, 0, 0, null);
         }
 
-        var connection = await social.Connections.IgnoreQueryFilters()
+        var connection = await social.Connections.IgnoreTenantFilter()
             .FirstOrDefaultAsync(c => c.Id == settings.ConnectionId && c.TenantId == instance.TenantId, ct);
 
         if (connection is null) return new SyncOutcome(0, 0, 0, 0, "The configured account is no longer connected.");
@@ -211,14 +212,14 @@ public sealed class MetaFeedSyncService(
 
             foreach (var slug in stale)
             {
-                var owned = await social.MediaMap.IgnoreQueryFilters()
+                var owned = await social.MediaMap.IgnoreTenantFilter()
                     .Where(m => m.TenantId == instance.TenantId
                                 && m.ExternalMediaId.StartsWith(slug))
                     .ToListAsync(ct);
 
                 foreach (var map in owned)
                 {
-                    var asset = await media.Assets.IgnoreQueryFilters()
+                    var asset = await media.Assets.IgnoreTenantFilter()
                         .FirstOrDefaultAsync(a => a.Id == map.MediaAssetId, ct);
                     if (asset is not null) media.Assets.Remove(asset);
                     social.MediaMap.Remove(map);

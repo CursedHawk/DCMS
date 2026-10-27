@@ -3,6 +3,7 @@ using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Media;
 
 /// <summary>
@@ -18,10 +19,10 @@ public static class MediaFootprint
         // scoped to (a plugin's Caller.TenantId is that same tenant), so the explicit TenantId
         // filter and the database policy agree; IgnoreQueryFilters only drops the ambient filter
         // for the Meta-sync-style caller that names its tenant. tenancy.tenants carries no policy.
-        var originals = await db.Assets.IgnoreQueryFilters()
+        var originals = await db.Assets.IgnoreTenantFilter()
             .Where(a => a.TenantId == tenantId && a.OriginalDeletedAt == null)
             .SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
-        var renditions = await db.Variants.IgnoreQueryFilters()
+        var renditions = await db.Variants.IgnoreTenantFilter()
             .Where(v => v.TenantId == tenantId).SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
         return (originals, renditions);
     }
@@ -32,7 +33,7 @@ public static class MediaFootprint
     /// </summary>
     public static async Task<long> QuotaAsync(TenancyDbContext tenancy, Guid tenantId, CancellationToken ct)
     {
-        var row = await tenancy.Tenants.IgnoreQueryFilters()
+        var row = await tenancy.Tenants.IgnoreTenantFilter()
             .Where(t => t.Id == tenantId.ToString())
             .Select(t => new { t.StorageQuotaBytes, t.WorkspaceId })
             .FirstOrDefaultAsync(ct);
@@ -46,12 +47,12 @@ public static class MediaFootprint
     public static async Task<long> WorkspaceUsedAsync(
         MediaDbContext media, TenancyDbContext tenancy, Guid tenantId, CancellationToken ct)
     {
-        var workspaceId = await tenancy.Tenants.IgnoreQueryFilters()
+        var workspaceId = await tenancy.Tenants.IgnoreTenantFilter()
             .Where(t => t.Id == tenantId.ToString())
             .Select(t => t.WorkspaceId)
             .FirstOrDefaultAsync(ct);
         var tenantIds = workspaceId is { } root
-            ? (await tenancy.Tenants.IgnoreQueryFilters().Where(t => t.WorkspaceId == root).Select(t => t.Id).ToListAsync(ct))
+            ? (await tenancy.Tenants.IgnoreTenantFilter().Where(t => t.WorkspaceId == root).Select(t => t.Id).ToListAsync(ct))
                 .Select(Guid.Parse).ToList()
             : [tenantId];
 

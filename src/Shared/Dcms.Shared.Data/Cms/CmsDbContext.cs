@@ -48,9 +48,10 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.Property(p => p.Slug).HasMaxLength(64).IsRequired();
             e.Property(p => p.Name).HasMaxLength(256);
             e.Property(p => p.ConfigJson).HasColumnType("jsonb");
-            e.HasIndex(p => new { p.TenantId, p.Slug }).IsUnique();
+            e.HasIndex(p => new { p.TenantId, p.EnvironmentId, p.Slug }).IsUnique();
             e.HasIndex(p => new { p.TenantId, p.PluginId });
-            e.HasQueryFilter(p => p.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, p => p.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, p => CurrentEnvironmentId == null || p.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<PluginDatum>(e =>
@@ -63,11 +64,12 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.Property(d => d.DataJson).HasColumnType("jsonb");
             e.Property(d => d.Version).IsConcurrencyToken();
             // NULLS NOT DISTINCT: plugin-wide documents (no instance) are unique per key too.
-            e.HasIndex(d => new { d.TenantId, d.PluginId, d.InstanceId, d.Collection, d.Key })
+            e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.PluginId, d.InstanceId, d.Collection, d.Key })
                 .IsUnique()
                 .AreNullsDistinct(false);
             e.HasIndex(d => d.DataJson).HasMethod("gin").HasOperators("jsonb_path_ops");
-            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<PluginSecret>(e =>
@@ -76,8 +78,9 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.HasKey(s => s.Id);
             e.Property(s => s.PluginId).HasMaxLength(64).IsRequired();
             e.Property(s => s.Name).HasMaxLength(128).IsRequired();
-            e.HasIndex(s => new { s.TenantId, s.InstanceId, s.Name }).IsUnique();
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasIndex(s => new { s.TenantId, s.EnvironmentId, s.InstanceId, s.Name }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ApiConnection>(e =>
@@ -90,8 +93,9 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.Property(c => c.AuthKind).HasMaxLength(16).IsRequired();
             e.Property(c => c.AuthName).HasMaxLength(128);
             e.Property(c => c.LastError).HasMaxLength(2000);
-            e.HasIndex(c => new { c.TenantId, c.Slug }).IsUnique();
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+            e.HasIndex(c => new { c.TenantId, c.EnvironmentId, c.Slug }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, c => c.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, c => CurrentEnvironmentId == null || c.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ApiSnapshot>(e =>
@@ -103,7 +107,8 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.Property(s => s.ItemsPath).HasMaxLength(256);
             e.HasOne<ApiConnection>().WithMany().HasForeignKey(s => s.ConnectionId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => new { s.ConnectionId, s.Operation }).IsUnique();
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ContentItem>(e =>
@@ -113,7 +118,7 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.Property(c => c.ContentType).HasMaxLength(64).IsRequired();
             e.Property(c => c.Slug).HasMaxLength(256).IsRequired();
             e.Property(c => c.Status).HasConversion<string>().HasMaxLength(32);
-            e.HasIndex(c => new { c.TenantId, c.PluginInstanceId, c.ContentType, c.Slug }).IsUnique();
+            e.HasIndex(c => new { c.TenantId, c.EnvironmentId, c.PluginInstanceId, c.ContentType, c.Slug }).IsUnique();
             // The console's collection list pages by (UpdatedAt, Id) descending
             // (ContentListQueries.PageAsync). Without this, every page sorted the whole
             // collection: 537 ms mean per page at 6,400 items in the 2026-09-26 load test.
@@ -121,7 +126,8 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
                 .IsDescending(false, false, false, true, true)
                 .HasDatabaseName("ix_content_items_collection_recent");
             e.HasMany(c => c.Versions).WithOne().HasForeignKey(v => v.ItemId);
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, c => c.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, c => CurrentEnvironmentId == null || c.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ContentVersion>(e =>
@@ -130,7 +136,8 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options)
             e.HasKey(v => v.Id);
             e.Property(v => v.DataJson).HasColumnType("jsonb");
             e.HasIndex(v => new { v.ItemId, v.VersionNo }).IsUnique();
-            e.HasQueryFilter(v => v.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, v => v.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, v => CurrentEnvironmentId == null || v.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ContentOutboxMessage>(e =>

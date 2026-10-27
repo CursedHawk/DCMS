@@ -89,7 +89,7 @@ public sealed class MetaSyncWorker(
         // a timer with no request behind it and therefore no ambient tenant. Platform scope for
         // the scan; SyncOneAsync narrows to each instance's tenant (ADR 0015).
         using var rls = RlsScope.Platform();
-        var instances = await cms.PluginInstances.IgnoreQueryFilters()
+        var instances = await cms.PluginInstances.IgnoreTenantFilter()
             .Where(p => p.Enabled && MetaPlugins.FeedPluginIds.Contains(p.PluginId))
             .ToListAsync(ct);
 
@@ -114,7 +114,7 @@ public sealed class MetaSyncWorker(
         // One state row per instance drives the schedule. The per-content-type rows the sync
         // service keeps are for reporting; the gate is here so a failing instance backs off as
         // a whole rather than once per content type.
-        var state = await social.SyncStates.IgnoreQueryFilters().FirstOrDefaultAsync(
+        var state = await social.SyncStates.IgnoreTenantFilter().FirstOrDefaultAsync(
             s => s.TenantId == instance.TenantId && s.PluginInstanceId == instance.Id
                  && s.ContentType == string.Empty, ct);
 

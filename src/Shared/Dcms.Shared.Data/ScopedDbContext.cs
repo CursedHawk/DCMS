@@ -26,12 +26,16 @@ public abstract class ScopedDbContext(DbContextOptions options) : DbContext(opti
     public ITenantContext? TenantContext { get; internal set; }
 
     /// <summary>
-    /// The environment an <see cref="EnvironmentEntity"/>'s query filter and insert stamp use (ADR
-    /// 0028): an enclosing <see cref="RlsScope"/> block's, else the request's — production, whose
-    /// id is the tenant's, when neither names one.
+    /// The environment an <see cref="EnvironmentEntity"/> query filter reads (ADR 0028): an
+    /// enclosing <see cref="RlsScope"/> block's — production, the tenant's own id, for a tenant
+    /// block — else the request's. Null, which reads every environment, in platform scope and
+    /// for work with no tenant at all: the cross-tenant scans that name their tenants explicitly.
     /// </summary>
-    protected Guid CurrentEnvironmentId =>
-        RlsScope.EnvironmentOverride ?? TenantContext?.EnvironmentId ?? TenantContext?.TenantId ?? Guid.Empty;
+    protected Guid? CurrentEnvironmentId =>
+        RlsScope.IsPlatform ? null
+        : RlsScope.EnvironmentOverride is { } scoped ? scoped
+        : TenantContext?.TenantId is { } tenant ? TenantContext.EnvironmentId ?? tenant
+        : null;
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -61,7 +65,7 @@ public abstract class ScopedDbContext(DbContextOptions options) : DbContext(opti
             var entity = entry.Entity;
             entity.EnvironmentId =
                 RlsScope.TenantOverride == entity.TenantId ? RlsScope.EnvironmentOverride!.Value
-                : TenantContext?.TenantId == entity.TenantId ? TenantContext.EnvironmentId ?? entity.TenantId
+                : RlsScope.TenantOverride is null && TenantContext?.TenantId == entity.TenantId ? TenantContext.EnvironmentId ?? entity.TenantId
                 : entity.TenantId;
         }
     }

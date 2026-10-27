@@ -69,7 +69,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(d => d.Branch).HasMaxLength(256);
             e.HasIndex(d => d.Hostname).IsUnique();
             e.HasIndex(d => new { d.TenantId, d.IsPrimary });
-            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<TenantMembership>(e =>
@@ -79,7 +80,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(m => m.Email).HasMaxLength(256).IsRequired();
             e.HasIndex(m => new { m.TenantId, m.UserId }).IsUnique();
             e.HasMany(m => m.Roles).WithOne(r => r.Membership!).HasForeignKey(r => r.MembershipId);
-            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, m => m.TenantId == CurrentTenantId);
         });
 
         builder.Entity<TenantRole>(e =>
@@ -87,10 +88,11 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.ToTable("tenant_roles");
             e.HasKey(r => r.Id);
             e.Property(r => r.Name).HasMaxLength(128).IsRequired();
-            e.HasIndex(r => new { r.TenantId, r.Name }).IsUnique();
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.Name }).IsUnique();
             e.HasMany(r => r.Permissions).WithOne().HasForeignKey(p => p.TenantRoleId);
             e.HasMany(r => r.Members).WithOne(m => m.Role!).HasForeignKey(m => m.TenantRoleId);
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<TenantRolePermission>(e =>
@@ -99,7 +101,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasKey(p => p.Id);
             e.Property(p => p.Permission).HasMaxLength(128).IsRequired();
             e.HasIndex(p => new { p.TenantRoleId, p.Permission }).IsUnique();
-            e.HasQueryFilter(p => p.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, p => p.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, p => CurrentEnvironmentId == null || p.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<MemberRole>(e =>
@@ -107,7 +110,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.ToTable("member_roles");
             e.HasKey(mr => mr.Id);
             e.HasIndex(mr => new { mr.MembershipId, mr.TenantRoleId }).IsUnique();
-            e.HasQueryFilter(mr => mr.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, mr => mr.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, mr => CurrentEnvironmentId == null || mr.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<Invitation>(e =>
@@ -121,7 +125,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             // The expiry sweeper's claim query: unaccepted, past expiry, not yet reported.
             // Cross-tenant by design, so this index deliberately does not lead with TenantId.
             e.HasIndex(i => new { i.AcceptedAt, i.ExpiredNotifiedAt, i.ExpiresAt });
-            e.HasQueryFilter(i => i.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, i => i.TenantId == CurrentTenantId);
         });
 
         builder.Entity<TenantUsage>(e =>
@@ -129,7 +133,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.ToTable("tenant_usage");
             e.HasKey(u => u.TenantId);
             e.Property(u => u.CategoriesJson).HasColumnName("Categories").HasColumnType("jsonb");
-            e.HasQueryFilter(u => u.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, u => u.TenantId == CurrentTenantId);
         });
 
         builder.Entity<TableView>(e =>
@@ -141,7 +145,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(v => v.DefinitionJson).HasColumnName("Definition").HasColumnType("jsonb");
             e.HasIndex(v => new { v.TenantId, v.TableKey });
             e.HasMany(v => v.Shares).WithOne().HasForeignKey(s => s.ViewId).OnDelete(DeleteBehavior.Cascade);
-            e.HasQueryFilter(v => v.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, v => v.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, v => CurrentEnvironmentId == null || v.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<TableViewShare>(e =>
@@ -149,7 +154,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.ToTable("table_view_shares");
             e.HasKey(s => s.Id);
             e.HasIndex(s => s.ViewId);
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<TableViewDefault>(e =>
@@ -158,8 +164,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasKey(d => d.Id);
             e.Property(d => d.TableKey).HasMaxLength(300).IsRequired();
             e.Property(d => d.ViewKey).HasMaxLength(100).IsRequired();
-            e.HasIndex(d => new { d.TenantId, d.UserId, d.TableKey }).IsUnique();
-            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+            e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.UserId, d.TableKey }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
         });
 
         // Environments (ADR 0026). Read across the workspace's tenants by naming each one, so
@@ -173,9 +180,10 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(m => m.AuthorEmail).HasMaxLength(256);
             e.Property(m => m.ChangesJson).HasColumnType("jsonb");
             e.Property(m => m.ResolutionsJson).HasColumnType("jsonb");
-            e.HasIndex(m => new { m.TenantId, m.Order }).IsUnique();
+            e.HasIndex(m => new { m.TenantId, m.EnvironmentId, m.Order }).IsUnique();
             e.HasIndex(m => new { m.TenantId, m.MigrationId });
-            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, m => m.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, m => CurrentEnvironmentId == null || m.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<EnvironmentBaseline>(e =>
@@ -183,8 +191,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.ToTable("environment_baselines");
             e.HasKey(b => b.Id);
             e.Property(b => b.ItemsJson).HasColumnType("jsonb");
-            e.HasIndex(b => b.TenantId).IsUnique();
-            e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
+            e.HasIndex(b => new { b.TenantId, b.EnvironmentId }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, b => b.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, b => CurrentEnvironmentId == null || b.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<EnvironmentLink>(e =>
@@ -194,9 +203,10 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(l => l.Kind).HasMaxLength(32).IsRequired();
             e.Property(l => l.TargetKey).HasMaxLength(256);
             e.Property(l => l.Access).HasConversion<string>().HasMaxLength(16);
-            e.HasIndex(l => new { l.TenantId, l.Kind, l.TargetKey }).IsUnique().AreNullsDistinct(false);
+            e.HasIndex(l => new { l.TenantId, l.EnvironmentId, l.Kind, l.TargetKey }).IsUnique().AreNullsDistinct(false);
             e.HasIndex(l => l.TargetTenantId);
-            e.HasQueryFilter(l => l.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, l => l.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, l => CurrentEnvironmentId == null || l.EnvironmentId == CurrentEnvironmentId);
         });
 
         // The tenant's environments (ADR 0028), production's id being the tenant's.
@@ -209,7 +219,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(x => x.PromotesFrom).HasDefaultValueSql("'{}'::uuid[]");
             e.Ignore(x => x.IsProduction);
             e.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
-            e.HasQueryFilter(x => x.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, x => x.TenantId == CurrentTenantId);
         });
 
         builder.Entity<EnvironmentPolicy>(e =>
@@ -219,8 +229,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(p => p.Kind).HasMaxLength(64).IsRequired();
             e.Property(p => p.ItemKey).HasMaxLength(256);
             e.Property(p => p.Mode).HasConversion<string>().HasMaxLength(16);
-            e.HasIndex(p => new { p.TenantId, p.Kind, p.ItemKey }).IsUnique().AreNullsDistinct(false);
-            e.HasQueryFilter(p => p.TenantId == CurrentTenantId);
+            e.HasIndex(p => new { p.TenantId, p.EnvironmentId, p.Kind, p.ItemKey }).IsUnique().AreNullsDistinct(false);
+            e.HasQueryFilter(QueryFilters.Tenant, p => p.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, p => CurrentEnvironmentId == null || p.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

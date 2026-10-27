@@ -70,6 +70,9 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 
@@ -81,7 +84,7 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "InstanceId")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId")
                         .IsUnique();
 
                     b.ToTable("api_rules", "userauth");
@@ -100,6 +103,9 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.PrimitiveCollection<List<Guid>>("Groups")
                         .IsRequired()
@@ -124,10 +130,10 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "SiteId", "PathPrefix")
-                        .IsUnique();
-
                     b.HasIndex("TenantId", "SiteId", "Position");
+
+                    b.HasIndex("TenantId", "EnvironmentId", "SiteId", "PathPrefix")
+                        .IsUnique();
 
                     b.ToTable("gates", "userauth");
                 });
@@ -143,6 +149,9 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("text");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("RoleId")
                         .HasColumnType("uuid");
@@ -164,7 +173,7 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
 
                     b.HasIndex("TenantId", "SubjectType", "SubjectId");
 
-                    b.HasIndex("TenantId", "RoleId", "SubjectType", "SubjectId")
+                    b.HasIndex("TenantId", "EnvironmentId", "RoleId", "SubjectType", "SubjectId")
                         .IsUnique();
 
                     b.ToTable("grants", "userauth");
@@ -185,6 +194,9 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Key")
                         .IsRequired()
@@ -208,7 +220,7 @@ namespace Dcms.Shared.Data.Migrations.UserAuth
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "Key")
+                    b.HasIndex("TenantId", "EnvironmentId", "Key")
                         .IsUnique();
 
                     b.ToTable("roles", "userauth");

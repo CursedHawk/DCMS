@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
 
+using Dcms.Shared.Data;
 namespace Dcms.MediaWorker;
 
 /// <summary>
@@ -56,7 +57,7 @@ public sealed class ImageProcessingConsumer(
         for (var attempt = 0; asset is null && attempt < 5; attempt++)
         {
             if (attempt > 0) await Task.Delay(TimeSpan.FromSeconds(1), ct);
-            asset = await db.Assets.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
+            asset = await db.Assets.IgnoreTenantFilter().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
         }
         if (asset is null) throw new InvalidOperationException($"Media asset {job.AssetId} no longer exists.");
 

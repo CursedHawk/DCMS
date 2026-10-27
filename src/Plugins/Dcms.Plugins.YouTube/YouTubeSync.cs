@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.YouTube;
 
 /// <param name="SourceProblem">The link itself is the trouble (no such channel, a private playlist): something an admin has to fix.</param>
@@ -72,7 +73,7 @@ public sealed class YouTubeSync(
 
             // A new video is news only when it is newer than every one already here: not on the
             // first import, and not when a raised cap backfills older ones.
-            var newest = await cms.ContentItems.IgnoreQueryFilters()
+            var newest = await cms.ContentItems.IgnoreTenantFilter()
                 .Where(c => c.TenantId == instance.TenantId
                             && c.PluginInstanceId == instance.InstanceId
                             && c.ContentType == YouTubePlugin.VideoType)

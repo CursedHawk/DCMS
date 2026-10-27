@@ -77,6 +77,9 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("EnvironmentKey")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -157,6 +160,9 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Error")
                         .HasColumnType("text");
 
@@ -205,6 +211,9 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("SiteId")
                         .HasColumnType("uuid");
 
@@ -222,7 +231,7 @@ namespace Dcms.Shared.Data.Migrations.Sites
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "SiteId", "UserId", "Branch")
+                    b.HasIndex("TenantId", "EnvironmentId", "SiteId", "UserId", "Branch")
                         .IsUnique();
 
                     b.ToTable("site_drafts", "sites");
@@ -244,6 +253,9 @@ namespace Dcms.Shared.Data.Migrations.Sites
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("SiteId")
                         .HasColumnType("uuid");

@@ -63,7 +63,7 @@ public sealed class TenantUsageWorker(
             var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
             var cutoff = DateTimeOffset.UtcNow - _interval;
             var ids = await db.Tenants.Select(t => t.Id).ToListAsync(ct);
-            var measured = await db.Usage.IgnoreQueryFilters()
+            var measured = await db.Usage.IgnoreTenantFilter()
                 .ToDictionaryAsync(u => u.TenantId, u => u.MeasuredAt, ct);
             due = ids.Select(Guid.Parse)
                 .Where(id => measured.GetValueOrDefault(id) <= cutoff)

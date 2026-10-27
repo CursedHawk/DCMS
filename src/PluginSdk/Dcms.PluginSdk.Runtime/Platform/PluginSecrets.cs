@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Platform;
 
 /// <summary>
@@ -89,7 +90,7 @@ public sealed class PluginSecrets(IPluginContext caller, CmsDbContext db, ITrans
     }
 
     private IQueryable<PluginSecret> Mine(Guid instanceId) =>
-        db.PluginSecrets.IgnoreQueryFilters().Where(s =>
+        db.PluginSecrets.IgnoreTenantFilter().Where(s =>
             s.TenantId == caller.TenantId && s.PluginId == caller.PluginId && s.InstanceId == instanceId);
 
     /// <summary>
@@ -110,7 +111,7 @@ public sealed class PluginSecrets(IPluginContext caller, CmsDbContext db, ITrans
         {
             throw new ContractValidationException("No instance in this context; pass InstanceId.");
         }
-        var owned = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var owned = await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .AnyAsync(p => p.Id == id && p.TenantId == caller.TenantId && p.PluginId == caller.PluginId, ct);
         return owned ? id : throw new ContractValidationException("Unknown instance for this plugin.");
     }

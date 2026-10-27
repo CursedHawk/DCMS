@@ -418,6 +418,8 @@ app.UseAuthentication();
 // one -- and honoured for services. Tests that do not exercise it turn the requirement off.
 app.UseDcmsIdempotency("admin-api", app.Configuration.GetValue("Idempotency:RequireForUsers", true));
 app.UseMultiTenant();
+// ADR 0028: the environment the request names, after the tenant it belongs to.
+app.UseDcmsEnvironment();
 // Between resolution and authorization: the tenant is now known, so membership can be
 // checked, and the endpoints that survive still see a tenant context. Without this, an
 // endpoint guarded by a bare RequireAuthorization() trusts X-Dcms-Tenant outright.

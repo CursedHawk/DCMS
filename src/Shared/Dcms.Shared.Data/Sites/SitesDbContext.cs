@@ -44,7 +44,8 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.HasIndex(s => new { s.TenantId, s.EnvironmentKey });
             e.Ignore(s => s.KeyAcrossEnvironments);
             e.HasMany(s => s.Builds).WithOne().HasForeignKey(b => b.SiteId);
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<SiteBuild>(e =>
@@ -58,7 +59,8 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.Property(b => b.GitCommitSha).HasMaxLength(64);
             e.Property(b => b.Branch).HasMaxLength(256);
             e.HasIndex(b => new { b.SiteId, b.CreatedAt });
-            e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, b => b.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, b => CurrentEnvironmentId == null || b.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<SiteDraft>(e =>
@@ -69,8 +71,9 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.Property(d => d.DefinitionJson).HasColumnType("jsonb");
             e.Property(d => d.BaseSha).HasMaxLength(64);
             // One working draft per (site, user, branch); the IDE loads/saves by this key.
-            e.HasIndex(d => new { d.TenantId, d.SiteId, d.UserId, d.Branch }).IsUnique();
-            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+            e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.SiteId, d.UserId, d.Branch }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<SitePublishBranch>(e =>
@@ -80,7 +83,8 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.Property(b => b.Branch).HasMaxLength(256);
             e.HasIndex(b => new { b.SiteId, b.Branch }).IsUnique();
             e.HasOne<Site>().WithMany().HasForeignKey(b => b.SiteId).OnDelete(DeleteBehavior.Cascade);
-            e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, b => b.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, b => CurrentEnvironmentId == null || b.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

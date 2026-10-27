@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.DynamicApps.Automation;
 
 /// <summary>
@@ -122,8 +123,8 @@ public sealed class AutomationWorker(
         using var scope = services.CreateScope();
         using var platform = RlsScope.Platform();
         var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
-        var live = await (from r in db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, every tenant's published revision
-                          join a in db.Apps.AsNoTracking().IgnoreQueryFilters() on r.AppId equals a.Id // rls: as above
+        var live = await (from r in db.Revisions.AsNoTracking().IgnoreTenantFilter() // rls: RlsScope.Platform, every tenant's published revision
+                          join a in db.Apps.AsNoTracking().IgnoreTenantFilter() on r.AppId equals a.Id // rls: as above
                           where r.Status == AppRevisionStatus.Published
                           orderby r.TenantId, a.CreatedAt, a.Id
                           select new { r.Id, r.Hash, r.TenantId, a.InstanceId })
@@ -139,7 +140,7 @@ public sealed class AutomationWorker(
             var mine = new List<RecordIndexes.Spec>();
             foreach (var revision in tenant)
             {
-                var snapshot = await db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, as above
+                var snapshot = await db.Revisions.AsNoTracking().IgnoreTenantFilter() // rls: RlsScope.Platform, as above
                     .Where(r => r.Id == revision.Id).Select(r => r.Snapshot).SingleAsync(ct);
                 mine.AddRange(RecordIndexes.For(ConfigJson.Parse(snapshot), revision.TenantId, revision.InstanceId));
             }
@@ -234,8 +235,12 @@ public sealed class AutomationWorker(
                 {
                     var evt = JsonSerializer.Deserialize<AppEvent>(message.Envelope, JsonSerializerOptions.Web)!;
                     // False: the instance was disabled or deleted; its events have nowhere to go.
-                    await runner.RunAsync(message.TenantId, DynamicAppsPlugin.PluginId, message.InstanceId,
-                        (_, sp) => sp.GetRequiredService<FlowRunQueue>().RouteAsync(evt, ct), ct);
+                    // In the environment the event happened in (ADR 0028).
+                    using (RlsScope.Environment(message.TenantId, message.EnvironmentId))
+                    {
+                        await runner.RunAsync(message.TenantId, DynamicAppsPlugin.PluginId, message.InstanceId,
+                            (_, sp) => sp.GetRequiredService<FlowRunQueue>().RouteAsync(evt, ct), ct);
+                    }
                     message.SentAt = DateTimeOffset.UtcNow;
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -260,6 +265,7 @@ public sealed class AutomationWorker(
     private sealed class DueSchedule
     {
         public Guid TenantId { get; init; }
+        public Guid EnvironmentId { get; init; }
         public Guid InstanceId { get; init; }
         public Guid FlowId { get; init; }
         public DateTimeOffset Due { get; init; }
@@ -273,7 +279,7 @@ public sealed class AutomationWorker(
         UPDATE apps.flow_schedules s
         SET "NextRunAt" = GREATEST(s."NextRunAt" + make_interval(mins => s."EveryMinutes"), now())
         FROM due WHERE s."Id" = due."Id"
-        RETURNING s."TenantId", s."InstanceId", s."FlowId", due."NextRunAt" AS "Due"
+        RETURNING s."TenantId", s."EnvironmentId", s."InstanceId", s."FlowId", due."NextRunAt" AS "Due"
         """;
 
     private static readonly string ClaimRunsSql = $"""
@@ -284,7 +290,7 @@ public sealed class AutomationWorker(
             SELECT "Id" FROM apps.flow_runs
             WHERE ("Status" = 'Pending' AND "NextAttemptAt" <= now()) OR ("Status" = 'Running' AND "LeaseUntil" < now())
             ORDER BY "NextAttemptAt" FOR UPDATE SKIP LOCKED LIMIT {"{0}"})
-        RETURNING r."Id", r."TenantId", r."InstanceId"
+        RETURNING r."Id", r."TenantId", r."EnvironmentId", r."InstanceId"
         """;
 
     /// <summary>Starts every schedule that is due and moves it to its next time, missed ticks collapsed into one.</summary>
@@ -301,6 +307,7 @@ public sealed class AutomationWorker(
         {
             try
             {
+                using var environment = RlsScope.Environment(schedule.TenantId, schedule.EnvironmentId);
                 await runner.RunAsync(schedule.TenantId, DynamicAppsPlugin.PluginId, schedule.InstanceId,
                     (_, sp) => sp.GetRequiredService<FlowRunQueue>().StartScheduledAsync(schedule.FlowId, schedule.Due, ct), ct);
             }
@@ -318,6 +325,7 @@ public sealed class AutomationWorker(
     {
         public Guid Id { get; init; }
         public Guid TenantId { get; init; }
+        public Guid EnvironmentId { get; init; }
         public Guid InstanceId { get; init; }
     }
 
@@ -347,6 +355,7 @@ public sealed class AutomationWorker(
     {
         try
         {
+            using var environment = RlsScope.Environment(run.TenantId, run.EnvironmentId);
             var ran = await runner.RunAsync(run.TenantId, DynamicAppsPlugin.PluginId, run.InstanceId,
                 (_, sp) => sp.GetRequiredService<FlowExecutor>().RunAsync(run.Id, ct), ct);
             if (!ran)
@@ -365,7 +374,7 @@ public sealed class AutomationWorker(
     private async Task EndAsync(ClaimedRun run, FlowRunStatus status, string error)
     {
         using var scope = services.CreateScope();
-        using var rls = RlsScope.Tenant(run.TenantId);
+        using var rls = RlsScope.Environment(run.TenantId, run.EnvironmentId);
         var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
         // Set-based: a run that never started has no audit entry of its own to carry.
         await db.FlowRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s
@@ -387,9 +396,9 @@ public sealed class AutomationWorker(
         using var bulk = scope.ServiceProvider.GetRequiredService<AuditScope>().SuppressBulkCapture();
         var events = DateTimeOffset.UtcNow.AddDays(-7);
         var runs = DateTimeOffset.UtcNow.AddDays(-30);
-        var oldRuns = db.FlowRuns.IgnoreQueryFilters().Where(r => r.FinishedAt < runs).Select(r => r.Id);
-        var steps = await db.FlowRunSteps.IgnoreQueryFilters().Where(s => oldRuns.Contains(s.RunId)).ExecuteDeleteAsync(ct);
-        var deletedRuns = await db.FlowRuns.IgnoreQueryFilters().Where(r => r.FinishedAt < runs).ExecuteDeleteAsync(ct);
+        var oldRuns = db.FlowRuns.IgnoreTenantFilter().Where(r => r.FinishedAt < runs).Select(r => r.Id);
+        var steps = await db.FlowRunSteps.IgnoreTenantFilter().Where(s => oldRuns.Contains(s.RunId)).ExecuteDeleteAsync(ct);
+        var deletedRuns = await db.FlowRuns.IgnoreTenantFilter().Where(r => r.FinishedAt < runs).ExecuteDeleteAsync(ct);
         var deletedEvents = await db.Outbox.Where(m => m.SentAt < events).ExecuteDeleteAsync(ct);
         if (deletedRuns + deletedEvents > 0)
         {

@@ -85,6 +85,9 @@ namespace Dcms.Shared.Data.Migrations.Visitors
                     b.Property<DateTimeOffset?>("EmailVerifiedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -94,7 +97,7 @@ namespace Dcms.Shared.Data.Migrations.Visitors
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "Email")
+                    b.HasIndex("TenantId", "EnvironmentId", "Email")
                         .IsUnique();
 
                     b.ToTable("visitor_accounts", "visitors");
@@ -104,6 +107,9 @@ namespace Dcms.Shared.Data.Migrations.Visitors
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("ExpiresAt")

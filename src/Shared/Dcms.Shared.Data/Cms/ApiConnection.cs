@@ -13,7 +13,7 @@ namespace Dcms.Shared.Data.Cms;
 /// outbound call, and visitor traffic cannot spend the tenant's quota with the provider.</para>
 /// </summary>
 [AuditIgnore]
-public sealed class ApiConnection : TenantEntity
+public sealed class ApiConnection : EnvironmentEntity
 {
     /// <summary>Kebab-case; the site reads <c>/api/connections/{Slug}{operation}</c>.</summary>
     public string Slug { get; set; } = string.Empty;
@@ -36,7 +36,7 @@ public sealed class ApiConnection : TenantEntity
 
 /// <summary>One operation's last good response, as content-api serves it.</summary>
 [AuditIgnore]
-public sealed class ApiSnapshot : TenantEntity
+public sealed class ApiSnapshot : EnvironmentEntity
 {
     public Guid ConnectionId { get; set; }
     public string Operation { get; set; } = string.Empty;

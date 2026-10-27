@@ -14,7 +14,7 @@ public sealed class TenantMembership : TenantEntity
 }
 
 /// <summary>A custom role within a tenant; carries a set of permission keys.</summary>
-public sealed class TenantRole : TenantEntity
+public sealed class TenantRole : EnvironmentEntity
 {
     public string Name { get; set; } = string.Empty;
     public bool IsSystem { get; set; }
@@ -23,14 +23,14 @@ public sealed class TenantRole : TenantEntity
     public List<MemberRole> Members { get; set; } = [];
 }
 
-public sealed class TenantRolePermission : TenantEntity
+public sealed class TenantRolePermission : EnvironmentEntity
 {
     public Guid TenantRoleId { get; set; }
     public string Permission { get; set; } = string.Empty;
 }
 
 /// <summary>Join row assigning a tenant role to a membership.</summary>
-public sealed class MemberRole : TenantEntity
+public sealed class MemberRole : EnvironmentEntity
 {
     public Guid MembershipId { get; set; }
     public Guid TenantRoleId { get; set; }

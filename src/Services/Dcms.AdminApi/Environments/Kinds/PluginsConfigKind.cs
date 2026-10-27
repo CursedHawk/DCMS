@@ -11,6 +11,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Environments.Kinds;
 
 /// <summary>
@@ -34,7 +35,7 @@ public sealed class PluginsConfigKind(
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
-        var instances = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var instances = await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .Where(p => p.TenantId == tenantId)
             .ToListAsync(ct);
         return instances.Select(p => new EnvironmentConfigItem(p.Slug, JsonSerializer.SerializeToElement(new Value(
@@ -54,7 +55,7 @@ public sealed class PluginsConfigKind(
         var wanted = value.Value.Deserialize<Value>()!;
         var manifest = catalog.Find(wanted.PluginId)
                        ?? throw new EnvironmentMigrationException("environments.errors.unknownPlugin", wanted.PluginId);
-        var instance = await db.PluginInstances.IgnoreQueryFilters()
+        var instance = await db.PluginInstances.IgnoreTenantFilter()
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == key, ct);
         var created = instance is null;
         if (instance is null)
@@ -69,7 +70,7 @@ public sealed class PluginsConfigKind(
         {
             throw new EnvironmentMigrationException("environments.errors.slugTakenByOtherPlugin", key);
         }
-        var firstOfPlugin = created && !await db.PluginInstances.IgnoreQueryFilters()
+        var firstOfPlugin = created && !await db.PluginInstances.IgnoreTenantFilter()
             .AnyAsync(p => p.TenantId == tenantId && p.PluginId == manifest.Id, ct);
         var wasEnabled = !created && instance.Enabled;
         instance.Name = wanted.Name;

@@ -9,6 +9,7 @@ using Dcms.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -108,14 +109,14 @@ public static class MyAccountEndpoints
             if (!string.IsNullOrWhiteSpace(email))
             {
                 var normalized = email.Trim().ToLowerInvariant();
-                await db.Invitations.IgnoreQueryFilters()
+                await db.Invitations.IgnoreTenantFilter()
                     .Where(i => i.Email == normalized && i.AcceptedAt == null)
                     .ExecuteDeleteAsync(ct);
             }
 
             // Per-user leftovers in other schemas: unsaved IDE working copies and the
             // user's own AI provider settings (which hold an encrypted API key).
-            var drafts = await sites.Drafts.IgnoreQueryFilters()
+            var drafts = await sites.Drafts.IgnoreTenantFilter()
                 .Where(d => d.UserId == userId).ExecuteDeleteAsync(ct);
             var aiSettings = await ai.UserSettings
                 .Where(s => s.UserId == userId).ExecuteDeleteAsync(ct);
@@ -154,7 +155,7 @@ public static class MyAccountEndpoints
     private static async Task<List<MembershipView>> LoadMembershipsAsync(
         TenancyDbContext db, Guid userId, CancellationToken ct)
     {
-        var mine = await db.Memberships.IgnoreQueryFilters()
+        var mine = await db.Memberships.IgnoreTenantFilter()
             .Where(m => m.UserId == userId)
             .Select(m => new
             {
@@ -169,7 +170,7 @@ public static class MyAccountEndpoints
         }
 
         var tenantIds = mine.Select(m => m.TenantId).ToList();
-        var ownerCounts = await db.Memberships.IgnoreQueryFilters()
+        var ownerCounts = await db.Memberships.IgnoreTenantFilter()
             .Where(m => tenantIds.Contains(m.TenantId)
                         && m.Roles.Any(r => r.Role!.IsSystem && r.Role.Name == TenantProvisioning.OwnerRole))
             .GroupBy(m => m.TenantId)
@@ -200,9 +201,9 @@ public static class MyAccountEndpoints
     /// </summary>
     private static async Task RemoveMembershipAsync(TenancyDbContext db, Guid membershipId, CancellationToken ct)
     {
-        await db.MemberRoles.IgnoreQueryFilters()
+        await db.MemberRoles.IgnoreTenantFilter()
             .Where(r => r.MembershipId == membershipId).ExecuteDeleteAsync(ct);
-        await db.Memberships.IgnoreQueryFilters()
+        await db.Memberships.IgnoreTenantFilter()
             .Where(m => m.Id == membershipId).ExecuteDeleteAsync(ct);
     }
 }

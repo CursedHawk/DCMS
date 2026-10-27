@@ -29,7 +29,7 @@ public enum ChatConversationStatus
 /// The visitor may be authenticated (VisitorId set) or anonymous (identified
 /// only by the client-supplied display name + the SignalR connection).
 /// </summary>
-public sealed class ChatConversation : TenantEntity
+public sealed class ChatConversation : EnvironmentEntity
 {
     public Guid? VisitorId { get; set; }
     public string VisitorName { get; set; } = "Visitor";
@@ -38,7 +38,7 @@ public sealed class ChatConversation : TenantEntity
     public DateTimeOffset LastMessageAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class ChatMessage : TenantEntity
+public sealed class ChatMessage : EnvironmentEntity
 {
     public Guid ConversationId { get; set; }
     public ChatSender Sender { get; set; }
@@ -75,7 +75,8 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbCo
             e.Property(c => c.VisitorName).HasMaxLength(256).IsRequired();
             e.Property(c => c.Status).HasConversion<int>();
             e.HasIndex(c => new { c.TenantId, c.Status, c.LastMessageAt });
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, c => c.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, c => CurrentEnvironmentId == null || c.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<ChatMessage>(e =>
@@ -85,7 +86,8 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbCo
             e.Property(m => m.Sender).HasConversion<int>();
             e.Property(m => m.Body).HasMaxLength(8000).IsRequired();
             e.HasIndex(m => new { m.TenantId, m.ConversationId, m.SentAt });
-            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, m => m.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, m => CurrentEnvironmentId == null || m.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

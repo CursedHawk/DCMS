@@ -177,8 +177,8 @@ public sealed class ContractDispatcherTests(ContentFlowFixture fixture)
         cmd.CommandText = """
             INSERT INTO tenancy.tenant_memberships ("Id", "TenantId", "UserId", "Email", "CreatedAt")
             VALUES (@mid, @tid, @uid, @email, now());
-            INSERT INTO tenancy.member_roles ("Id", "TenantId", "MembershipId", "TenantRoleId")
-            VALUES (@mrid, @tid, @mid, @rid);
+            INSERT INTO tenancy.member_roles ("Id", "TenantId", "EnvironmentId", "MembershipId", "TenantRoleId")
+            VALUES (@mrid, @tid, (SELECT "EnvironmentId" FROM tenancy.tenant_roles WHERE "Id" = @rid), @mid, @rid);
             """;
         cmd.Parameters.AddWithValue("mid", membershipId);
         cmd.Parameters.AddWithValue("tid", tenantId);

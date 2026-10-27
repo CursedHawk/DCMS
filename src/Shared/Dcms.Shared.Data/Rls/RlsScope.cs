@@ -35,6 +35,9 @@ public static class RlsScope
 {
     private static readonly AsyncLocal<State?> Current = new();
 
+    /// <summary>The request's tenant and environment, set once at the start of it (ADR 0028).</summary>
+    private static readonly AsyncLocal<(Guid Tenant, Guid Environment)?> Request = new();
+
     /// <summary>The tenant a <see cref="Tenant"/> block names, or null outside one.</summary>
     public static Guid? TenantOverride => Current.Value?.Tenant;
 
@@ -49,8 +52,45 @@ public static class RlsScope
     /// narrowed.</summary>
     public static bool IsPlatform => Current.Value?.Platform == true;
 
-    /// <summary>Act as <paramref name="tenantId"/> (its production environment) until disposed, whatever the request's tenant.</summary>
-    public static IDisposable Tenant(Guid tenantId) => Enter(new State(tenantId, Environment: null, Platform: false));
+    /// <summary>
+    /// Act as <paramref name="tenantId"/> until disposed, whatever the request's tenant. In the
+    /// environment already in force for that tenant — an enclosing block's, else the request's —
+    /// and otherwise its production (ADR 0028): work that names its own tenant again never leaves
+    /// the environment it was in, and only work that means to changes it (<see cref="Environment"/>).
+    /// </summary>
+    public static IDisposable Tenant(Guid tenantId)
+    {
+        var environment = Current.Value is { Tenant: { } outer } enclosing && outer == tenantId ? enclosing.Environment
+            : Request.Value is { } request && request.Tenant == tenantId ? request.Environment
+            : (Guid?)null;
+        return Enter(new State(tenantId, environment, Platform: false));
+    }
+
+    /// <summary>
+    /// The environment in force for <paramref name="tenantId"/>: an enclosing block's, else the
+    /// request's, when either is that tenant's; null otherwise. What work handed on to later —
+    /// a job, an event — records so that it runs where it was asked for (ADR 0028).
+    /// </summary>
+    public static Guid? EnvironmentFor(Guid tenantId) =>
+        Current.Value is { Tenant: { } outer } enclosing && outer == tenantId ? enclosing.Environment ?? tenantId
+        : Request.Value is { } request && request.Tenant == tenantId ? request.Environment
+        : null;
+
+    /// <summary>
+    /// Records the request's tenant and environment for <see cref="Tenant"/> blocks inside it to
+    /// inherit. Set by the environment resolution middleware; changes nothing else.
+    /// </summary>
+    public static IDisposable ForRequest(Guid tenantId, Guid environmentId)
+    {
+        var previous = Request.Value;
+        Request.Value = (tenantId, environmentId);
+        return new RequestRestore(previous);
+    }
+
+    private sealed class RequestRestore((Guid Tenant, Guid Environment)? previous) : IDisposable
+    {
+        public void Dispose() => Request.Value = previous;
+    }
 
     /// <summary>Act as one environment of <paramref name="tenantId"/> until disposed (ADR 0028).</summary>
     public static IDisposable Environment(Guid tenantId, Guid environmentId) =>

@@ -12,7 +12,7 @@ namespace Dcms.Shared.Data.Tenancy;
 /// <para>Each row carries the migration itself (name, changes), not a pointer: history, review and
 /// rollback keep working after the environment it came from is deleted.</para>
 /// </summary>
-public sealed class EnvironmentMigration : TenantEntity
+public sealed class EnvironmentMigration : EnvironmentEntity
 {
     public Guid MigrationId { get; set; }
     public Guid OriginTenantId { get; set; }
@@ -38,7 +38,7 @@ public sealed class EnvironmentMigration : TenantEntity
 /// An environment's configuration as of its last cut or apply: what "unpublished changes" are
 /// measured against. One row per environment; <c>{kind: {key: value}}</c>.
 /// </summary>
-public sealed class EnvironmentBaseline : TenantEntity
+public sealed class EnvironmentBaseline : EnvironmentEntity
 {
     public string ItemsJson { get; set; } = "{}";
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -49,7 +49,7 @@ public sealed class EnvironmentBaseline : TenantEntity
 /// here, written by migrations, or both. An item row overrides its kind's; no row is
 /// <see cref="EnvironmentOwnership.Mixed"/>.
 /// </summary>
-public sealed class EnvironmentPolicy : TenantEntity
+public sealed class EnvironmentPolicy : EnvironmentEntity
 {
     public string Kind { get; set; } = string.Empty;
     public string? ItemKey { get; set; }
@@ -98,7 +98,7 @@ public static class EnvironmentPolicies
 /// which then name the target's people). One per consumer, and never a chain.</item>
 /// </list>
 /// </summary>
-public sealed class EnvironmentLink : TenantEntity
+public sealed class EnvironmentLink : EnvironmentEntity
 {
     public Guid TargetTenantId { get; set; }
     public string Kind { get; set; } = EnvironmentLinkKinds.App;
@@ -122,7 +122,7 @@ public static class EnvironmentRealm
     public static async Task<Guid> OfAsync(TenancyDbContext db, Guid tenantId, CancellationToken ct)
     {
         using var rls = Rls.RlsScope.Tenant(tenantId);
-        return await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+        return await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
             .Where(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.Users)
             .Select(l => (Guid?)l.TargetTenantId).FirstOrDefaultAsync(ct) ?? tenantId;
     }
@@ -132,7 +132,7 @@ public static class EnvironmentRealm
     {
         // rls: platform -- the links are rows of the consumers, which are what is being looked for.
         using var rls = Rls.RlsScope.Platform();
-        return await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+        return await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
             .Where(l => l.TargetTenantId == realmTenantId && l.Kind == EnvironmentLinkKinds.Users)
             .Select(l => l.TenantId).ToListAsync(ct);
     }

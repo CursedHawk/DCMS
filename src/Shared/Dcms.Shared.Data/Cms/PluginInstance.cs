@@ -5,7 +5,7 @@ namespace Dcms.Shared.Data.Cms;
 /// plugins have several rows (distinct slugs); the slug is the route segment and
 /// the description flows into the generated OpenAPI document.
 /// </summary>
-public sealed class PluginInstance : TenantEntity
+public sealed class PluginInstance : EnvironmentEntity
 {
     public string PluginId { get; set; } = string.Empty;
     public string PluginVersion { get; set; } = string.Empty;

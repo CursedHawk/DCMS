@@ -4,6 +4,7 @@ using Dcms.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
+using Dcms.Shared.Data;
 namespace Dcms.MediaWorker;
 
 /// <summary>
@@ -30,7 +31,7 @@ public sealed class VariantSizeBackfill(
             var bucket = storageOptions.Value.MediaBucket;
 
             // Images always recorded their sizes; a WebP or thumb at 0 B is not this bug.
-            var rows = await db.Variants.IgnoreQueryFilters()
+            var rows = await db.Variants.IgnoreTenantFilter()
                 .Where(v => v.SizeBytes == 0 && !v.Kind.StartsWith("webp-") && v.Kind != "thumb")
                 .ToListAsync(ct);
             foreach (var v in rows)

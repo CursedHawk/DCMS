@@ -27,7 +27,10 @@ public sealed class PluginBlobs(IPluginContext caller, IObjectStorage storage, I
 
     // Under the tenant's media prefix so the tenant purge's prefix delete takes these too. Media
     // delivery addresses objects by asset id (a GUID route segment), which "plugins" never is.
-    private string Root => $"tenants/{caller.TenantId}/plugins/{caller.PluginId}/";
+    // Another environment's files sit under its own folder there (ADR 0028); production's are where they were.
+    private string Root => caller.EnvironmentId == caller.TenantId
+        ? $"tenants/{caller.TenantId}/plugins/{caller.PluginId}/"
+        : $"tenants/{caller.TenantId}/environments/{caller.EnvironmentId}/plugins/{caller.PluginId}/";
 
     public async Task PutAsync(BlobPut input, CancellationToken ct)
     {
@@ -126,7 +129,8 @@ public sealed class PluginCache(IPluginContext caller, ICacheService cache) : IP
         {
             throw new ContractValidationException("Cache key must be 1-200 characters.");
         }
-        return $"t:{caller.TenantId}:p:{caller.PluginId}:{key}";
+        // Per environment (ADR 0028); production's is the tenant id, as before.
+        return $"t:{caller.EnvironmentId}:p:{caller.PluginId}:{key}";
     }
 }
 

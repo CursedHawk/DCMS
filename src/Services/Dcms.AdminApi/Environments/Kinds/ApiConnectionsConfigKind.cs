@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Environments.Kinds;
 
 /// <summary>
@@ -26,14 +27,14 @@ public sealed class ApiConnectionsConfigKind(CmsDbContext db, IConfiguration con
     private sealed record Value(string Name, string BaseUrl, string AuthKind, string? AuthName, string[] Operations, int RefreshMinutes);
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct) =>
-        (await db.ApiConnections.IgnoreQueryFilters().AsNoTracking().Where(c => c.TenantId == tenantId).ToListAsync(ct))
+        (await db.ApiConnections.IgnoreTenantFilter().AsNoTracking().Where(c => c.TenantId == tenantId).ToListAsync(ct))
         .Select(c => new EnvironmentConfigItem(c.Slug, JsonSerializer.SerializeToElement(
             new Value(c.Name, c.BaseUrl, c.AuthKind, c.AuthName, c.Operations.ToArray(), c.RefreshMinutes))) { Label = c.Name })
         .ToList();
 
     public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
-        var row = await db.ApiConnections.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Slug == key, ct);
+        var row = await db.ApiConnections.IgnoreTenantFilter().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Slug == key, ct);
         if (value is null)
         {
             if (row is not null) db.ApiConnections.Remove(row);

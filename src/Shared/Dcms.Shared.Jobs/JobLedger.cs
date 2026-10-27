@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
+using Dcms.Shared.Data;
 namespace Dcms.Shared.Jobs;
 
 public enum CancelOutcome
@@ -75,7 +76,7 @@ public sealed class JobLedger(
     /// tenant-less caller cannot reach a tenant's row by passing no tenant.
     /// </summary>
     private IQueryable<Job> Row(Guid id, Guid? tenantId) =>
-        db.Jobs.IgnoreQueryFilters().Where(j => j.Id == id && j.TenantId == tenantId);
+        db.Jobs.IgnoreTenantFilter().Where(j => j.Id == id && j.TenantId == tenantId);
 
     public async Task<Job?> FindAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
@@ -96,7 +97,7 @@ public sealed class JobLedger(
                                            && ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             db.Entry(job).State = EntityState.Detached;
-            var existing = await db.Jobs.IgnoreQueryFilters().AsNoTracking()
+            var existing = await db.Jobs.IgnoreTenantFilter().AsNoTracking()
                 .Where(j => j.TenantId == job.TenantId && j.DedupeKey == job.DedupeKey)
                 .Select(j => j.Id)
                 .FirstAsync(ct);
@@ -475,7 +476,7 @@ public sealed class JobLedger(
     private async Task RollUpAsync(Guid parentId, Guid? tenantId, CancellationToken ct)
     {
         using var _ = Enter(tenantId);
-        var agg = await db.Jobs.IgnoreQueryFilters()
+        var agg = await db.Jobs.IgnoreTenantFilter()
             .Where(c => c.ParentId == parentId && c.TenantId == tenantId)
             .GroupBy(_ => 1)
             .Select(g => new

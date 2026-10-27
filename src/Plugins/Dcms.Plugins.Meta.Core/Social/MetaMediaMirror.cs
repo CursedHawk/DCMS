@@ -4,6 +4,7 @@ using Dcms.Shared.Data.Social;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
@@ -40,7 +41,7 @@ public sealed class MetaMediaMirror(SocialDbContext social, ILogger<MetaMediaMir
             return null;
         }
 
-        var existing = await social.MediaMap.IgnoreQueryFilters().FirstOrDefaultAsync(
+        var existing = await social.MediaMap.IgnoreTenantFilter().FirstOrDefaultAsync(
             m => m.TenantId == tenantId
                  && m.ConnectionId == connectionId
                  && m.ExternalMediaId == externalMediaId, ct);

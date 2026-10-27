@@ -50,7 +50,7 @@ public enum SiteBuildStatus
 /// editor; publishing snapshots it into a build whose artifacts are served by
 /// site-host once it becomes the active build.
 /// </summary>
-public sealed class Site : TenantEntity
+public sealed class Site : EnvironmentEntity
 {
     public string Name { get; set; } = string.Empty;
     public SiteRenderMode RenderMode { get; set; } = SiteRenderMode.StaticPrerender;
@@ -95,7 +95,7 @@ public sealed class Site : TenantEntity
 /// build, and its active build is what a domain linked to the branch serves. Release itself is
 /// not one of these; its active build stays <see cref="Site.ActiveBuildId"/>.
 /// </summary>
-public sealed class SitePublishBranch : TenantEntity
+public sealed class SitePublishBranch : EnvironmentEntity
 {
     public Guid SiteId { get; set; }
     public string Branch { get; set; } = string.Empty;
@@ -104,7 +104,7 @@ public sealed class SitePublishBranch : TenantEntity
 }
 
 /// <summary>One publish attempt: an immutable snapshot of the definition and its rendered artifacts.</summary>
-public sealed class SiteBuild : TenantEntity
+public sealed class SiteBuild : EnvironmentEntity
 {
     public Guid SiteId { get; set; }
     /// <summary>The publishing branch built (<see cref="SitePublishBranch"/>); null for release.</summary>

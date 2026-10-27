@@ -13,6 +13,7 @@ using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.MediaWorker;
 
 /// <summary>
@@ -249,7 +250,7 @@ public abstract class MediaConsumerBase(
     protected async Task CompleteAsync(IServiceScope scope, MediaProcessRequested job, IReadOnlyList<string> variantKinds, string? metadataJson, CancellationToken ct)
     {
         var db = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
-        var asset = await db.Assets.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
+        var asset = await db.Assets.IgnoreTenantFilter().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
         if (asset is not null)
         {
             asset.Status = MediaStatus.Ready;
@@ -281,7 +282,7 @@ public abstract class MediaConsumerBase(
         {
             var db = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
             return await db.Variants
-                .IgnoreQueryFilters()
+                .IgnoreTenantFilter()
                 .Where(v => v.AssetId == assetId)
                 .SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
         }
@@ -298,7 +299,7 @@ public abstract class MediaConsumerBase(
         {
             using var scope = services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
-            var asset = await db.Assets.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
+            var asset = await db.Assets.IgnoreTenantFilter().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
             if (asset is not null)
             {
                 asset.Status = MediaStatus.Failed;

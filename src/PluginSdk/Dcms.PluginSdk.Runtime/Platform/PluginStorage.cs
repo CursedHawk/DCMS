@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Platform;
 
 /// <summary>
@@ -129,7 +130,7 @@ public sealed class PluginStorage(IPluginContext caller, CmsDbContext db) : IPlu
     }
 
     private IQueryable<PluginDatum> Mine(Guid? instanceId) =>
-        db.PluginData.IgnoreQueryFilters().Where(d =>
+        db.PluginData.IgnoreTenantFilter().Where(d =>
             d.TenantId == caller.TenantId
             && d.PluginId == caller.PluginId && d.InstanceId == instanceId);
 

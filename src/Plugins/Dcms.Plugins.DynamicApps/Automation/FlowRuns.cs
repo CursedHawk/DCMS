@@ -179,11 +179,11 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
         // ON CONFLICT is the idempotency: a redelivered event or a second replica's schedule tick
         // finds its run already there and creates nothing.
         var created = await db.Database.SqlQuery<Guid>($"""
-            INSERT INTO apps.flow_runs ("Id", "TenantId", "InstanceId", "FlowId", "FlowApiName", "Revision", "FlowHash", "TriggerEventId",
+            INSERT INTO apps.flow_runs ("Id", "TenantId", "EnvironmentId", "InstanceId", "FlowId", "FlowApiName", "Revision", "FlowHash", "TriggerEventId",
                 "TriggerJson", "Status", "Attempts", "NextAttemptAt", "CorrelationId", "CausationId", "Depth", "Writes", "Error", "CreatedAt", "FinishedAt")
-            VALUES ({Guid.NewGuid()}, {context.TenantId}, {InstanceId}, {flow.Id}, {flow.ApiName}, {revision}, {hash}, {trigger.EventId},
+            VALUES ({Guid.NewGuid()}, {context.TenantId}, {context.EnvironmentId}, {InstanceId}, {flow.Id}, {flow.ApiName}, {revision}, {hash}, {trigger.EventId},
                 {trigger_}::jsonb, {status}, 0, {now}, {trigger.CorrelationId}, {trigger.CausationId}, {trigger.Depth}, 0, {refused}, {now}, {finished})
-            ON CONFLICT ("TenantId", "InstanceId", "TriggerEventId", "FlowId", "FlowHash") DO NOTHING
+            ON CONFLICT ("TenantId", "EnvironmentId", "InstanceId", "TriggerEventId", "FlowId", "FlowHash") DO NOTHING
             RETURNING "Id" AS "Value"
             """).ToListAsync(ct);
         if (created.Count > 0)

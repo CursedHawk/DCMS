@@ -294,8 +294,8 @@ public class JobEndpointTests(AdminApiFixture fixture)
         await SqlAsync("""
             INSERT INTO tenancy.tenant_memberships ("Id", "TenantId", "UserId", "Email", "CreatedAt")
             VALUES (@m, @tenant, @user, @email, now());
-            INSERT INTO tenancy.member_roles ("Id", "TenantId", "MembershipId", "TenantRoleId")
-            SELECT gen_random_uuid(), @tenant, @m, r."Id" FROM tenancy.tenant_roles r
+            INSERT INTO tenancy.member_roles ("Id", "TenantId", "EnvironmentId", "MembershipId", "TenantRoleId")
+            SELECT gen_random_uuid(), @tenant, r."EnvironmentId", @m, r."Id" FROM tenancy.tenant_roles r
             WHERE r."TenantId" = @tenant AND r."Name" = @role;
             """, ct, ("m", Guid.NewGuid()), ("tenant", tenantId), ("user", userId),
             ("email", $"m-{userId:N}@dcms.test"), ("role", roleName));

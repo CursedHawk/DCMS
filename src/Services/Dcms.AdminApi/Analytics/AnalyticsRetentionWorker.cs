@@ -155,7 +155,7 @@ public sealed class AnalyticsRetentionWorker(
             // IgnoreQueryFilters because retention is cross-tenant by nature and this worker
             // has no ambient tenant — the same reason the site builder ignores them.
             var deleted = await db.Events
-                .IgnoreQueryFilters()
+                .IgnoreTenantFilter()
                 .Where(e => e.OccurredAt < cutoff)
                 .OrderBy(e => e.Id)
                 .Take(BatchSize)

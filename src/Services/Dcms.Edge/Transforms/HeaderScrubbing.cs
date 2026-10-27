@@ -53,13 +53,13 @@ public static class HeaderScrubbing
     private static readonly string[] SiteAttributionHeaders = ["X-Dcms-Site", "X-Dcms-Site-Host"];
 
     /// <summary>
-    /// Headers that select a tenant or mark a site preview. These are legitimate <b>client</b> headers
+    /// Headers that select a tenant or its environment (ADR 0028), or mark a site preview. These are legitimate <b>client</b> headers
     /// on the operator plane — the admin SPA sends <c>X-Dcms-Tenant</c> and
     /// <c>TenantMembershipMiddleware</c> authorises the caller's membership of whatever it names
     /// — so they are scrubbed only on public-plane routes, where the caller is an anonymous
     /// visitor and the tenant is determined by the Host header instead.
     /// </summary>
-    private static readonly string[] TenantSelectionHeaders = ["X-Dcms-Tenant", "X-Dcms-Preview"];
+    private static readonly string[] TenantSelectionHeaders = ["X-Dcms-Tenant", "X-Dcms-Environment", "X-Dcms-Preview"];
 
     /// <summary>
     /// Strips the always-untrusted headers from every request. Register first, before routing.

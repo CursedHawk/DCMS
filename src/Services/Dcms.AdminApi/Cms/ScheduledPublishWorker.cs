@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Cms;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Cms;
 
 /// <summary>
@@ -66,8 +67,8 @@ public sealed class ScheduledPublishWorker(
         // that pointed into another tenant is "not found" rather than published (ADR 0015).
         foreach (var schedule in due)
         {
-            using var rls = RlsScope.Tenant(schedule.TenantId);
-            var item = await db.ContentItems.IgnoreQueryFilters()
+            using var rls = RlsScope.Environment(schedule.TenantId, schedule.EnvironmentId);
+            var item = await db.ContentItems.IgnoreTenantFilter()
                 .FirstOrDefaultAsync(c => c.Id == schedule.ItemId && c.TenantId == schedule.TenantId, ct);
             if (item is null)
             {

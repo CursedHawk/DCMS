@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
@@ -55,7 +56,7 @@ public sealed class ChatHub(
         // A hub connection resolves no tenant of its own; the query string names one (ADR 0015).
         using var rls = RlsScope.Tenant(tenantId);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-        var roleIds = await tenancy.Memberships.IgnoreQueryFilters()
+        var roleIds = await tenancy.Memberships.IgnoreTenantFilter()
             .Where(m => m.TenantId == tenantId && m.UserId == userId)
             .SelectMany(m => m.Roles.Select(r => r.TenantRoleId))
             .ToListAsync();
@@ -63,7 +64,7 @@ public sealed class ChatHub(
         {
             return new HashSet<string>(StringComparer.Ordinal);
         }
-        var perms = await tenancy.TenantRolePermissions.IgnoreQueryFilters()
+        var perms = await tenancy.TenantRolePermissions.IgnoreTenantFilter()
             .Where(p => roleIds.Contains(p.TenantRoleId))
             .Select(p => p.Permission)
             .ToListAsync();
@@ -166,7 +167,7 @@ public sealed class ChatHub(
         using var scope = services.CreateScope();
         using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
-        var exists = await db.Conversations.IgnoreQueryFilters()
+        var exists = await db.Conversations.IgnoreTenantFilter()
             .AnyAsync(c => c.Id == conversationId && c.TenantId == tenantId);
         if (!exists)
         {
@@ -231,7 +232,7 @@ public sealed class ChatHub(
         using var scope = services.CreateScope();
         using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
-        var conversation = await db.Conversations.IgnoreQueryFilters()
+        var conversation = await db.Conversations.IgnoreTenantFilter()
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.TenantId == tenantId);
         if (conversation is null)
         {
@@ -259,14 +260,14 @@ public sealed class ChatHub(
         using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
 
-        var conversation = await db.Conversations.IgnoreQueryFilters()
+        var conversation = await db.Conversations.IgnoreTenantFilter()
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.TenantId == tenantId);
         if (conversation is null || conversation.Status == ChatConversationStatus.Closed)
         {
             throw new HubException("Conversation is not available.");
         }
 
-        var firstFromVisitor = sender == ChatSender.Visitor && !await db.Messages.IgnoreQueryFilters()
+        var firstFromVisitor = sender == ChatSender.Visitor && !await db.Messages.IgnoreTenantFilter()
             .AnyAsync(m => m.TenantId == tenantId && m.ConversationId == conversationId && m.Sender == ChatSender.Visitor);
 
         var now = DateTimeOffset.UtcNow;

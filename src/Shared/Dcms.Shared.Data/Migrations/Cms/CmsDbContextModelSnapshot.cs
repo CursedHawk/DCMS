@@ -78,6 +78,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -113,7 +116,7 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "Slug")
+                    b.HasIndex("TenantId", "EnvironmentId", "Slug")
                         .IsUnique();
 
                     b.ToTable("api_connections", "cms");
@@ -130,6 +133,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
                         .HasColumnType("jsonb");
 
                     b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("FetchedAt")
@@ -179,6 +185,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
                     b.Property<Guid?>("CurrentDraftVersionId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("PluginInstanceId")
                         .HasColumnType("uuid");
 
@@ -206,7 +215,7 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "PluginInstanceId", "ContentType", "Slug")
+                    b.HasIndex("TenantId", "EnvironmentId", "PluginInstanceId", "ContentType", "Slug")
                         .IsUnique();
 
                     b.HasIndex("TenantId", "PluginInstanceId", "ContentType", "UpdatedAt", "Id")
@@ -227,6 +236,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.Property<string>("ContextJson")
                         .HasColumnType("jsonb");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
@@ -269,6 +281,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ItemId")
                         .HasColumnType("uuid");
 
@@ -304,6 +319,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("InstanceId")
                         .HasColumnType("uuid");
 
@@ -334,10 +352,10 @@ namespace Dcms.Shared.Data.Migrations.Cms
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("DataJson"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("DataJson"), new[] { "jsonb_path_ops" });
 
-                    b.HasIndex("TenantId", "PluginId", "InstanceId", "Collection", "Key")
+                    b.HasIndex("TenantId", "EnvironmentId", "PluginId", "InstanceId", "Collection", "Key")
                         .IsUnique();
 
-                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "PluginId", "InstanceId", "Collection", "Key"), false);
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "EnvironmentId", "PluginId", "InstanceId", "Collection", "Key"), false);
 
                     b.ToTable("plugin_data", "plugins");
                 });
@@ -364,6 +382,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -394,7 +415,7 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.HasIndex("TenantId", "PluginId");
 
-                    b.HasIndex("TenantId", "Slug")
+                    b.HasIndex("TenantId", "EnvironmentId", "Slug")
                         .IsUnique();
 
                     b.ToTable("plugin_instances", "plugins");
@@ -409,6 +430,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
                     b.Property<string>("Ciphertext")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
@@ -431,7 +455,7 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "InstanceId", "Name")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId", "Name")
                         .IsUnique();
 
                     b.ToTable("plugin_secrets", "plugins");
@@ -445,6 +469,9 @@ namespace Dcms.Shared.Data.Migrations.Cms
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Error")
                         .HasColumnType("text");

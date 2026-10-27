@@ -31,6 +31,9 @@ public sealed class JobQueue(
         {
             Id = spec.Id ?? Guid.NewGuid(),
             TenantId = spec.TenantId,
+            EnvironmentId = spec.EnvironmentId
+                ?? (spec.TenantId is { } tenant && Dcms.Shared.Data.Rls.RlsScope.EnvironmentFor(tenant) is { } environment && environment != tenant
+                    ? environment : null),
             ParentId = spec.ParentId,
             Kind = spec.Kind,
             Lane = spec.Lane,

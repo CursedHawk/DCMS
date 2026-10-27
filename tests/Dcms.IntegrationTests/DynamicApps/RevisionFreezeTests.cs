@@ -19,10 +19,11 @@ public sealed class RevisionFreezeTests(AdminApiFixture fixture)
         await conn.OpenAsync(ct);
 
         var id = Guid.NewGuid();
+        var tenant = Guid.NewGuid();
         await ExecAsync(conn, $"""
-            INSERT INTO apps.revisions ("Id", "TenantId", "AppId", "Number", "Status", "Source", "Snapshot", "Hash",
+            INSERT INTO apps.revisions ("Id", "TenantId", "EnvironmentId", "AppId", "Number", "Status", "Source", "Snapshot", "Hash",
                                         "SchemaVersion", "CreatedAt", "UpdatedAt")
-            VALUES ('{id}', '{Guid.NewGuid()}', '{Guid.NewGuid()}', 1, 'Draft', 'Human', '{"{}"}', 'h1', 1, now(), now())
+            VALUES ('{id}', '{tenant}', '{tenant}', '{Guid.NewGuid()}', 1, 'Draft', 'Human', '{"{}"}', 'h1', 1, now(), now())
             """, ct);
 
         // A draft is edited in place.

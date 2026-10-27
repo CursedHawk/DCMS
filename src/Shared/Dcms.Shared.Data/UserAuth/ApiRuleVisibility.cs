@@ -60,7 +60,7 @@ public static class ApiRuleVisibility
     private static async Task<IReadOnlyDictionary<Guid, ApiAccess>> LoadAsync(UserAuthDbContext db, Guid tenantId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        return await db.ApiRules.IgnoreQueryFilters().AsNoTracking()
+        return await db.ApiRules.IgnoreTenantFilter().AsNoTracking()
             .Where(r => r.TenantId == tenantId)
             .ToDictionaryAsync(r => r.InstanceId, r => r.Access, ct);
     }

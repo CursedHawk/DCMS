@@ -8,7 +8,7 @@ namespace Dcms.Shared.Data.Cms;
 /// </summary>
 // Transport for a change that is audited by the very transaction enqueuing it.
 [AuditIgnore]
-public sealed class ContentOutboxMessage : TenantEntity
+public sealed class ContentOutboxMessage : EnvironmentEntity
 {
     public string Subject { get; set; } = string.Empty;
     public string PayloadJson { get; set; } = string.Empty;

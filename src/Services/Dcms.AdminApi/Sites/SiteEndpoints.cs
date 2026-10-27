@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Sites;
 
 public static class SiteEndpoints
@@ -1065,7 +1066,7 @@ public static class SiteEndpoints
             Site? site;
             using (RlsScope.Platform())
             {
-                site = await db.Sites.IgnoreQueryFilters()
+                site = await db.Sites.IgnoreTenantFilter()
                     .FirstOrDefaultAsync(s => s.GitRepoFullName == repoFull, ct);
             }
             if (site is null) return Results.Ok(new { ignored = "unknown repo" });
@@ -1078,7 +1079,7 @@ public static class SiteEndpoints
             var branch = gitRef[heads.Length..];
             var publishBranch = PublishBranchKey(branch);
             if (publishBranch is not null &&
-                !await db.PublishBranches.IgnoreQueryFilters().AnyAsync(p => p.SiteId == site.Id && p.Branch == publishBranch, ct))
+                !await db.PublishBranches.IgnoreTenantFilter().AnyAsync(p => p.SiteId == site.Id && p.Branch == publishBranch, ct))
             {
                 return Results.Ok(new { ignored = "not a publishing branch" });
             }
@@ -1101,7 +1102,7 @@ public static class SiteEndpoints
             await ReapStaleBuildsAsync(db, site.Id, ct);
 
             // Coalesce: never stack builds for the same site and branch.
-            var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
+            var inFlight = await db.Builds.IgnoreTenantFilter().AnyAsync(
                 b => b.SiteId == site.Id && b.Branch == publishBranch &&
                      (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
             if (inFlight) return Results.Ok(new { skipped = "build in flight" });
@@ -1300,11 +1301,11 @@ public static class SiteEndpoints
             if (!git.Enabled) return;
 
             var db = scope.GetRequiredService<SitesDbContext>();
-            var site = await db.Sites.IgnoreQueryFilters()
+            var site = await db.Sites.IgnoreTenantFilter()
                 .FirstOrDefaultAsync(s => s.Id == siteId && s.TenantId == tenantId, ct);
             if (site is null || !site.RenderMode.IsGitBacked() || site.GitRepoFullName is null) return;
 
-            var built = await db.Builds.AsNoTracking().IgnoreQueryFilters()
+            var built = await db.Builds.AsNoTracking().IgnoreTenantFilter()
                 .Where(b => b.Id == completedBuildId)
                 .Select(b => new { b.GitCommitSha, b.Branch })
                 .FirstOrDefaultAsync(ct);
@@ -1314,7 +1315,7 @@ public static class SiteEndpoints
             // has nothing to catch up.
             var publishBranch = built?.Branch;
             if (publishBranch is not null &&
-                !await db.PublishBranches.IgnoreQueryFilters().AnyAsync(p => p.SiteId == site.Id && p.Branch == publishBranch, ct))
+                !await db.PublishBranches.IgnoreTenantFilter().AnyAsync(p => p.SiteId == site.Id && p.Branch == publishBranch, ct))
                 return;
 
             var release = publishBranch ?? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
@@ -1326,7 +1327,7 @@ public static class SiteEndpoints
             // Something is already building (a manual redeploy, or a redelivery of this same
             // terminal event that already queued the catch-up): let it be — its own completion
             // re-checks the head, so the chain still converges on the latest commit.
-            var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
+            var inFlight = await db.Builds.IgnoreTenantFilter().AnyAsync(
                 b => b.SiteId == site.Id && b.Branch == publishBranch &&
                      (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
             if (inFlight) return;
@@ -1371,7 +1372,7 @@ public static class SiteEndpoints
             {
                 return true;
             }
-            return await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+            return await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
                 .AnyAsync(p => p.TenantId == tenantId && tracking.Contains(p.PluginId) && p.Enabled, ct);
         }
         catch
@@ -1398,7 +1399,7 @@ public static class SiteEndpoints
     private static async Task ReapStaleBuildsAsync(SitesDbContext db, Guid siteId, CancellationToken ct)
     {
         var cutoff = DateTimeOffset.UtcNow - BuildStaleAfter;
-        var stale = await db.Builds.IgnoreQueryFilters()
+        var stale = await db.Builds.IgnoreTenantFilter()
             .Where(b => b.SiteId == siteId
                 && (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building)
                 && b.CreatedAt < cutoff)

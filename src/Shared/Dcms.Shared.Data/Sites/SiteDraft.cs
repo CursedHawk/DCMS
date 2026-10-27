@@ -8,7 +8,7 @@ namespace Dcms.Shared.Data.Sites;
 /// its own in-progress edits. <see cref="BaseSha"/> records the branch HEAD the draft
 /// was loaded from, so a commit can detect that the branch moved underneath it.
 /// </summary>
-public sealed class SiteDraft : TenantEntity
+public sealed class SiteDraft : EnvironmentEntity
 {
     public Guid SiteId { get; set; }
 

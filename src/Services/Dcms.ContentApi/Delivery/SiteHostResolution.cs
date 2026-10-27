@@ -44,6 +44,8 @@ public static class SiteHostResolution
             return;
         }
         request.Headers[TenancyServiceCollectionExtensions.TenantHeader] = route.TenantSlug;
+        // The host names one site, and the site one environment (ADR 0028).
+        request.Headers[EnvironmentResolution.Header] = route.EnvironmentName;
         request.Headers[SiteHeader] = route.SiteId.ToString();
         request.Headers[SiteHostHeader] = host.ToLowerInvariant();
         await next(context);

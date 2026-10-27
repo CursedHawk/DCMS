@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
@@ -105,7 +106,7 @@ public static class MetaOAuthEndpoints
             MetaOAuthState? pending;
             using (RlsScope.Platform())
             {
-                pending = await db.OAuthStates.IgnoreQueryFilters()
+                pending = await db.OAuthStates.IgnoreTenantFilter()
                     .FirstOrDefaultAsync(s => s.StateHash == hash, ct);
             }
 
@@ -118,7 +119,8 @@ public static class MetaOAuthEndpoints
                 return Results.BadRequest(new { error = "This connection link is no longer valid. Start again." });
             }
 
-            using var rls = RlsScope.Tenant(pending.TenantId);
+            // The environment the connection was started in (ADR 0028).
+            using var rls = RlsScope.Environment(pending.TenantId, pending.EnvironmentId);
             pending.ConsumedAt = DateTimeOffset.UtcNow;
 
             try
@@ -153,7 +155,7 @@ public static class MetaOAuthEndpoints
 
                     // Reconnecting updates the existing row rather than adding one, so a
                     // re-consent replaces the token instead of leaving a stale one behind.
-                    var existing = await db.Connections.IgnoreQueryFilters().FirstOrDefaultAsync(
+                    var existing = await db.Connections.IgnoreTenantFilter().FirstOrDefaultAsync(
                         c => c.TenantId == pending.TenantId
                              && c.Provider == account.Provider
                              && c.ExternalAccountId == account.ExternalAccountId, ct);

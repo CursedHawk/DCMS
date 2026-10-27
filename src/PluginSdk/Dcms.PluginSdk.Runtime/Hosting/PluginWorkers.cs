@@ -137,6 +137,8 @@ public sealed class PluginEventConsumer(
                     {
                         if (evt is not null)
                         {
+                            // In the environment the event was raised in (ADR 0028).
+                            using var environment = msg.Scope(evt.TenantId);
                             await runner.RunAsync(evt.TenantId, pluginId, instanceId: null, async (ctx, sp) =>
                             {
                                 var payload = JsonSerializer.Deserialize(evt.PayloadJson, subscription.EventType, ContractDescriptorBuilder.Json)!;
@@ -287,6 +289,7 @@ public sealed class PluginJobConsumer(
         try
         {
             await using var heartbeat = AckHeartbeat.Start(msg, TimeSpan.FromMinutes(1), logger);
+            using var environment = msg.Scope(job.TenantId);
             await runner.RunAsync(job.TenantId, job.PluginId, job.InstanceId, async (ctx, sp) =>
             {
                 JsonElement? payload = job.PayloadJson is null ? null : JsonDocument.Parse(job.PayloadJson).RootElement.Clone();
@@ -386,7 +389,7 @@ public sealed class PluginJobScheduler(
         List<(Guid TenantId, string PluginId)> active;
         using (RlsScope.Platform())
         {
-            active = (await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+            active = (await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
                     .Where(p => p.Enabled && pluginIds.Contains(p.PluginId))
                     .Select(p => new { p.TenantId, p.PluginId })
                     .Distinct()

@@ -57,6 +57,7 @@ public sealed class ContentEventBridge(
                     {
                         if (msg.Data is { } evt)
                         {
+                            using var environment = msg.Scope(evt.TenantId);
                             await BridgeAsync(msg.Subject == Subjects.ContentPublished, evt, stoppingToken);
                         }
                         await msg.AckAsync(cancellationToken: stoppingToken);

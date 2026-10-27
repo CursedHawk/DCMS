@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Dcms.Shared.Audit\Dcms.Shared.Audit.csproj" />
     <ProjectReference Include="..\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="..\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
     <ProjectReference Include="..\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
   </ItemGroup>

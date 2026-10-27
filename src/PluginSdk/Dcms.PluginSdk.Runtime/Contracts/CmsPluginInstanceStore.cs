@@ -3,6 +3,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Contracts;
 
 /// <summary>
@@ -18,7 +19,7 @@ public sealed class CmsPluginInstanceStore(CmsDbContext db, PluginInstanceCache 
     public async Task<PluginInstanceContext?> FindAnyAsync(Guid tenantId, string slug, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        var row = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var row = await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == slug, ct);
         return row is null ? null : PluginInstanceCache.ToContext(row);
     }

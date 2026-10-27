@@ -10,6 +10,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy.Usage;
 
 /// <summary>
@@ -63,17 +64,17 @@ public static class TenantUsageEndpoints
             if (!console.Allowed) return Results.Forbid();
             using var rls = RlsScope.Tenant(tenantId);
 
-            var domains = await db.Domains.IgnoreQueryFilters().AsNoTracking()
+            var domains = await db.Domains.IgnoreTenantFilter().AsNoTracking()
                 .Where(d => d.TenantId == tenantId)
                 .OrderByDescending(d => d.IsPrimary).ThenBy(d => d.Hostname)
                 .Select(d => new { hostname = d.Hostname, verified = d.VerifiedAt != null, primary = d.IsPrimary, createdAt = d.CreatedAt })
                 .ToListAsync(ct);
-            var members = await db.Memberships.IgnoreQueryFilters().AsNoTracking()
+            var members = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == tenantId)
                 .OrderBy(m => m.Email)
                 .Select(m => new { userId = m.UserId, email = m.Email, createdAt = m.CreatedAt, roles = m.Roles.Select(r => r.Role!.Name).ToList() })
                 .ToListAsync(ct);
-            var plugins = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+            var plugins = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
                 .Where(p => p.TenantId == tenantId)
                 .OrderBy(p => p.Name)
                 .Select(p => new { id = p.Id, pluginId = p.PluginId, name = p.Name, slug = p.Slug, enabled = p.Enabled, createdAt = p.CreatedAt })
@@ -93,7 +94,7 @@ public static class TenantUsageEndpoints
         HttpContext http, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        var last = await db.Usage.IgnoreQueryFilters().AsNoTracking()
+        var last = await db.Usage.IgnoreTenantFilter().AsNoTracking()
             .Where(u => u.TenantId == tenantId).Select(u => (DateTimeOffset?)u.MeasuredAt).FirstOrDefaultAsync(ct);
         var wait = last + MinInterval - DateTimeOffset.UtcNow;
         if (wait > TimeSpan.Zero)
@@ -118,7 +119,7 @@ public static class TenantUsageEndpoints
     private static async Task<object> SnapshotAsync(Guid tenantId, TenancyDbContext db, MediaDbContext media, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        var usage = await db.Usage.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId, ct);
+        var usage = await db.Usage.IgnoreTenantFilter().AsNoTracking().FirstOrDefaultAsync(u => u.TenantId == tenantId, ct);
         return new
         {
             measuredAt = usage?.MeasuredAt,

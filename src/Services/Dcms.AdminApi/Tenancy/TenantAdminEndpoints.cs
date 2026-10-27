@@ -27,6 +27,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -320,7 +321,7 @@ public sealed class TenantDeleter(
 
         // Sites first: this is what removes the Forgejo repos and the per-site
         // artifacts, and it leaves the org empty so it can be deleted below.
-        var siteIds = await sites.Sites.IgnoreQueryFilters()
+        var siteIds = await sites.Sites.IgnoreTenantFilter()
             .Where(s => s.TenantId == tenantId).Select(s => s.Id).ToListAsync(ct);
         foreach (var siteId in siteIds)
         {
@@ -332,106 +333,106 @@ public sealed class TenantDeleter(
         // Each schema gets its own transaction — they are separate DbContexts and
         // cannot share one without enlisting a distributed transaction.
         await SweepAsync(cms, manifest, ct,
-            ("cms.ContentVersions", () => cms.ContentVersions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("cms.Outbox", () => cms.Outbox.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("cms.ScheduledPublishes", () => cms.ScheduledPublishes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("cms.ContentItems", () => cms.ContentItems.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.ContentVersions", () => cms.ContentVersions.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.Outbox", () => cms.Outbox.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.ScheduledPublishes", () => cms.ScheduledPublishes.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.ContentItems", () => cms.ContentItems.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             // Plugin documents and Transit-encrypted plugin credentials (dcms.storage / dcms.secrets).
-            ("cms.PluginData", () => cms.PluginData.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("cms.PluginSecrets", () => cms.PluginSecrets.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("cms.PluginInstances", () => cms.PluginInstances.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("cms.PluginData", () => cms.PluginData.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.PluginSecrets", () => cms.PluginSecrets.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.PluginInstances", () => cms.PluginInstances.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(media, manifest, ct,
-            ("media.Variants", () => media.Variants.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("media.Assets", () => media.Assets.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("media.Folders", () => media.Folders.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("media.Variants", () => media.Variants.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("media.Assets", () => media.Assets.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("media.Folders", () => media.Folders.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(forms, manifest, ct,
-            ("forms.Submissions", () => forms.Submissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("forms.Submissions", () => forms.Submissions.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // Dynamic Apps: every application's configuration history (ADR 0021). Changes before the
         // revisions they belong to, revisions before the app rows that point at them.
         await SweepAsync(apps, manifest, ct,
-            ("apps.FlowRunSteps", () => apps.FlowRunSteps.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.FlowRuns", () => apps.FlowRuns.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.FlowSchedules", () => apps.FlowSchedules.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.SiteViewDefaults", () => apps.SiteViewDefaults.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.SiteViews", () => apps.SiteViews.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.FlowRunSteps", () => apps.FlowRunSteps.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.FlowRuns", () => apps.FlowRuns.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.FlowSchedules", () => apps.FlowSchedules.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.SiteViewDefaults", () => apps.SiteViewDefaults.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.SiteViews", () => apps.SiteViews.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Outbox", () => apps.Outbox.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.UniqueKeys", () => apps.UniqueKeys.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.RelationLinks", () => apps.RelationLinks.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.Records", () => apps.Records.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.Changes", () => apps.Changes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.Revisions", () => apps.Revisions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.Apps", () => apps.Apps.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("apps.UniqueKeys", () => apps.UniqueKeys.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.RelationLinks", () => apps.RelationLinks.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.Records", () => apps.Records.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.Changes", () => apps.Changes.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.Revisions", () => apps.Revisions.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.Apps", () => apps.Apps.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // User Authentication (ADR 0022): the access policy over the tenant's realm. Grants
         // before the roles they point at.
         await SweepAsync(userAuth, manifest, ct,
-            ("userauth.Grants", () => userAuth.Grants.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("userauth.Roles", () => userAuth.Roles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("userauth.Gates", () => userAuth.Gates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("userauth.ApiRules", () => userAuth.ApiRules.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("userauth.Grants", () => userAuth.Grants.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("userauth.Roles", () => userAuth.Roles.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("userauth.Gates", () => userAuth.Gates.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("userauth.ApiRules", () => userAuth.ApiRules.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(search, manifest, ct,
-            ("search.Documents", () => search.Documents.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("search.Documents", () => search.Documents.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(analytics, manifest, ct,
             ("analytics.Events", () => analytics.Events.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("analytics.DailyRollups", () => analytics.DailyRollups.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(chat, manifest, ct,
-            ("chat.Messages", () => chat.Messages.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("chat.Conversations", () => chat.Conversations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("chat.Messages", () => chat.Messages.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("chat.Conversations", () => chat.Conversations.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // BUG-04: the transcripts hold whole AI tool results (draft content, analytics figures)
         // lifted out of the tenant's data, so a purge that left them behind was an erasure gap.
         // Messages and runs are deleted before their conversation so no orphan survives a DB
         // whose cascade is not configured.
         await SweepAsync(ai, manifest, ct,
-            ("ai.Messages", () => ai.Messages.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("ai.Runs", () => ai.Runs.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("ai.Conversations", () => ai.Conversations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Messages", () => ai.Messages.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Runs", () => ai.Runs.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Conversations", () => ai.Conversations.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.UserSettings", () => ai.UserSettings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.Settings", () => ai.Settings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // BUG-04: Meta connections hold Transit-encrypted access/page tokens; purge them too.
         await SweepAsync(social, manifest, ct,
-            ("social.MediaMap", () => social.MediaMap.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("social.SyncStates", () => social.SyncStates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("social.OAuthStates", () => social.OAuthStates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("social.Connections", () => social.Connections.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("social.MediaMap", () => social.MediaMap.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("social.SyncStates", () => social.SyncStates.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("social.OAuthStates", () => social.OAuthStates.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("social.Connections", () => social.Connections.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // BUG-04: the tenant's in-app notifications (the platform_* tables are not tenant-scoped).
         await SweepAsync(notifications, manifest, ct,
-            ("notifications.Recipients", () => notifications.Recipients.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("notifications.Notifications", () => notifications.Notifications.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("notifications.Recipients", () => notifications.Recipients.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("notifications.Notifications", () => notifications.Notifications.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(visitors, manifest, ct,
-            ("visitors.RefreshTokens", () => visitors.RefreshTokens.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("visitors.Accounts", () => visitors.Accounts.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("visitors.RefreshTokens", () => visitors.RefreshTokens.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("visitors.Accounts", () => visitors.Accounts.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(tenancy, manifest, ct,
-            ("tenancy.TableViewShares", () => tenancy.TableViewShares.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.TableViewDefaults", () => tenancy.TableViewDefaults.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.TableViews", () => tenancy.TableViews.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.MemberRoles", () => tenancy.MemberRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.TenantRolePermissions", () => tenancy.TenantRolePermissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.Memberships", () => tenancy.Memberships.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.TenantRoles", () => tenancy.TenantRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.Invitations", () => tenancy.Invitations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.Domains", () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.Usage", () => tenancy.Usage.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.EnvironmentMigrations", () => tenancy.EnvironmentMigrations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.EnvironmentBaselines", () => tenancy.EnvironmentBaselines.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.EnvironmentPolicies", () => tenancy.EnvironmentPolicies.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.EnvironmentLinks", () => tenancy.EnvironmentLinks.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("tenancy.Environments", () => tenancy.Environments.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TableViewShares", () => tenancy.TableViewShares.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TableViewDefaults", () => tenancy.TableViewDefaults.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TableViews", () => tenancy.TableViews.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.MemberRoles", () => tenancy.MemberRoles.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TenantRolePermissions", () => tenancy.TenantRolePermissions.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Memberships", () => tenancy.Memberships.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TenantRoles", () => tenancy.TenantRoles.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Invitations", () => tenancy.Invitations.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Domains", () => tenancy.Domains.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Usage", () => tenancy.Usage.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentMigrations", () => tenancy.EnvironmentMigrations.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentBaselines", () => tenancy.EnvironmentBaselines.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentPolicies", () => tenancy.EnvironmentPolicies.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentLinks", () => tenancy.EnvironmentLinks.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Environments", () => tenancy.Environments.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
         // Nor use it: links to it are rows of the environments that made them (ADR 0026).
         using (RlsScope.Platform())
         {
-            manifest["tenancy.EnvironmentLinksToIt"] = await tenancy.EnvironmentLinks.IgnoreQueryFilters()
+            manifest["tenancy.EnvironmentLinksToIt"] = await tenancy.EnvironmentLinks.IgnoreTenantFilter()
                 .Where(l => l.TargetTenantId == tenantId).ExecuteDeleteAsync(ct);
         }
         // The other environments of its workspace may no longer be promoted into from it.

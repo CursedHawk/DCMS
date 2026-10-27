@@ -67,6 +67,9 @@ namespace Dcms.Shared.Data.Migrations.Chat
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("LastMessageAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -103,6 +106,9 @@ namespace Dcms.Shared.Data.Migrations.Chat
                         .HasColumnType("character varying(8000)");
 
                     b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("ReadAt")

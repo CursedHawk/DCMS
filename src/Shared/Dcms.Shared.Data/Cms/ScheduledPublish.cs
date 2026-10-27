@@ -12,7 +12,7 @@ public enum ScheduledPublishStatus
 /// rows with FOR UPDATE SKIP LOCKED, so multiple admin-api replicas can run the
 /// scheduler without double-publishing.
 /// </summary>
-public sealed class ScheduledPublish : TenantEntity
+public sealed class ScheduledPublish : EnvironmentEntity
 {
     public Guid ItemId { get; set; }
     public Guid VersionId { get; set; }

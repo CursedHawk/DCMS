@@ -19,10 +19,45 @@ namespace Dcms.Shared.Data.Migrations.Search
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("search")
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Dcms.Shared.Data.Audit.AuditOutboxMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("audit_outbox", "audit", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
 
             modelBuilder.Entity("Dcms.Shared.Data.Search.SearchDocument", b =>
                 {
@@ -41,6 +76,9 @@ namespace Dcms.Shared.Data.Migrations.Search
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("PluginInstanceId")
                         .HasColumnType("uuid");
@@ -79,7 +117,7 @@ namespace Dcms.Shared.Data.Migrations.Search
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Title"), "GIN");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Title"), new[] { "gin_trgm_ops" });
 
-                    b.HasIndex("TenantId", "ContentItemId")
+                    b.HasIndex("TenantId", "EnvironmentId", "ContentItemId")
                         .IsUnique();
 
                     b.ToTable("search_documents", "search");

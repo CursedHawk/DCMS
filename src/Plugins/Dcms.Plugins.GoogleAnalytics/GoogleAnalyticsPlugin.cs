@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Rls;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dcms.PluginSdk.Abstractions;
@@ -95,7 +96,7 @@ public sealed partial class GoogleAnalyticsPlugin : IPlugin
                 return Results.Ok(new { });
             }
 
-            var key = $"t:{tenantId}:ga:sites";
+            var key = $"t:{RlsScope.EnvironmentFor(tenantId) ?? tenantId}:ga:sites";
             var sites = await cache.GetAsync<Dictionary<string, string>>(key, ct);
             if (sites is null)
             {

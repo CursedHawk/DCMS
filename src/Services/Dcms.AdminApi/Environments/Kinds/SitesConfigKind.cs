@@ -7,6 +7,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Environments.Kinds;
 
 /// <summary>
@@ -31,7 +32,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
-        var sites = await db.Sites.IgnoreQueryFilters().AsNoTracking()
+        var sites = await db.Sites.IgnoreTenantFilter().AsNoTracking()
             .Where(s => s.TenantId == tenantId && s.RenderMode != SiteRenderMode.StaticFiles)
             .ToListAsync(ct);
         var items = new List<EnvironmentConfigItem>(sites.Count);
@@ -98,7 +99,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
     private Task<Site?> FindAsync(Guid tenantId, string key, CancellationToken ct)
     {
         var id = Guid.TryParse(key, out var g) ? g : Guid.Empty;
-        return db.Sites.IgnoreQueryFilters()
+        return db.Sites.IgnoreTenantFilter()
             .FirstOrDefaultAsync(s => s.TenantId == tenantId && (s.EnvironmentKey == key || (s.EnvironmentKey == null && s.Id == id)), ct);
     }
 
@@ -115,7 +116,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
         // rls: platform -- one site's repository name in each of this workspace's environments,
         // which the deployment already reviewed; nothing else is read.
         using var rls = Dcms.Shared.Data.Rls.RlsScope.Platform();
-        return await db.Sites.IgnoreQueryFilters().AsNoTracking()
+        return await db.Sites.IgnoreTenantFilter().AsNoTracking()
             .Where(s => environments.Contains(s.TenantId) && s.GitRepoFullName != null
                         && (s.EnvironmentKey == key || (s.EnvironmentKey == null && s.Id == id)))
             .Select(s => s.GitRepoFullName!)

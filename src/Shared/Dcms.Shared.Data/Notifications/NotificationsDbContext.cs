@@ -133,7 +133,7 @@ public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> opt
             e.HasIndex(n => new { n.TenantId, n.DedupeKey }).IsUnique();
             e.HasIndex(n => new { n.TenantId, n.CreatedAt });
 
-            e.HasQueryFilter(n => n.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, n => n.TenantId == CurrentTenantId);
         });
 
         builder.Entity<NotificationRecipient>(e =>
@@ -160,7 +160,7 @@ public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> opt
                 .HasFilter("\"ReadAt\" IS NULL AND \"DismissedAt\" IS NULL")
                 .HasDatabaseName("IX_recipients_unread");
 
-            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId);
         });
 
         // No query filter on either of the two below, and that is the point of them being

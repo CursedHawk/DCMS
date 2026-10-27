@@ -27,6 +27,7 @@ public static class TenancyServiceCollectionExtensions
         services.AddScoped<ITenantContext, FinbuckleTenantContext>();
         services.AddMemoryCache();
         services.AddScoped<TenantStore>();
+        services.AddScoped<EnvironmentStore>();
         return services;
     }
 

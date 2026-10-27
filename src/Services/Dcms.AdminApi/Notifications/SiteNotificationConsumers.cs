@@ -8,6 +8,7 @@ using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Notifications;
 
 /// <summary>
@@ -117,7 +118,7 @@ internal static class SiteNameLookup
         // rls: event tenant. Runs inside NotificationConsumerBase, which acts as the event's tenant
         // for the whole handler (ADR 0015); the explicit TenantId predicates below are EF's half.
         var db = scope.GetRequiredService<SitesDbContext>();
-        var name = await db.Sites.AsNoTracking().IgnoreQueryFilters()
+        var name = await db.Sites.AsNoTracking().IgnoreTenantFilter()
             .Where(s => s.TenantId == tenantId && s.Id == siteId)
             .Select(s => s.Name)
             .FirstOrDefaultAsync(ct);
@@ -145,17 +146,17 @@ internal static class SiteBuildBroadcast
         try
         {
             var db = scope.GetRequiredService<SitesDbContext>();
-            var build = await db.Builds.AsNoTracking().IgnoreQueryFilters()
+            var build = await db.Builds.AsNoTracking().IgnoreTenantFilter()
                 .FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == siteId, ct);
             if (build is null) return;
 
             // A publishing branch's build is live on that branch's domains (#277).
             var activeBuildId = build.Branch is null
-                ? await db.Sites.AsNoTracking().IgnoreQueryFilters()
+                ? await db.Sites.AsNoTracking().IgnoreTenantFilter()
                     .Where(s => s.Id == siteId && s.TenantId == tenantId)
                     .Select(s => s.ActiveBuildId)
                     .FirstOrDefaultAsync(ct)
-                : await db.PublishBranches.AsNoTracking().IgnoreQueryFilters()
+                : await db.PublishBranches.AsNoTracking().IgnoreTenantFilter()
                     .Where(p => p.SiteId == siteId && p.TenantId == tenantId && p.Branch == build.Branch)
                     .Select(p => p.ActiveBuildId)
                     .FirstOrDefaultAsync(ct);

@@ -32,4 +32,7 @@ public sealed class FinbuckleTenantContext(
     public bool IsSuspended => Current?.Status == TenantStatus.Suspended;
 
     public bool HasEnvironments => Current?.WorkspaceId is not null;
+
+    // ADR 0028: what UseDcmsEnvironment resolved from the request; production otherwise.
+    public Guid? EnvironmentId => EnvironmentResolution.Of(http?.HttpContext) ?? TenantId;
 }

@@ -19,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
@@ -78,7 +79,7 @@ public sealed class ChatBotResponder(
         var cms = sp.GetRequiredService<CmsDbContext>();
         var chat = sp.GetRequiredService<ChatDbContext>();
 
-        var instance = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var instance = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.PluginId == PluginId && p.Enabled, ct);
         if (instance is null)
         {
@@ -86,7 +87,7 @@ public sealed class ChatBotResponder(
         }
         var config = BotConfig.Parse(instance.ConfigJson);
 
-        var conversation = await chat.Conversations.IgnoreQueryFilters()
+        var conversation = await chat.Conversations.IgnoreTenantFilter()
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.TenantId == tenantId, ct);
         if (conversation is null || conversation.Status == ChatConversationStatus.Closed)
         {
@@ -96,7 +97,7 @@ public sealed class ChatBotResponder(
         // A human agent reply takes the conversation over — the bot goes quiet.
         if (config.HumanHandoff)
         {
-            var humanReplied = await chat.Messages.IgnoreQueryFilters()
+            var humanReplied = await chat.Messages.IgnoreTenantFilter()
                 .AnyAsync(m => m.TenantId == tenantId && m.ConversationId == conversationId
                                && m.Sender == ChatSender.Agent, ct);
             if (humanReplied)
@@ -105,7 +106,7 @@ public sealed class ChatBotResponder(
             }
         }
 
-        var history = await chat.Messages.IgnoreQueryFilters()
+        var history = await chat.Messages.IgnoreTenantFilter()
             .Where(m => m.TenantId == tenantId && m.ConversationId == conversationId)
             .OrderByDescending(m => m.SentAt)
             .Take(HistoryLimit)

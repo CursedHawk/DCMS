@@ -89,6 +89,9 @@ namespace Dcms.Shared.Data.Migrations.Jobs
                     b.Property<long>("Done")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid?>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ErrorDetail")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");

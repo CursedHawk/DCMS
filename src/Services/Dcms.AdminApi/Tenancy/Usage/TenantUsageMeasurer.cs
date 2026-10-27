@@ -10,6 +10,7 @@ using Dcms.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy.Usage;
 
 /// <summary>
@@ -62,7 +63,7 @@ public sealed class TenantUsageMeasurer(
             .OrderByDescending(c => c.Bytes)
             .ToList();
 
-        var usage = await db.Usage.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.TenantId == tenantId, ct);
+        var usage = await db.Usage.IgnoreTenantFilter().FirstOrDefaultAsync(u => u.TenantId == tenantId, ct);
         if (usage is null)
         {
             usage = new TenantUsage { TenantId = tenantId };
@@ -185,7 +186,7 @@ public sealed class TenantUsageMeasurer(
 
     private async Task MeasureSitesAsync(Guid tenantId, List<Item> items, CancellationToken ct)
     {
-        var list = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
+        var list = await sites.Sites.IgnoreTenantFilter().AsNoTracking()
             .Where(s => s.TenantId == tenantId)
             .Select(s => new
             {

@@ -12,7 +12,7 @@ namespace Dcms.Shared.Data.Cms;
 /// tenant. Not entity-audited: the contract proxy already records every write as a call.</para>
 /// </summary>
 [AuditIgnore]
-public sealed class PluginDatum : TenantEntity
+public sealed class PluginDatum : EnvironmentEntity
 {
     public string PluginId { get; set; } = string.Empty;
 
@@ -36,7 +36,7 @@ public sealed class PluginDatum : TenantEntity
 /// content-api is internet-facing and must never be able to decrypt a tenant credential.
 /// </summary>
 [AuditIgnore]
-public sealed class PluginSecret : TenantEntity
+public sealed class PluginSecret : EnvironmentEntity
 {
     public string PluginId { get; set; } = string.Empty;
     public Guid InstanceId { get; set; }

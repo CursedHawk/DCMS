@@ -40,6 +40,9 @@ public sealed class Job
     public Guid Id { get; set; }
     public Guid? TenantId { get; set; }
 
+    /// <summary>The environment of the tenant the job runs in (ADR 0028); null for production or a platform job.</summary>
+    public Guid? EnvironmentId { get; set; }
+
     /// <summary>A job made of jobs (a Drive import of twelve files). Progress rolls up at read time.</summary>
     public Guid? ParentId { get; set; }
 
@@ -233,7 +236,7 @@ public class JobsDbContext(DbContextOptions<JobsDbContext> options)
             e.HasIndex(j => new { j.Status, j.UpdatedAt });
 
             // Tenant-less contexts see nothing, rather than the platform rows; see Job.
-            e.HasQueryFilter(j => j.TenantId != null && j.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, j => j.TenantId != null && j.TenantId == CurrentTenantId);
         });
     }
 }

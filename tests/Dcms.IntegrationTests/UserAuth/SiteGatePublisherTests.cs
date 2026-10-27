@@ -30,13 +30,13 @@ public sealed class SiteGatePublisherTests(ContentFlowFixture fixture)
         var staff = Guid.NewGuid();
         var host = $"{app.Tenant}.example.test";
         await ExecuteAsync($$"""
-            INSERT INTO tenancy.domains ("Id","TenantId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt") VALUES
-              ('{{Guid.NewGuid()}}','{{tenantId}}','{{host}}','t',now(),true,'{{site}}',now()),
-              ('{{Guid.NewGuid()}}','{{tenantId}}','unverified.{{host}}','t',NULL,false,'{{site}}',now()),
-              ('{{Guid.NewGuid()}}','{{tenantId}}','other.{{host}}','t',now(),false,'{{other}}',now());
-            INSERT INTO userauth.gates ("Id","TenantId","SiteId","Position","PathPrefix","Access","Groups","CreatedAt","UpdatedAt") VALUES
-              ('{{Guid.NewGuid()}}','{{tenantId}}','{{site}}',2,'/members','SignedIn','{}',now(),now()),
-              ('{{Guid.NewGuid()}}','{{tenantId}}','{{site}}',1,'/portal','Groups','{{{staff}}}',now(),now());
+            INSERT INTO tenancy.domains ("Id","TenantId","EnvironmentId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt") VALUES
+              ('{{Guid.NewGuid()}}','{{tenantId}}','{{tenantId}}','{{host}}','t',now(),true,'{{site}}',now()),
+              ('{{Guid.NewGuid()}}','{{tenantId}}','{{tenantId}}','unverified.{{host}}','t',NULL,false,'{{site}}',now()),
+              ('{{Guid.NewGuid()}}','{{tenantId}}','{{tenantId}}','other.{{host}}','t',now(),false,'{{other}}',now());
+            INSERT INTO userauth.gates ("Id","TenantId","EnvironmentId","SiteId","Position","PathPrefix","Access","Groups","CreatedAt","UpdatedAt") VALUES
+              ('{{Guid.NewGuid()}}','{{tenantId}}','{{tenantId}}','{{site}}',2,'/members','SignedIn','{}',now(),now()),
+              ('{{Guid.NewGuid()}}','{{tenantId}}','{{tenantId}}','{{site}}',1,'/portal','Groups','{{{staff}}}',now(),now());
             """, ct);
 
         (await PublishAsync(tenantId, ct)).Should().BeTrue();

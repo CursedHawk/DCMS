@@ -9,6 +9,7 @@ using Dcms.Shared.Data.DynamicApps;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.DynamicApps.Metadata;
 
 /// <summary>
@@ -28,12 +29,12 @@ internal sealed class DynamicAppsConfigKind(
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
-        var instances = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var instances = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .Where(p => p.TenantId == tenantId && p.PluginId == DynamicAppsPlugin.PluginId)
             .ToDictionaryAsync(p => p.Id, p => p, ct);
         var published = await (
-                from a in apps.Apps.IgnoreQueryFilters().AsNoTracking()
-                join r in apps.Revisions.IgnoreQueryFilters().AsNoTracking() on a.PublishedRevisionId equals r.Id
+                from a in apps.Apps.IgnoreTenantFilter().AsNoTracking()
+                join r in apps.Revisions.IgnoreTenantFilter().AsNoTracking() on a.PublishedRevisionId equals r.Id
                 where a.TenantId == tenantId && r.TenantId == tenantId
                 select new { a.InstanceId, r.Snapshot })
             .ToListAsync(ct);

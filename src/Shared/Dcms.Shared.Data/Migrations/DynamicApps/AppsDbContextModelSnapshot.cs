@@ -89,6 +89,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Op")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -122,7 +125,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "RevisionId", "Seq")
+                    b.HasIndex("TenantId", "EnvironmentId", "RevisionId", "Seq")
                         .IsUnique();
 
                     b.ToTable("changes", "apps");
@@ -143,6 +146,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<string>("Envelope")
                         .IsRequired()
                         .HasColumnType("jsonb");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("EventName")
                         .IsRequired()
@@ -192,6 +198,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 
@@ -236,6 +245,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 
@@ -255,7 +267,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasIndex("TenantId", "InstanceId", "RelationshipId", "TargetId");
 
-                    b.HasIndex("TenantId", "InstanceId", "RelationshipId", "SourceId", "TargetId")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId", "RelationshipId", "SourceId", "TargetId")
                         .IsUnique();
 
                     b.ToTable("relation_links", "apps");
@@ -283,6 +295,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Hash")
                         .IsRequired()
@@ -344,7 +359,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "AppId", "Number")
+                    b.HasIndex("TenantId", "EnvironmentId", "AppId", "Number")
                         .IsUnique();
 
                     b.ToTable("revisions", "apps");
@@ -362,6 +377,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<string>("DefinitionJson")
                         .IsRequired()
                         .HasColumnType("jsonb");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
@@ -411,6 +429,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 
@@ -430,7 +451,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "InstanceId", "TableId", "UserId")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId", "TableId", "UserId")
                         .IsUnique();
 
                     b.ToTable("site_view_defaults", "apps");
@@ -443,6 +464,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ConstraintId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("InstanceId")
@@ -463,7 +487,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasIndex("TenantId", "RecordId");
 
-                    b.HasIndex("TenantId", "InstanceId", "ConstraintId", "Key")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId", "ConstraintId", "Key")
                         .IsUnique();
 
                     b.ToTable("unique_keys", "apps");
@@ -481,6 +505,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<Guid?>("DraftRevisionId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 
@@ -495,7 +522,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "InstanceId")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId")
                         .IsUnique();
 
                     b.ToTable("apps", "apps");
@@ -521,6 +548,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.Property<int>("Depth")
                         .HasColumnType("integer");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Error")
                         .HasMaxLength(4000)
@@ -584,7 +614,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasIndex("TenantId", "InstanceId", "CreatedAt");
 
-                    b.HasIndex("TenantId", "InstanceId", "TriggerEventId", "FlowId", "FlowHash")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId", "TriggerEventId", "FlowId", "FlowHash")
                         .IsUnique();
 
                     b.ToTable("flow_runs", "apps");
@@ -603,6 +633,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.Property<int>("Attempt")
                         .HasColumnType("integer");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Error")
                         .HasMaxLength(4000)
@@ -638,7 +671,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "RunId", "StepId", "Attempt")
+                    b.HasIndex("TenantId", "EnvironmentId", "RunId", "StepId", "Attempt")
                         .IsUnique();
 
                     b.ToTable("flow_run_steps", "apps");
@@ -648,6 +681,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("EveryMinutes")
@@ -669,7 +705,7 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
 
                     b.HasIndex("NextRunAt");
 
-                    b.HasIndex("TenantId", "InstanceId", "FlowId")
+                    b.HasIndex("TenantId", "EnvironmentId", "InstanceId", "FlowId")
                         .IsUnique();
 
                     b.ToTable("flow_schedules", "apps");

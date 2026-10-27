@@ -21,8 +21,17 @@ public sealed class NatsEventPublisher(INatsJSContext jetStream, AuditAmbient am
         where T : IDcmsEvent
     {
         var opts = messageId is null ? null : new NatsJSPubOpts { MsgId = messageId };
+        var headers = BuildHeaders(ambient.Current);
+        // ADR 0028: the environment the event's tenant is in here, for the consumer to act in.
+        if (@event is ITenantEvent tenantEvent
+            && Dcms.Shared.Data.Rls.RlsScope.EnvironmentFor(tenantEvent.TenantId) is { } environment
+            && environment != tenantEvent.TenantId)
+        {
+            headers ??= new NatsHeaders();
+            headers[EventEnvironment.Header] = environment.ToString();
+        }
         var ack = await jetStream.PublishAsync(
-            subject, @event, opts: opts, headers: BuildHeaders(ambient.Current), cancellationToken: ct);
+            subject, @event, opts: opts, headers: headers, cancellationToken: ct);
         ack.EnsureSuccess();
     }
 

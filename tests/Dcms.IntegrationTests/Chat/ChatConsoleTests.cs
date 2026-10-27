@@ -69,8 +69,8 @@ public class ChatConsoleTests(AdminApiFixture fixture)
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO chat.conversations
-                ("Id", "TenantId", "VisitorId", "VisitorName", "Status", "CreatedAt", "LastMessageAt")
-            VALUES (@id, @tenant, NULL, @name, 0, now(), now())
+                ("Id", "TenantId", "EnvironmentId", "VisitorId", "VisitorName", "Status", "CreatedAt", "LastMessageAt")
+            VALUES (@id, @tenant, @tenant, NULL, @name, 0, now(), now())
             """;
         cmd.Parameters.AddWithValue("id", conversationId);
         cmd.Parameters.AddWithValue("tenant", tenantId);

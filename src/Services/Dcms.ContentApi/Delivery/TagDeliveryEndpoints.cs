@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Rls;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
@@ -26,8 +27,8 @@ public static class TagDeliveryEndpoints
     /// <summary>How long a tag index is cached. Short: a publish changes it.</summary>
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);
 
-    /// <summary>Cached separately from the index, and read on every OpenAPI build.</summary>
-    public static string AnyKey(Guid tenantId) => $"t:{tenantId}:tags:any";
+    /// <summary>Cached separately from the index, and read on every OpenAPI build. Per environment (ADR 0028).</summary>
+    public static string AnyKey(Guid tenantId) => $"t:{RlsScope.EnvironmentFor(tenantId) ?? tenantId}:tags:any";
 
     public static IEndpointRouteBuilder MapTagDelivery(this IEndpointRouteBuilder app)
     {
@@ -41,7 +42,7 @@ public static class TagDeliveryEndpoints
                 return Results.NotFound();
             }
 
-            var key = $"t:{tenantId}:tags:index:{contentType ?? "*"}:{field ?? "*"}";
+            var key = $"t:{RlsScope.EnvironmentFor(tenantId) ?? tenantId}:tags:index:{contentType ?? "*"}:{field ?? "*"}";
             var cached = await cache.GetAsync<List<TagEntry>>(key, ct);
             if (cached is null)
             {

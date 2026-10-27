@@ -17,6 +17,7 @@ using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 
+using Dcms.Shared.Data;
 namespace Dcms.SiteBuilder;
 
 /// <summary>
@@ -214,7 +215,7 @@ public sealed class SitePublishConsumer(
     {
         var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
 
-        var build = await db.Builds.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == job.BuildId, ct);
+        var build = await db.Builds.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.Id == job.BuildId, ct);
         if (build is null)
         {
             logger.LogWarning("Build {BuildId} not found; skipping.", job.BuildId);
@@ -252,9 +253,9 @@ public sealed class SitePublishConsumer(
         // finishes after a manual rollback cannot overwrite a newer live artifact.
         //
         // A publishing branch's build (#277) advances that branch's pointer, never release's.
-        var site = await db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == build.SiteId, ct);
+        var site = await db.Sites.IgnoreTenantFilter().FirstOrDefaultAsync(s => s.Id == build.SiteId, ct);
         var target = site is null || build.Branch is null ? null
-            : await db.PublishBranches.IgnoreQueryFilters()
+            : await db.PublishBranches.IgnoreTenantFilter()
                 .FirstOrDefaultAsync(b => b.SiteId == site.Id && b.Branch == build.Branch, ct);
         if (site is not null && (build.Branch is null || target is not null))
         {
@@ -262,7 +263,7 @@ public sealed class SitePublishConsumer(
             var supersedes = true;
             if (current is { } activeId && activeId != build.Id)
             {
-                var activeCreatedAt = await db.Builds.IgnoreQueryFilters().AsNoTracking()
+                var activeCreatedAt = await db.Builds.IgnoreTenantFilter().AsNoTracking()
                     .Where(b => b.Id == activeId)
                     .Select(b => (DateTimeOffset?)b.CreatedAt)
                     .FirstOrDefaultAsync(ct);
@@ -448,7 +449,7 @@ public sealed class SitePublishConsumer(
         {
             using var scope = services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
-            var build = await db.Builds.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == job.BuildId, ct);
+            var build = await db.Builds.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.Id == job.BuildId, ct);
             if (build is not null)
             {
                 build.Status = SiteBuildStatus.Failed;

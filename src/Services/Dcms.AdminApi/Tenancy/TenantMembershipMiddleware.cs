@@ -3,6 +3,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -129,7 +130,7 @@ public sealed class TenantMembershipMiddleware(RequestDelegate next)
         // database's app.tenant_id already names it and no RlsScope is needed (ADR 0015).
         var db = context.RequestServices.GetRequiredService<TenancyDbContext>();
         var isMember = await db.Memberships.AsNoTracking()
-            .IgnoreQueryFilters()
+            .IgnoreTenantFilter()
             .ThatOpen(tenant.HasEnvironments)
             .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId, context.RequestAborted);
 

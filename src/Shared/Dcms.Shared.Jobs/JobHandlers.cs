@@ -63,6 +63,8 @@ internal sealed class LedgerJobContext(
 
     public Guid JobId => jobId;
     public Guid? TenantId => tenantId;
+
+    public Guid? EnvironmentId { get; init; }
     public Guid? ParentId => parentId;
     public int Attempt => attempt;
     public CancellationToken Cancellation => cancellation;

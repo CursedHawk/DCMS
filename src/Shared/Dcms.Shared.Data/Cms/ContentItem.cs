@@ -12,7 +12,7 @@ public enum ContentStatus
 /// The published payload is whichever version <see cref="PublishedVersionId"/>
 /// points at; editing creates/updates the current draft version.
 /// </summary>
-public sealed class ContentItem : TenantEntity
+public sealed class ContentItem : EnvironmentEntity
 {
     public Guid PluginInstanceId { get; set; }
     public string ContentType { get; set; } = string.Empty;
@@ -31,7 +31,7 @@ public sealed class ContentItem : TenantEntity
 }
 
 /// <summary>Immutable snapshot of content data at a point in the edit history.</summary>
-public sealed class ContentVersion : TenantEntity
+public sealed class ContentVersion : EnvironmentEntity
 {
     public Guid ItemId { get; set; }
     public int VersionNo { get; set; }

@@ -8,6 +8,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -33,7 +34,7 @@ public static class EnvironmentEndpoints
             // rls: platform -- the caller's memberships across the workspace's tenants.
             using var rls = Dcms.Shared.Data.Rls.RlsScope.Platform();
             var ids = all.Select(t => t.TenantId).ToList();
-            var memberOf = await db.Memberships.IgnoreQueryFilters()
+            var memberOf = await db.Memberships.IgnoreTenantFilter()
                 .Where(m => m.UserId == userId && ids.Contains(m.TenantId) && m.Roles.Any())
                 .Select(m => m.TenantId)
                 .ToListAsync(ct);
@@ -244,7 +245,7 @@ public static class EnvironmentEndpoints
             var current = await CurrentAsync(db, tenant, ct);
             if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
             using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-            var policies = await db.EnvironmentPolicies.IgnoreQueryFilters().AsNoTracking()
+            var policies = await db.EnvironmentPolicies.IgnoreTenantFilter().AsNoTracking()
                 .Where(p => p.TenantId == id)
                 .Select(p => new { kind = p.Kind, itemKey = p.ItemKey, mode = p.Mode.ToString() })
                 .ToListAsync(ct);
@@ -276,7 +277,7 @@ public static class EnvironmentEndpoints
 
             using (Dcms.Shared.Data.Rls.RlsScope.Tenant(id))
             {
-                db.EnvironmentPolicies.RemoveRange(await db.EnvironmentPolicies.IgnoreQueryFilters().Where(p => p.TenantId == id).ToListAsync(ct));
+                db.EnvironmentPolicies.RemoveRange(await db.EnvironmentPolicies.IgnoreTenantFilter().Where(p => p.TenantId == id).ToListAsync(ct));
                 db.EnvironmentPolicies.AddRange(wanted);
                 audit.Declared?.For("tenant", id, null).With("policies", wanted.Select(w => $"{w.Kind}/{w.ItemKey ?? "*"}={w.Mode}"));
                 await db.SaveChangesAsync(ct);
@@ -285,7 +286,7 @@ public static class EnvironmentEndpoints
                 var unprotected = new List<string>();
                 if (git.Enabled)
                 {
-                    var repos = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
+                    var repos = await sites.Sites.IgnoreTenantFilter().AsNoTracking()
                         .Where(s => s.TenantId == id && s.GitRepoFullName != null).ToListAsync(ct);
                     foreach (var site in repos)
                     {
@@ -321,7 +322,7 @@ public static class EnvironmentEndpoints
             var current = await CurrentAsync(db, tenant, ct);
             if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
             using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-            return Results.Ok(await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+            return Results.Ok(await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
                 .Where(l => l.TenantId == id)
                 .Select(l => new { id = l.Id, kind = l.Kind, targetTenantId = l.TargetTenantId, targetKey = l.TargetKey, access = l.Access.ToString() })
                 .ToListAsync(ct));
@@ -347,7 +348,7 @@ public static class EnvironmentEndpoints
                 // chain: the target signs its own people in, and nobody signs in through this one.
                 access = EnvironmentLinkAccess.Read;
                 using var platform = Dcms.Shared.Data.Rls.RlsScope.Platform();
-                if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.Kind == EnvironmentLinkKinds.Users
+                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.Kind == EnvironmentLinkKinds.Users
                         && (l.TenantId == id || l.TenantId == body.TargetTenantId || l.TargetTenantId == id), ct))
                 {
                     return Results.Conflict(new { error = "An environment takes its users from one other environment, which keeps its own." });
@@ -363,13 +364,13 @@ public static class EnvironmentEndpoints
                 // Only an app the target has: anything else under /api is the platform's own routes.
                 using (Dcms.Shared.Data.Rls.RlsScope.Tenant(body.TargetTenantId))
                 {
-                    if (!await cms.PluginInstances.IgnoreQueryFilters().AnyAsync(p => p.TenantId == body.TargetTenantId && p.Slug == body.TargetKey, ct))
+                    if (!await cms.PluginInstances.IgnoreTenantFilter().AnyAsync(p => p.TenantId == body.TargetTenantId && p.Slug == body.TargetKey, ct))
                     {
                         return Results.BadRequest(new { error = "That environment has no app at this address." });
                     }
                 }
                 using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-                if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.TenantId == id && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
+                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.TenantId == id && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
                 {
                     return Results.Conflict(new { error = "This app is already linked." });
                 }
@@ -395,7 +396,7 @@ public static class EnvironmentEndpoints
             if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
             if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
             using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-            var link = await db.EnvironmentLinks.IgnoreQueryFilters().FirstOrDefaultAsync(l => l.TenantId == id && l.Id == linkId, ct);
+            var link = await db.EnvironmentLinks.IgnoreTenantFilter().FirstOrDefaultAsync(l => l.TenantId == id && l.Id == linkId, ct);
             if (link is null) return Results.NotFound();
             db.EnvironmentLinks.Remove(link);
             audit.Declared?.For("environment_link", link.Id, link.TargetKey);
@@ -451,7 +452,7 @@ public static class EnvironmentEndpoints
     private static async Task<TenantMembership?> RootOwnerAsync(TenancyDbContext db, Guid rootId, CancellationToken ct)
     {
         using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(rootId);
-        return await db.Memberships.IgnoreQueryFilters().AsNoTracking()
+        return await db.Memberships.IgnoreTenantFilter().AsNoTracking()
             .Where(m => m.TenantId == rootId
                         && m.Roles.Any(r => r.Role!.IsSystem && r.Role.Name == TenantProvisioning.OwnerRole))
             .OrderBy(m => m.CreatedAt)

@@ -4,6 +4,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security.Authorization;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -34,14 +35,14 @@ public sealed class TenancyPermissionResolver(TenancyDbContext db, ICacheService
         string[] permissions;
         using (RlsScope.Tenant(tenantId))
         {
-            var roleIds = await db.Memberships.IgnoreQueryFilters()
+            var roleIds = await db.Memberships.IgnoreTenantFilter()
                 .Where(m => m.TenantId == tenantId && m.UserId == userId)
                 .SelectMany(m => m.Roles.Select(r => r.TenantRoleId))
                 .ToListAsync(ct);
 
             permissions = roleIds.Count == 0
                 ? []
-                : await db.TenantRolePermissions.IgnoreQueryFilters()
+                : await db.TenantRolePermissions.IgnoreTenantFilter()
                     .Where(p => p.TenantId == tenantId && roleIds.Contains(p.TenantRoleId))
                     .Select(p => p.Permission)
                     .Distinct()

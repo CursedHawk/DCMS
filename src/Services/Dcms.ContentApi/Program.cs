@@ -147,6 +147,8 @@ app.UseSiteHostResolution();
 // An app another environment serves for this one (ADR 0026), named before the tenant is resolved.
 app.UseEnvironmentLinks();
 app.UseMultiTenant();
+// ADR 0028: the environment the request names, after the tenant it belongs to.
+app.UseDcmsEnvironment();
 app.UseAuthentication();
 // One Idempotency-Key, one operation (ADR 0024): honoured when a caller sends one, never required.
 app.UseDcmsIdempotency("content-api", requireForUsers: false);

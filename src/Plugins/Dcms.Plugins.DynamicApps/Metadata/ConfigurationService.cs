@@ -624,10 +624,11 @@ public sealed class ConfigurationService(
         var tenantId = context.TenantId;
         var instanceId = InstanceId;
         // Not through EF: two first writes racing must both succeed, and ON CONFLICT is how.
+        var environmentId = context.EnvironmentId;
         await db.Database.ExecuteSqlAsync($"""
-            INSERT INTO apps.apps ("Id", "TenantId", "InstanceId", "LastRevisionNumber", "CreatedAt")
-            VALUES ({Guid.NewGuid()}, {tenantId}, {instanceId}, 0, now())
-            ON CONFLICT ("TenantId", "InstanceId") DO NOTHING
+            INSERT INTO apps.apps ("Id", "TenantId", "EnvironmentId", "InstanceId", "LastRevisionNumber", "CreatedAt")
+            VALUES ({Guid.NewGuid()}, {tenantId}, {environmentId}, {instanceId}, 0, now())
+            ON CONFLICT ("TenantId", "EnvironmentId", "InstanceId") DO NOTHING
             """, ct);
         var tx = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync(

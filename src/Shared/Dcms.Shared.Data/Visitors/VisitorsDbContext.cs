@@ -14,7 +14,7 @@ namespace Dcms.Shared.Data.Visitors;
 /// A website visitor account — a separate identity pool per tenant, distinct
 /// from the platform (admin) users in the identity service.
 /// </summary>
-public sealed class VisitorAccount : TenantEntity
+public sealed class VisitorAccount : EnvironmentEntity
 {
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
@@ -31,7 +31,7 @@ public sealed class VisitorAccount : TenantEntity
 
 // Rotated every few minutes by every signed-in visitor: high volume, no signal. The sign-in itself is recorded.
 [AuditIgnore]
-public sealed class VisitorRefreshToken : TenantEntity
+public sealed class VisitorRefreshToken : EnvironmentEntity
 {
     public Guid VisitorId { get; set; }
     public string TokenHash { get; set; } = string.Empty;
@@ -66,8 +66,9 @@ public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : Sc
             e.Property(a => a.Email).HasMaxLength(256).IsRequired();
             e.Property(a => a.DisplayName).HasMaxLength(256);
             e.Property(a => a.AttributesJson).HasColumnType("jsonb").HasDefaultValueSql("'{}'::jsonb");
-            e.HasIndex(a => new { a.TenantId, a.Email }).IsUnique();
-            e.HasQueryFilter(a => a.TenantId == CurrentTenantId);
+            e.HasIndex(a => new { a.TenantId, a.EnvironmentId, a.Email }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, a => a.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, a => CurrentEnvironmentId == null || a.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<VisitorRefreshToken>(e =>
@@ -76,7 +77,8 @@ public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : Sc
             e.HasKey(t => t.Id);
             e.Property(t => t.TokenHash).HasMaxLength(128).IsRequired();
             e.HasIndex(t => t.TokenHash);
-            e.HasQueryFilter(t => t.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, t => t.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, t => CurrentEnvironmentId == null || t.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

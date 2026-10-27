@@ -9,6 +9,7 @@ using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.Shared.Sites;
 
 /// <summary>
@@ -83,7 +84,7 @@ public sealed class TenantStatusInvalidator(
         // Every domain of the tenant, not only the ones linked to a site: an unlinked domain
         // has no cache entry, and removing one that is not there costs nothing. Missing one
         // that is there would leave a suspended site serving.
-        var hosts = await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+        var hosts = await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()
             .Where(d => d.TenantId == evt.TenantId)
             .Select(d => d.Hostname)
             .ToListAsync(ct);

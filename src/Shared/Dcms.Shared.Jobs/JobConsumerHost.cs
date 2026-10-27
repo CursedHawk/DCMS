@@ -112,7 +112,10 @@ public sealed class JobConsumerHost(
         }
 
         using var run = CancellationTokenSource.CreateLinkedTokenSource(stopping);
-        var context = new LedgerJobContext(ledger, job.Id, job.TenantId, job.ParentId, job.Attempts, run.Token);
+        var context = new LedgerJobContext(ledger, job.Id, job.TenantId, job.ParentId, job.Attempts, run.Token)
+        {
+            EnvironmentId = job.EnvironmentId ?? job.TenantId,
+        };
         var cancelRequested = false;
         var started = Stopwatch.GetTimestamp();
 
@@ -184,7 +187,10 @@ public sealed class JobConsumerHost(
     {
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
-        using var rls = JobLedger.ScopeFor(job.TenantId);
+        // In the environment it was asked for (ADR 0028), production when it named none.
+        using var rls = job is { TenantId: { } tenant, EnvironmentId: { } environment }
+            ? Dcms.Shared.Data.Rls.RlsScope.Environment(tenant, environment)
+            : JobLedger.ScopeFor(job.TenantId);
 
         var header = AuditPropagation.FromJson(job.ContextJson);
         using var activity = DcmsActivitySource.StartLinked($"job {job.Kind}", AuditPropagation.ParentContext(header));

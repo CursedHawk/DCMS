@@ -37,7 +37,14 @@ public sealed record JobSpec(
     string? LinkPath = null,
     int MaxAttempts = 3,
     bool Routine = false,
-    IReadOnlyList<JobLink>? Links = null);
+    IReadOnlyList<JobLink>? Links = null)
+{
+    /// <summary>
+    /// The environment to run in (ADR 0028). Left out, the one in force for the job's tenant where
+    /// it is enqueued, else production.
+    /// </summary>
+    public Guid? EnvironmentId { get; init; }
+}
 
 /// <param name="Existing">True when a job with the same dedupe key was already there and nothing was enqueued.</param>
 public sealed record JobRef(Guid Id, bool Existing = false);
@@ -59,6 +66,9 @@ public interface IJobContext
 {
     Guid JobId { get; }
     Guid? TenantId { get; }
+
+    /// <summary>The environment the job runs in (ADR 0028); the tenant's production unless it was enqueued in another.</summary>
+    Guid? EnvironmentId => TenantId;
 
     /// <summary>The group this job belongs to, if any: work it starts can join the same group.</summary>
     Guid? ParentId { get; }

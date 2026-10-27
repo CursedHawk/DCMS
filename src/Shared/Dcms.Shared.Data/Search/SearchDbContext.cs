@@ -13,7 +13,7 @@ namespace Dcms.Shared.Data.Search;
 /// </summary>
 // A denormalised index of content that is audited at its source.
 [AuditIgnore]
-public sealed class SearchDocument : TenantEntity
+public sealed class SearchDocument : EnvironmentEntity
 {
     public Guid PluginInstanceId { get; set; }
     public Guid ContentItemId { get; set; }
@@ -53,7 +53,7 @@ public class SearchDbContext(DbContextOptions<SearchDbContext> options)
             e.Property(d => d.ContentType).HasMaxLength(64);
             e.Property(d => d.Title).HasMaxLength(512);
             e.Property(d => d.Url).HasMaxLength(1024);
-            e.HasIndex(d => new { d.TenantId, d.ContentItemId }).IsUnique();
+            e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.ContentItemId }).IsUnique();
 
             e.HasGeneratedTsVectorColumn(d => d.SearchVector, "simple", d => new { d.Title, d.Body })
                 .HasIndex(d => d.SearchVector)
@@ -63,7 +63,8 @@ public class SearchDbContext(DbContextOptions<SearchDbContext> options)
                 .HasMethod("GIN")
                 .HasOperators("gin_trgm_ops");
 
-            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

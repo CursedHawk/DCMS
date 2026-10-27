@@ -144,6 +144,56 @@ public static class RlsConfigurator
     /// </summary>
     public static readonly IReadOnlySet<(string Schema, string Table)> EnvironmentTables = new HashSet<(string, string)>
     {
+        // Roles and who holds them are per environment; the member list is the workspace's.
+        ("tenancy", "domains"),
+        ("tenancy", "tenant_roles"),
+        ("tenancy", "tenant_role_permissions"),
+        ("tenancy", "member_roles"),
+        ("tenancy", "table_views"),
+        ("tenancy", "table_view_shares"),
+        ("tenancy", "table_view_defaults"),
+        ("tenancy", "environment_migrations"),
+        ("tenancy", "environment_baselines"),
+        ("tenancy", "environment_policies"),
+        ("tenancy", "environment_links"),
+        ("plugins", "plugin_instances"),
+        ("plugins", "plugin_data"),
+        ("plugins", "plugin_secrets"),
+        ("cms", "api_connections"),
+        ("cms", "api_snapshots"),
+        ("cms", "content_items"),
+        ("cms", "content_versions"),
+        ("sites", "sites"),
+        ("sites", "site_builds"),
+        ("sites", "site_drafts"),
+        ("sites", "site_publish_branches"),
+        ("search", "search_documents"),
+        ("visitors", "visitor_accounts"),
+        ("visitors", "visitor_refresh_tokens"),
+        ("chat", "conversations"),
+        ("chat", "messages"),
+        ("forms", "form_submissions"),
+        ("social", "meta_connections"),
+        ("social", "meta_sync_states"),
+        ("social", "meta_media_map"),
+        ("social", "meta_oauth_states"),
+        ("apps", "apps"),
+        ("apps", "revisions"),
+        ("apps", "changes"),
+        ("apps", "records"),
+        ("apps", "relation_links"),
+        ("apps", "unique_keys"),
+        ("apps", "flow_runs"),
+        ("apps", "flow_run_steps"),
+        ("apps", "flow_schedules"),
+        ("apps", "site_views"),
+        ("apps", "site_view_defaults"),
+        ("userauth", "roles"),
+        ("userauth", "grants"),
+        ("userauth", "gates"),
+        ("userauth", "api_rules"),
+        // Not analytics: its rows name their site, and a site is one environment's, so the
+        // environment is read through the site rather than stamped on every event.
     };
 
     /// <summary>
@@ -207,7 +257,7 @@ public static class RlsConfigurator
                 {
                     missing.Add($"{schema}.{table}");
                 }
-                else if (entity.FindProperty(nameof(EnvironmentEntity.EnvironmentId)) is not null
+                else if (typeof(EnvironmentEntity).IsAssignableFrom(entity.ClrType)
                          && !EnvironmentTables.Contains((schema, table)) && !ExemptTables.Contains((schema, table)))
                 {
                     missing.Add($"{schema}.{table} (environment)");

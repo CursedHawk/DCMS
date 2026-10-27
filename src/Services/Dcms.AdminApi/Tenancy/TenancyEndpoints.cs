@@ -16,6 +16,7 @@ using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 public static class TenancyEndpoints
@@ -29,7 +30,7 @@ public static class TenancyEndpoints
             // The caller's memberships across every tenant, with no ambient one (ADR 0015).
             using var rls = RlsScope.Platform();
             var memberships = await db.Memberships
-                .IgnoreQueryFilters()
+                .IgnoreTenantFilter()
                 .Where(m => m.UserId == userId)
                 .Select(m => new { m.TenantId, HasRoles = m.Roles.Any() })
                 .ToListAsync(ct);
@@ -172,7 +173,7 @@ public static class TenancyEndpoints
             }
 
             // No ambient tenant and no policy on tenancy.tenants -- see SetTenantStatusAsync.
-            var tenant = await db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == tenantId.ToString(), ct);
+            var tenant = await db.Tenants.IgnoreTenantFilter().FirstOrDefaultAsync(x => x.Id == tenantId.ToString(), ct);
             if (tenant is null) return Results.NotFound();
 
             // Enriched before SaveChangesAsync, which is what writes the record -- see SetTenantStatusAsync.
@@ -742,7 +743,7 @@ public static class TenancyEndpoints
         // no ambient tenant at all, and being explicit costs nothing. No RlsScope for the same
         // reason: tenancy.tenants carries no policy, so the database has nothing to narrow.
         var tenant = await db.Tenants
-            .IgnoreQueryFilters()
+            .IgnoreTenantFilter()
             .FirstOrDefaultAsync(x => x.Id == tenantId.ToString(), ct);
 
         if (tenant is null)

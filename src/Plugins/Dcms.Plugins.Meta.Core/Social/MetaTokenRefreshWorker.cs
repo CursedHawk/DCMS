@@ -106,7 +106,7 @@ public sealed class MetaTokenRefreshWorker(
         // Cross-tenant: a timer has no ambient tenant. Only Active connections — one already
         // marked NeedsReauth has nothing left to refresh, and retrying it daily would be a
         // guaranteed-failing call plus a duplicate notification every morning.
-        var due = await social.Connections.IgnoreQueryFilters()
+        var due = await social.Connections.IgnoreTenantFilter()
             .Where(c => c.Status == MetaConnectionStatus.Active
                         && c.TokenExpiresAt != null
                         && c.TokenExpiresAt <= deadline)
@@ -125,7 +125,7 @@ public sealed class MetaTokenRefreshWorker(
         MetaConnection connection, SocialDbContext social, MetaOAuthClient oauth,
         ITransitEncryptor encryptor, IAuditRecorder audit, CancellationToken ct)
         {
-            using var rls = RlsScope.Tenant(connection.TenantId);
+            using var rls = RlsScope.Environment(connection.TenantId, connection.EnvironmentId);
             try
             {
             audit.Record(AuditActions.SecretAccessed)
@@ -224,13 +224,13 @@ public sealed class MetaTokenRefreshWorker(
     /// </summary>
     private async Task NotifyAsync(MetaConnection connection, CancellationToken ct)
     {
-        using var rls = RlsScope.Tenant(connection.TenantId);
+        using var rls = RlsScope.Environment(connection.TenantId, connection.EnvironmentId);
         try
         {
             using var scope = services.CreateScope();
             var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
 
-            var recipient = await tenancy.Memberships.IgnoreQueryFilters().AsNoTracking()
+            var recipient = await tenancy.Memberships.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == connection.TenantId && m.UserId == connection.ConnectedBy)
                 .Select(m => m.Email)
                 .FirstOrDefaultAsync(ct);

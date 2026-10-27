@@ -8,6 +8,7 @@ using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Notifications;
 
 /// <summary>
@@ -52,7 +53,7 @@ public sealed class ContentPublishedNotificationConsumer(
         // need a lock here.
         var db = scope.GetRequiredService<NotificationsDbContext>();
         var since = DateTimeOffset.UtcNow - BurstWindow;
-        var recent = await db.Notifications.IgnoreQueryFilters() // rls: RlsScope.Tenant(evt.TenantId), set by the consumer base
+        var recent = await db.Notifications.IgnoreTenantFilter() // rls: RlsScope.Tenant(evt.TenantId), set by the consumer base
             .Where(n => n.TenantId == evt.TenantId && n.Kind == NotificationKinds.ContentPublished && n.CreatedAt >= since)
             .OrderByDescending(n => n.CreatedAt)
             .FirstOrDefaultAsync(ct);
@@ -81,7 +82,7 @@ public sealed class ContentPublishedNotificationConsumer(
         recent.LinkPath = ContentLink.ForList(evt.PluginInstanceId, evt.ContentType);
         recent.ResourceId = null;
         // Unread again for whoever has not dismissed it: there is more news than they saw.
-        var rows = await db.Recipients.IgnoreQueryFilters() // rls: as above
+        var rows = await db.Recipients.IgnoreTenantFilter() // rls: as above
             .Where(r => r.TenantId == evt.TenantId && r.NotificationId == recent.Id && r.DismissedAt == null).ToListAsync(ct);
         rows.ForEach(r => r.ReadAt = null);
         await db.SaveChangesAsync(ct);

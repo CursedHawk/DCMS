@@ -7,6 +7,7 @@ using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Notifications;
 
 /// <summary>
@@ -70,7 +71,7 @@ public sealed class MediaProcessedNotificationConsumer(
         // rls: event tenant. Runs inside NotificationConsumerBase, which acts as the event's tenant
         // for the whole handler (ADR 0015); the explicit TenantId predicates below are EF's half.
         var db = scope.GetRequiredService<MediaDbContext>();
-        var asset = await db.Assets.AsNoTracking().IgnoreQueryFilters()
+        var asset = await db.Assets.AsNoTracking().IgnoreTenantFilter()
             .Where(a => a.TenantId == evt.TenantId && a.Id == evt.AssetId)
             .Select(a => new { a.FileName, a.CreatedBy })
             .FirstOrDefaultAsync(ct);
@@ -101,7 +102,7 @@ internal static class MediaNameLookup
         IServiceProvider scope, Guid tenantId, Guid assetId, CancellationToken ct)
     {
         var db = scope.GetRequiredService<MediaDbContext>();
-        var name = await db.Assets.AsNoTracking().IgnoreQueryFilters()
+        var name = await db.Assets.AsNoTracking().IgnoreTenantFilter()
             .Where(a => a.TenantId == tenantId && a.Id == assetId)
             .Select(a => a.FileName)
             .FirstOrDefaultAsync(ct);

@@ -10,6 +10,7 @@ using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 public static class DomainEndpoints
@@ -80,7 +81,7 @@ public static class DomainEndpoints
             bool taken;
             using (RlsScope.Platform())
             {
-                taken = await db.Domains.IgnoreQueryFilters().AnyAsync(d => d.Hostname == hostname, ct);
+                taken = await db.Domains.IgnoreTenantFilter().AnyAsync(d => d.Hostname == hostname, ct);
             }
             if (taken)
             {

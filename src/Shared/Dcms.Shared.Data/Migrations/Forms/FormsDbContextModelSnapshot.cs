@@ -68,6 +68,9 @@ namespace Dcms.Shared.Data.Migrations.Forms
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FormName")
                         .IsRequired()
                         .HasMaxLength(64)

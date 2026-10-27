@@ -87,13 +87,13 @@ public sealed class NotificationRetentionWorker(
 
         // IgnoreQueryFilters because retention is cross-tenant by nature and this worker has
         // no ambient tenant -- the filter would match nothing at all.
-        var recipients = await db.Recipients.IgnoreQueryFilters()
+        var recipients = await db.Recipients.IgnoreTenantFilter()
             .Where(r => (r.ReadAt != null && r.ReadAt < cutoff)
                      || (r.DismissedAt != null && r.DismissedAt < cutoff))
             .ExecuteDeleteAsync(ct);
 
-        var orphans = await db.Notifications.IgnoreQueryFilters()
-            .Where(n => !db.Recipients.IgnoreQueryFilters().Any(r => r.NotificationId == n.Id))
+        var orphans = await db.Notifications.IgnoreTenantFilter()
+            .Where(n => !db.Recipients.IgnoreTenantFilter().Any(r => r.NotificationId == n.Id))
             .ExecuteDeleteAsync(ct);
 
         if (recipients == 0 && orphans == 0)

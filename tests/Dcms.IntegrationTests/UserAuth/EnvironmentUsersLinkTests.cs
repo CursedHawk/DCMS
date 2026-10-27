@@ -39,8 +39,8 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
         }
         var host = $"{dev}.example.test";
         await ExecuteAsync($$"""
-            INSERT INTO tenancy.domains ("Id","TenantId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt")
-            VALUES ('{{Guid.NewGuid()}}','{{devId}}','{{host}}','t',now(),true,'{{Guid.NewGuid()}}',now());
+            INSERT INTO tenancy.domains ("Id","TenantId","EnvironmentId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt")
+            VALUES ('{{Guid.NewGuid()}}','{{devId}}','{{devId}}','{{host}}','t',now(),true,'{{Guid.NewGuid()}}',now());
             """, ct);
 
         // Production's people, given a role in development by development.

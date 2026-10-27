@@ -43,7 +43,7 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options)
             e.HasIndex(a => new { a.TenantId, a.Category });
             e.HasIndex(a => new { a.TenantId, a.FolderId });
             e.HasMany(a => a.Variants).WithOne().HasForeignKey(v => v.AssetId);
-            e.HasQueryFilter(a => a.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, a => a.TenantId == CurrentTenantId);
         });
 
         builder.Entity<MediaFolder>(e =>
@@ -52,7 +52,7 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options)
             e.HasKey(f => f.Id);
             e.Property(f => f.Name).HasMaxLength(200);
             e.HasIndex(f => new { f.TenantId, f.ParentId });
-            e.HasQueryFilter(f => f.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, f => f.TenantId == CurrentTenantId);
         });
 
         builder.Entity<MediaVariant>(e =>
@@ -63,7 +63,7 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options)
             e.Property(v => v.ObjectKey).HasMaxLength(512);
             e.Property(v => v.ContentType).HasMaxLength(128);
             e.HasIndex(v => new { v.AssetId, v.Kind }).IsUnique();
-            e.HasQueryFilter(v => v.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, v => v.TenantId == CurrentTenantId);
         });
     }
 

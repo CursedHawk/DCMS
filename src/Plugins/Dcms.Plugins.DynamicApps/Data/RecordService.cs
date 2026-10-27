@@ -16,6 +16,7 @@ using Npgsql;
 using NpgsqlTypes;
 using DeleteBehavior = Dcms.Plugins.DynamicApps.Api.Model.DeleteBehavior;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.DynamicApps.Data;
 
 /// <summary>
@@ -121,7 +122,7 @@ public sealed class RecordService(
         var countSql = $"""SELECT COUNT(*)::int AS "Value" FROM (SELECT 1 FROM apps.records r WHERE {compiled.Where} LIMIT {MaxCount + 1}) s""";
         var rows = await db.Records
             .FromSqlRaw(pageSql, compiled.Parameters())
-            .IgnoreQueryFilters() // the tenant is in the compiled WHERE, under this method's RlsScope
+            .IgnoreTenantFilter() // the tenant is in the compiled WHERE, under this method's RlsScope
             .AsNoTracking()
             .ToListAsync(ct);
         // A page that came back short is the end, so the total is known without counting.
@@ -543,7 +544,7 @@ public sealed class RecordService(
                     new NpgsqlParameter("table", NpgsqlDbType.Uuid) { Value = target.Id },
                     new NpgsqlParameter("key", NpgsqlDbType.Text) { Value = primary.Key },
                     new NpgsqlParameter("names", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = wanted })
-                .IgnoreQueryFilters() // the instance is in the WHERE, under the caller's RlsScope
+                .IgnoreTenantFilter() // the instance is in the WHERE, under the caller's RlsScope
                 .AsNoTracking()
                 .ToListAsync(ct);
             foreach (var match in matches)
@@ -932,7 +933,7 @@ public sealed class RecordService(
             AND r."TableId" = {Parameter(table.Id, NpgsqlDbType.Uuid)} AND {scope(Parameter)}
             """;
         var reachable = db.Records.FromSqlRaw(sql, parameters.ToArray())
-            .IgnoreQueryFilters() // only ids come out, matched against Records(table), which keeps the tenant filter
+            .IgnoreTenantFilter() // only ids come out, matched against Records(table), which keeps the tenant filter
             .Select(r => r.Id);
         return records.Where(r => reachable.Contains(r.Id));
     }

@@ -67,6 +67,12 @@ public interface IPluginContext
 {
     Guid TenantId { get; }
 
+    /// <summary>
+    /// The environment of the tenant this work is in (ADR 0028): the instance's, else production,
+    /// whose id is the tenant's. Everything a plugin keeps per environment keys on it.
+    /// </summary>
+    Guid EnvironmentId => Instance?.EnvironmentId ?? TenantId;
+
     /// <summary>The plugin this context belongs to — the caller whose <c>Consumes</c> gates <see cref="Contracts"/>.</summary>
     string PluginId { get; }
 

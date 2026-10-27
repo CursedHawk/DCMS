@@ -49,8 +49,9 @@ public class SocialDbContext(DbContextOptions<SocialDbContext> options)
             e.Property(c => c.LastError).HasMaxLength(2048);
             // Reconnecting the same account updates the existing row rather than
             // accumulating one per consent, which would leave stale tokens behind.
-            e.HasIndex(c => new { c.TenantId, c.Provider, c.ExternalAccountId }).IsUnique();
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+            e.HasIndex(c => new { c.TenantId, c.EnvironmentId, c.Provider, c.ExternalAccountId }).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, c => c.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, c => CurrentEnvironmentId == null || c.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<MetaSyncState>(e =>
@@ -60,9 +61,10 @@ public class SocialDbContext(DbContextOptions<SocialDbContext> options)
             e.Property(s => s.ContentType).HasMaxLength(64).IsRequired();
             e.Property(s => s.LastCursor).HasMaxLength(1024);
             e.Property(s => s.LastError).HasMaxLength(2048);
-            e.HasIndex(s => new { s.TenantId, s.PluginInstanceId, s.ContentType }).IsUnique();
+            e.HasIndex(s => new { s.TenantId, s.EnvironmentId, s.PluginInstanceId, s.ContentType }).IsUnique();
             e.HasIndex(s => s.NextAttemptAt);
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<MetaMediaMap>(e =>
@@ -70,9 +72,10 @@ public class SocialDbContext(DbContextOptions<SocialDbContext> options)
             e.ToTable("meta_media_map");
             e.HasKey(m => m.Id);
             e.Property(m => m.ExternalMediaId).HasMaxLength(256).IsRequired();
-            e.HasIndex(m => new { m.TenantId, m.ConnectionId, m.ExternalMediaId }).IsUnique();
+            e.HasIndex(m => new { m.TenantId, m.EnvironmentId, m.ConnectionId, m.ExternalMediaId }).IsUnique();
             e.HasIndex(m => new { m.TenantId, m.MediaAssetId });
-            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, m => m.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, m => CurrentEnvironmentId == null || m.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<MetaOAuthState>(e =>
@@ -87,7 +90,8 @@ public class SocialDbContext(DbContextOptions<SocialDbContext> options)
             // Tenant-filtered like every other table here, even though the callback has
             // to read it with IgnoreQueryFilters: the filter is the right default, and
             // the one caller that cannot satisfy it says so explicitly at the call site.
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+            e.HasQueryFilter(QueryFilters.Tenant, s => s.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
     }
 }

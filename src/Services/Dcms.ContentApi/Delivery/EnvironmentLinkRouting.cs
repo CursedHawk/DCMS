@@ -3,6 +3,7 @@ using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Caching;
 
+using Dcms.Shared.Data;
 namespace Dcms.ContentApi.Delivery;
 
 /// <summary>
@@ -74,7 +75,7 @@ public static class EnvironmentLinkRouting
         if (links is null)
         {
             using var rls = RlsScope.Tenant(tenantId);
-            links = await services.GetRequiredService<TenancyDbContext>().EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+            links = await services.GetRequiredService<TenancyDbContext>().EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
                 .Where(l => l.TenantId == tenantId)
                 .Select(l => new EnvironmentLinkEntry(l.Kind, l.TargetKey, l.TargetTenantId, l.Access))
                 .ToArrayAsync(ct);

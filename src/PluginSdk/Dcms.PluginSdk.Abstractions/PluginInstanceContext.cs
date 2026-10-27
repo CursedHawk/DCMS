@@ -16,4 +16,14 @@ public sealed record PluginInstanceContext(
     string Description,
     JsonDocument Config,
     // The tenant opted this instance's contract operations in to AI agents.
-    bool AiToolsEnabled = false);
+    bool AiToolsEnabled = false)
+{
+    private readonly Guid _environmentId;
+
+    /// <summary>The environment of the tenant the instance belongs to (ADR 0028); production, the tenant's id, when not given.</summary>
+    public Guid EnvironmentId
+    {
+        get => _environmentId == Guid.Empty ? TenantId : _environmentId;
+        init => _environmentId = value;
+    }
+}

@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.UserAuth;
 
 /// <summary>
@@ -175,9 +176,9 @@ public sealed class SiteGatePublisher(
     private async Task<Wanted> TargetAsync(Guid tenantId, CancellationToken ct)
     {
         // Explicit tenant predicates under the tenant RLS scope: no request context to filter by.
-        var enabled = await cms.PluginInstances.IgnoreQueryFilters()
+        var enabled = await cms.PluginInstances.IgnoreTenantFilter()
             .AnyAsync(p => p.TenantId == tenantId && p.PluginId == UserAuthPermissions.PluginId && p.Enabled, ct);
-        var tenant = await tenancy.Tenants.IgnoreQueryFilters().Where(t => t.Id == tenantId.ToString())
+        var tenant = await tenancy.Tenants.IgnoreTenantFilter().Where(t => t.Id == tenantId.ToString())
             .Select(t => new { t.Identifier, t.Name }).FirstOrDefaultAsync(ct);
         // Identity refuses control characters (the name goes into email subjects) and more than 200 of them.
         var name = new string((string.IsNullOrWhiteSpace(tenant?.Name) ? tenant?.Identifier ?? "" : tenant.Name).Where(c => !char.IsControl(c)).ToArray()).Trim();
@@ -191,10 +192,10 @@ public sealed class SiteGatePublisher(
         {
             return wanted;
         }
-        var domains = await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+        var domains = await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()
             .Where(d => d.TenantId == tenantId && d.VerifiedAt != null && d.SiteId != null)
             .Select(d => new { d.Hostname, d.SiteId }).ToListAsync(ct);
-        var gates = await policy.Gates.IgnoreQueryFilters().AsNoTracking().Where(g => g.TenantId == tenantId).OrderBy(g => g.Position).ToListAsync(ct);
+        var gates = await policy.Gates.IgnoreTenantFilter().AsNoTracking().Where(g => g.TenantId == tenantId).OrderBy(g => g.Position).ToListAsync(ct);
         foreach (var domain in domains)
         {
             var rules = gates.Where(g => g.SiteId == domain.SiteId).Select(g => new
@@ -247,7 +248,7 @@ public sealed class SiteGateReconciler(IServiceScopeFactory scopes, ILogger<Site
             var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
             var edge = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
             // Tenants with the plugin, and tenants the edge still has rows for (which may have lost it).
-            tenants = (await cms.PluginInstances.IgnoreQueryFilters().Where(p => p.PluginId == UserAuthPermissions.PluginId)
+            tenants = (await cms.PluginInstances.IgnoreTenantFilter().Where(p => p.PluginId == UserAuthPermissions.PluginId)
                     .Select(p => p.TenantId).Distinct().ToListAsync(ct))
                 .Union(await edge.SiteGates.Select(r => r.TenantId).Distinct().ToListAsync(ct))
                 .ToList();

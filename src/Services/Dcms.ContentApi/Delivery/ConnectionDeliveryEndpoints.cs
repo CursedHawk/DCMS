@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
@@ -28,7 +29,7 @@ public static class ConnectionDeliveryEndpoints
                 return Results.NotFound();
             }
             var operation = "/" + (path ?? "") + request.QueryString.Value;
-            var key = $"t:{tenantId}:connection:{slug}:{operation}";
+            var key = $"t:{RlsScope.EnvironmentFor(tenantId) ?? tenantId}:connection:{slug}:{operation}";
             var body = await cache.GetAsync<string>(key, ct);
             if (body is null)
             {

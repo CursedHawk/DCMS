@@ -10,7 +10,7 @@ namespace Dcms.Shared.Data.Tenancy;
 /// <see cref="TableKey"/> names the table: <c>content:{instance}:{type}</c>, <c>apps:{instance}:{table}</c>,
 /// <c>dataset:{instance}:{set}</c>. Seeing a view never grants the table — that is checked by key.
 /// </remarks>
-public sealed class TableView : TenantEntity
+public sealed class TableView : EnvironmentEntity
 {
     public string TableKey { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
@@ -24,7 +24,7 @@ public sealed class TableView : TenantEntity
 }
 
 /// <summary>A view shared with one member (<see cref="UserId"/>) or one role (<see cref="RoleId"/>).</summary>
-public sealed class TableViewShare : TenantEntity
+public sealed class TableViewShare : EnvironmentEntity
 {
     public Guid ViewId { get; set; }
     public Guid? UserId { get; set; }
@@ -35,7 +35,7 @@ public sealed class TableViewShare : TenantEntity
 /// The view a member opens a table with. <see cref="ViewKey"/> is a <see cref="TableView"/> id,
 /// or a table's own built-in view (<c>system:{id}</c>, a Dynamic Apps maker view).
 /// </summary>
-public sealed class TableViewDefault : TenantEntity
+public sealed class TableViewDefault : EnvironmentEntity
 {
     public Guid UserId { get; set; }
     public string TableKey { get; set; } = string.Empty;

@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.UserAuth;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.UserAuth;
 
 /// <summary>
@@ -27,8 +28,8 @@ internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms)
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
-        var roles = await db.Roles.IgnoreQueryFilters().AsNoTracking().Where(r => r.TenantId == tenantId).ToListAsync(ct);
-        var rules = await db.ApiRules.IgnoreQueryFilters().AsNoTracking().Where(r => r.TenantId == tenantId).ToListAsync(ct);
+        var roles = await db.Roles.IgnoreTenantFilter().AsNoTracking().Where(r => r.TenantId == tenantId).ToListAsync(ct);
+        var rules = await db.ApiRules.IgnoreTenantFilter().AsNoTracking().Where(r => r.TenantId == tenantId).ToListAsync(ct);
         var slugs = await SlugsAsync(tenantId, ct);
         return roles
             .Select(r => new EnvironmentConfigItem($"role:{r.Key}", JsonSerializer.SerializeToElement(
@@ -45,11 +46,11 @@ internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms)
         if (key.StartsWith("role:", StringComparison.Ordinal))
         {
             var roleKey = key["role:".Length..];
-            var role = await db.Roles.IgnoreQueryFilters().FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Key == roleKey, ct);
+            var role = await db.Roles.IgnoreTenantFilter().FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Key == roleKey, ct);
             if (value is null)
             {
                 if (role is null) return;
-                db.Grants.RemoveRange(await db.Grants.IgnoreQueryFilters().Where(g => g.TenantId == tenantId && g.RoleId == role.Id).ToListAsync(ct));
+                db.Grants.RemoveRange(await db.Grants.IgnoreTenantFilter().Where(g => g.TenantId == tenantId && g.RoleId == role.Id).ToListAsync(ct));
                 db.Roles.Remove(role);
             }
             else
@@ -70,7 +71,7 @@ internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms)
             var instanceId = (await SlugsAsync(tenantId, ct)).FirstOrDefault(s => s.Value == slug).Key;
             // Not silently: an API rule that cannot land leaves the app open in a way nobody reviewed.
             if (instanceId == Guid.Empty) throw new EnvironmentConfigException($"there is no app '{slug}' here for its API access rule");
-            var rule = await db.ApiRules.IgnoreQueryFilters().FirstOrDefaultAsync(r => r.TenantId == tenantId && r.InstanceId == instanceId, ct);
+            var rule = await db.ApiRules.IgnoreTenantFilter().FirstOrDefaultAsync(r => r.TenantId == tenantId && r.InstanceId == instanceId, ct);
             if (value is null)
             {
                 if (rule is not null) db.ApiRules.Remove(rule);
@@ -92,7 +93,7 @@ internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms)
     }
 
     private async Task<Dictionary<Guid, string>> SlugsAsync(Guid tenantId, CancellationToken ct) =>
-        await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .Where(p => p.TenantId == tenantId)
             .ToDictionaryAsync(p => p.Id, p => p.Slug, ct);
 }

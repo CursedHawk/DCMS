@@ -10,6 +10,7 @@ using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Data;
 
 /// <summary>
@@ -178,7 +179,7 @@ internal sealed class StoredDocumentsDataSet(IPluginContext context, CmsDbContex
     private IQueryable<PluginDatum> Mine()
     {
         var instanceId = context.Instance?.InstanceId;
-        return db.PluginData.IgnoreQueryFilters().Where(d =>
+        return db.PluginData.IgnoreTenantFilter().Where(d =>
             d.TenantId == context.TenantId && d.PluginId == context.PluginId
             && (d.InstanceId == null || d.InstanceId == instanceId));
     }

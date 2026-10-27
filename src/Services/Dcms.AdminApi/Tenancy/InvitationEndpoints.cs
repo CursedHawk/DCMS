@@ -14,6 +14,7 @@ using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 public static class InvitationEndpoints
@@ -206,7 +207,7 @@ public static class InvitationEndpoints
             Invitation? invitation;
             using (RlsScope.Platform())
             {
-                invitation = await db.Invitations.IgnoreQueryFilters()
+                invitation = await db.Invitations.IgnoreTenantFilter()
                     .FirstOrDefaultAsync(i => i.TokenHash == hash, ct);
             }
             if (invitation is null || !invitation.IsPending)
@@ -216,7 +217,7 @@ public static class InvitationEndpoints
 
             var tenantId = invitation.TenantId;
             using var rls = RlsScope.Tenant(tenantId);
-            var membership = await db.Memberships.IgnoreQueryFilters()
+            var membership = await db.Memberships.IgnoreTenantFilter()
                 .Include(m => m.Roles)
                 .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);
 
@@ -234,7 +235,7 @@ public static class InvitationEndpoints
 
             var roleIds = ParseRoleIds(invitation.RoleIdsCsv);
 
-            var validRoleIds = await db.TenantRoles.IgnoreQueryFilters()
+            var validRoleIds = await db.TenantRoles.IgnoreTenantFilter()
                 .Where(r => r.TenantId == tenantId && roleIds.Contains(r.Id))
                 .Select(r => r.Id)
                 .ToListAsync(ct);

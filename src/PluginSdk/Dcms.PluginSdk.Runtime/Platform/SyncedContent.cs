@@ -5,6 +5,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Platform;
 
 /// <summary>
@@ -49,7 +50,7 @@ public static class SyncedContent
     {
         var json = data.ToJsonString();
 
-        var existing = await cms.ContentItems.IgnoreQueryFilters()
+        var existing = await cms.ContentItems.IgnoreTenantFilter()
             .Include(c => c.Versions)
             .FirstOrDefaultAsync(c => c.TenantId == tenantId
                                       && c.PluginInstanceId == instanceId
@@ -144,7 +145,7 @@ public static class SyncedContent
     public static async Task<IReadOnlyList<string>> TrimAsync(
         CmsDbContext cms, Guid tenantId, Guid instanceId, string contentType, int cap, CancellationToken ct)
     {
-        var stale = await cms.ContentItems.IgnoreQueryFilters()
+        var stale = await cms.ContentItems.IgnoreTenantFilter()
             .Where(c => c.TenantId == tenantId
                         && c.PluginInstanceId == instanceId
                         && c.ContentType == contentType)
@@ -167,7 +168,7 @@ public static class SyncedContent
         CmsDbContext cms, Guid tenantId, Guid instanceId, string contentType, IReadOnlyCollection<string> keep,
         CancellationToken ct)
     {
-        var stale = await cms.ContentItems.IgnoreQueryFilters()
+        var stale = await cms.ContentItems.IgnoreTenantFilter()
             .Where(c => c.TenantId == tenantId
                         && c.PluginInstanceId == instanceId
                         && c.ContentType == contentType

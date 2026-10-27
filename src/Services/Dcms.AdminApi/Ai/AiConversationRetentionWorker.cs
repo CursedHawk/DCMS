@@ -98,7 +98,7 @@ public sealed class AiConversationRetentionWorker(
         //
         // IgnoreQueryFilters because retention is cross-tenant by nature and this worker has no
         // ambient tenant: the filter would match nothing at all.
-        var deleted = await db.Conversations.IgnoreQueryFilters()
+        var deleted = await db.Conversations.IgnoreTenantFilter()
             .Where(c => c.ArchivedAt == null
                         && c.Visibility == AiConversationVisibility.Private
                         && ((c.Surface == AiSurfaces.Ide && c.UpdatedAt < ideCutoff)

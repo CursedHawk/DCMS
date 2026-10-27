@@ -72,6 +72,9 @@ namespace Dcms.Shared.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Hostname")
                         .IsRequired()
                         .HasMaxLength(253)
@@ -109,6 +112,9 @@ namespace Dcms.Shared.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ItemsJson")
                         .IsRequired()
                         .HasColumnType("jsonb");
@@ -121,7 +127,7 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId")
+                    b.HasIndex("TenantId", "EnvironmentId")
                         .IsUnique();
 
                     b.ToTable("environment_baselines", "tenancy");
@@ -140,6 +146,9 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -160,10 +169,10 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.HasIndex("TargetTenantId");
 
-                    b.HasIndex("TenantId", "Kind", "TargetKey")
+                    b.HasIndex("TenantId", "EnvironmentId", "Kind", "TargetKey")
                         .IsUnique();
 
-                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Kind", "TargetKey"), false);
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "EnvironmentId", "Kind", "TargetKey"), false);
 
                     b.ToTable("environment_links", "tenancy");
                 });
@@ -198,6 +207,9 @@ namespace Dcms.Shared.Data.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("MigrationId")
                         .HasColumnType("uuid");
 
@@ -226,7 +238,7 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.HasIndex("TenantId", "MigrationId");
 
-                    b.HasIndex("TenantId", "Order")
+                    b.HasIndex("TenantId", "EnvironmentId", "Order")
                         .IsUnique();
 
                     b.ToTable("environment_migrations", "tenancy");
@@ -236,6 +248,9 @@ namespace Dcms.Shared.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ItemKey")
@@ -257,10 +272,10 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "Kind", "ItemKey")
+                    b.HasIndex("TenantId", "EnvironmentId", "Kind", "ItemKey")
                         .IsUnique();
 
-                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Kind", "ItemKey"), false);
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "EnvironmentId", "Kind", "ItemKey"), false);
 
                     b.ToTable("environment_policies", "tenancy");
                 });
@@ -317,6 +332,9 @@ namespace Dcms.Shared.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("MembershipId")
                         .HasColumnType("uuid");
 
@@ -349,6 +367,9 @@ namespace Dcms.Shared.Data.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("Definition");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -385,6 +406,9 @@ namespace Dcms.Shared.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("TableKey")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -403,7 +427,7 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "UserId", "TableKey")
+                    b.HasIndex("TenantId", "EnvironmentId", "UserId", "TableKey")
                         .IsUnique();
 
                     b.ToTable("table_view_defaults", "tenancy");
@@ -413,6 +437,9 @@ namespace Dcms.Shared.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("RoleId")
@@ -566,6 +593,9 @@ namespace Dcms.Shared.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsSystem")
                         .HasColumnType("boolean");
 
@@ -579,7 +609,7 @@ namespace Dcms.Shared.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "Name")
+                    b.HasIndex("TenantId", "EnvironmentId", "Name")
                         .IsUnique();
 
                     b.ToTable("tenant_roles", "tenancy");
@@ -589,6 +619,9 @@ namespace Dcms.Shared.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Permission")

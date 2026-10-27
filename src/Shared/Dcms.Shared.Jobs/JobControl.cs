@@ -3,6 +3,7 @@ using Dcms.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using Dcms.Shared.Data;
 namespace Dcms.Shared.Jobs;
 
 /// <summary>
@@ -67,7 +68,7 @@ public sealed class JobControl(JobLedger ledger, JobsDbContext db, IEventPublish
     private async Task<List<Guid>> ChildrenAsync(Job parent, System.Linq.Expressions.Expression<Func<Job, bool>> filter, CancellationToken ct)
     {
         using var _ = JobLedger.ScopeFor(parent.TenantId);
-        return await db.Jobs.IgnoreQueryFilters().AsNoTracking()
+        return await db.Jobs.IgnoreTenantFilter().AsNoTracking()
             .Where(j => j.ParentId == parent.Id && j.TenantId == parent.TenantId)
             .Where(filter)
             .Select(j => j.Id)

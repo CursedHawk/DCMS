@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -83,6 +84,7 @@ internal sealed class AmbientPluginContext(PluginContextAccessor accessor) : IPl
             "No plugin context in this scope: IPluginContext is only available inside a plugin route, event handler or job.");
 
     public Guid TenantId => Current.TenantId;
+    public Guid EnvironmentId => Current.EnvironmentId;
     public string PluginId => Current.PluginId;
     public PluginInstanceContext? Instance => Current.Instance;
     public PluginActor Actor => Current.Actor;
@@ -100,6 +102,9 @@ internal sealed class PluginContext(
     IServiceProvider services) : IPluginContext, IPluginContracts
 {
     public Guid TenantId => tenantId;
+
+    /// <summary>The instance's environment, else the one in force for the tenant where the context was made (ADR 0028).</summary>
+    public Guid EnvironmentId { get; init; } = instance?.EnvironmentId ?? RlsScope.EnvironmentFor(tenantId) ?? tenantId;
     public string PluginId => pluginId;
     public PluginInstanceContext? Instance => instance;
     public PluginActor Actor => actor;

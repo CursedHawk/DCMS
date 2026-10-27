@@ -96,7 +96,7 @@ public sealed class JobMaintenanceWorker(
     {
         var now = DateTimeOffset.UtcNow;
         var queuedBefore = now - RedispatchAfter;
-        var lost = await db.Jobs.IgnoreQueryFilters().AsNoTracking()
+        var lost = await db.Jobs.IgnoreTenantFilter().AsNoTracking()
             .Where(j => (j.Lane == JobLanes.Tenant || j.Lane == JobLanes.Platform)
                         && ((j.Status == JobStatus.Queued && j.UpdatedAt < queuedBefore)
                             || (j.Status == JobStatus.Running && j.LeaseUntil < now)))
@@ -109,7 +109,7 @@ public sealed class JobMaintenanceWorker(
         {
             // Touch first, so a pass that dies after sending does not send again thirty seconds
             // later. Not a visible change, so no sequence bump and no announcement.
-            await db.Jobs.IgnoreQueryFilters().Where(j => j.Id == job.Id && j.TenantId == job.TenantId)
+            await db.Jobs.IgnoreTenantFilter().Where(j => j.Id == job.Id && j.TenantId == job.TenantId)
                 .ExecuteUpdateAsync(s => s.SetProperty(j => j.UpdatedAt, now), ct);
             await JobDispatch.SendAsync(events, job.Id, job.TenantId, job.Kind, job.Lane,
                 $"{job.Id}:r{now.UtcTicks}", logger, ct);
@@ -123,7 +123,7 @@ public sealed class JobMaintenanceWorker(
     private async Task FailSilentAsync(JobsDbContext db, JobLedger ledger, CancellationToken ct)
     {
         var before = DateTimeOffset.UtcNow - _staleAfter;
-        var silent = await db.Jobs.IgnoreQueryFilters().AsNoTracking()
+        var silent = await db.Jobs.IgnoreTenantFilter().AsNoTracking()
             // Groups are excluded: they change only when a child does, and a child that went
             // silent is failed here itself, which then settles its group.
             .Where(j => j.Lane != JobLanes.Tenant && j.Lane != JobLanes.Platform && j.Lane != JobLanes.Group
@@ -139,7 +139,7 @@ public sealed class JobMaintenanceWorker(
             if (job.Status == JobStatus.Queued)
             {
                 using var _ = JobLedger.ScopeFor(job.TenantId);
-                await db.Jobs.IgnoreQueryFilters()
+                await db.Jobs.IgnoreTenantFilter()
                     .Where(j => j.Id == job.Id && j.TenantId == job.TenantId && j.Status == JobStatus.Queued)
                     .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Running), ct);
             }
@@ -163,7 +163,7 @@ public sealed class JobMaintenanceWorker(
         using var entered = auditScope is not null && ambient is not null ? ambient.Enter(auditScope) : null;
         using var suppressed = auditScope?.SuppressBulkCapture();
 
-        var deleted = await db.Jobs.IgnoreQueryFilters()
+        var deleted = await db.Jobs.IgnoreTenantFilter()
             .Where(j => (j.Status == JobStatus.Succeeded || j.Status == JobStatus.Failed || j.Status == JobStatus.Canceled)
                         && j.UpdatedAt < cutoff)
             .ExecuteDeleteAsync(ct);

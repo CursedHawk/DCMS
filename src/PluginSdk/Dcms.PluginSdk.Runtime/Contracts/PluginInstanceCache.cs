@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Contracts;
 
 /// <summary>
@@ -27,11 +28,12 @@ public sealed class PluginInstanceCache(IMemoryCache memory, IServiceProvider se
 
     public sealed record Enabled(IReadOnlyList<PluginInstance> Rows, IReadOnlyList<PluginInstanceContext> Contexts);
 
-    public static string GenerationKey(Guid tenantId) => $"t:{tenantId}:plugins:gen";
+    /// <summary>Per environment (ADR 0028): <c>t:{environmentId}</c>, which for production is the tenant id.</summary>
+    public static string GenerationKey(Guid environmentId) => $"t:{environmentId}:plugins:gen";
 
-    /// <summary>After any write to <c>plugins.plugin_instances</c>, once it has committed.</summary>
+    /// <summary>After any write to <c>plugins.plugin_instances</c>, once it has committed: the environment in force for the tenant's.</summary>
     public static Task BumpAsync(ICacheService cache, Guid tenantId, CancellationToken ct)
-        => cache.IncrementAsync(GenerationKey(tenantId), ct);
+        => cache.IncrementAsync(GenerationKey(RlsScope.EnvironmentFor(tenantId) ?? tenantId), ct);
 
     public async Task<Enabled> EnabledAsync(Guid tenantId, CmsDbContext db, CancellationToken ct)
     {
@@ -39,8 +41,10 @@ public sealed class PluginInstanceCache(IMemoryCache memory, IServiceProvider se
         {
             return await LoadAsync(tenantId, db, ct);
         }
-        var generation = await cache.GetAsync<long?>(GenerationKey(tenantId), ct) ?? 0;
-        return (await memory.GetOrCreateAsync(("plugins:enabled", tenantId, generation), entry =>
+        // The environment in force for the tenant: its instances are its own (ADR 0028).
+        var environmentId = RlsScope.EnvironmentFor(tenantId) ?? tenantId;
+        var generation = await cache.GetAsync<long?>(GenerationKey(environmentId), ct) ?? 0;
+        return (await memory.GetOrCreateAsync(("plugins:enabled", environmentId, generation), entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = Ttl;
             return LoadAsync(tenantId, db, ct);
@@ -51,7 +55,7 @@ public sealed class PluginInstanceCache(IMemoryCache memory, IServiceProvider se
     {
         // Explicit tenant, not the ambient one: jobs and event handlers run with no request.
         using var rls = RlsScope.Tenant(tenantId);
-        var rows = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var rows = await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .Where(p => p.TenantId == tenantId && p.Enabled)
             .OrderBy(p => p.CreatedAt)
             .ToListAsync(ct);
@@ -59,7 +63,10 @@ public sealed class PluginInstanceCache(IMemoryCache memory, IServiceProvider se
     }
 
     internal static PluginInstanceContext ToContext(PluginInstance p) =>
-        new(p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson), p.AiToolsEnabled);
+        new(p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson), p.AiToolsEnabled)
+        {
+            EnvironmentId = p.EnvironmentId,
+        };
 
     private static JsonDocument ParseConfig(string json)
     {

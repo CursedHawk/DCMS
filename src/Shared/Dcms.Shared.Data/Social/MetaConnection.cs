@@ -40,7 +40,7 @@ public enum MetaConnectionStatus
 /// so granting a service the ability to read social tokens does not also grant it the
 /// tenant's AI keys.</para>
 /// </summary>
-public sealed class MetaConnection : TenantEntity
+public sealed class MetaConnection : EnvironmentEntity
 {
     public MetaProvider Provider { get; set; }
 

@@ -1,3 +1,4 @@
+using Dcms.Shared.Messaging;
 using System.Text;
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
@@ -10,6 +11,7 @@ using NATS.Client.JetStream.Models;
 using SearchDocument = Dcms.Shared.Data.Search.SearchDocument;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.ContentApi.Delivery;
 
 /// <summary>
@@ -43,6 +45,8 @@ public sealed class SearchIndexer(
                     {
                         if (msg.Data is { } e)
                         {
+                            // In the environment the content was published in (ADR 0028).
+                            using var environment = msg.Scope(e.TenantId);
                             await HandleAsync(e, stoppingToken);
                         }
                         await msg.AckAsync(cancellationToken: stoppingToken);
@@ -88,7 +92,7 @@ public sealed class SearchIndexer(
         await search.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({"search-index:" + e.ContentItemId}, 0))", ct);
 
-        var doc = await search.Documents.IgnoreQueryFilters()
+        var doc = await search.Documents.IgnoreTenantFilter()
             .FirstOrDefaultAsync(d => d.TenantId == e.TenantId && d.ContentItemId == e.ContentItemId, ct);
         if (await PublishedAsync(cms, e, ct) is not { } published)
         {
@@ -120,7 +124,7 @@ public sealed class SearchIndexer(
     private async Task<(string Title, string Body, string Url)?> PublishedAsync(CmsDbContext cms, IndexEvent e, CancellationToken ct)
     {
         // Resolve the content type via the instance's plugin.
-        var instance = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+        var instance = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == e.PluginInstanceId, ct);
         if (instance is null)
         {
@@ -132,13 +136,13 @@ public sealed class SearchIndexer(
             return null; // not a searchable content type
         }
 
-        var item = await cms.ContentItems.IgnoreQueryFilters().AsNoTracking()
+        var item = await cms.ContentItems.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == e.ContentItemId, ct);
         if (item?.PublishedVersionId is not { } versionId)
         {
             return null;
         }
-        var version = await cms.ContentVersions.IgnoreQueryFilters().AsNoTracking()
+        var version = await cms.ContentVersions.IgnoreTenantFilter().AsNoTracking()
             .FirstOrDefaultAsync(v => v.Id == versionId, ct);
         if (version is null)
         {

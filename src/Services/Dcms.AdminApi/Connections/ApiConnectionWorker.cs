@@ -52,7 +52,7 @@ public sealed class ApiConnectionWorker(IServiceProvider services, IConfiguratio
         {
             var db = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
             var now = DateTimeOffset.UtcNow;
-            var rows = await db.ApiConnections.IgnoreQueryFilters()
+            var rows = await db.ApiConnections.IgnoreTenantFilter()
                 .Select(c => new { c.TenantId, c.Id, c.RefreshedAt, c.RefreshMinutes })
                 .ToListAsync(ct);
             due = rows

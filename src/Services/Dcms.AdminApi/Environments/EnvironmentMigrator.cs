@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Environments;
 
 /// <summary>One configuration change of a migration (ADR 0026). A null before is an add, a null after a delete.</summary>
@@ -128,7 +129,7 @@ public sealed class EnvironmentMigrator(
         List<EnvironmentMigration> history;
         using (RlsScope.Tenant(sourceId))
         {
-            history = await db.EnvironmentMigrations.IgnoreQueryFilters().AsNoTracking()
+            history = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == sourceId && m.RolledBackAt == null)
                 .OrderBy(m => m.Order)
                 .ToListAsync(ct);
@@ -146,7 +147,7 @@ public sealed class EnvironmentMigrator(
         }
         var items = source.ToDictionary(
             k => k.Key, k => k.Value.ToDictionary(i => i.Key, i => i.Value.Value, StringComparer.Ordinal), StringComparer.Ordinal);
-        var baseline = await db.EnvironmentBaselines.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.TenantId == targetId, ct);
+        var baseline = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.TenantId == targetId, ct);
         if (baseline is null)
         {
             baseline = new EnvironmentBaseline { Id = Guid.NewGuid(), TenantId = targetId };
@@ -161,7 +162,7 @@ public sealed class EnvironmentMigrator(
     public async Task<List<EnvironmentMigration>> HistoryAsync(Guid tenantId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        return await db.EnvironmentMigrations.IgnoreQueryFilters().AsNoTracking()
+        return await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
             .Where(m => m.TenantId == tenantId)
             .OrderByDescending(m => m.Order)
             .ToListAsync(ct);
@@ -177,7 +178,7 @@ public sealed class EnvironmentMigrator(
         List<EnvironmentMigration> source;
         using (RlsScope.Tenant(sourceId))
         {
-            source = await db.EnvironmentMigrations.IgnoreQueryFilters().AsNoTracking()
+            source = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == sourceId && m.RolledBackAt == null)
                 .OrderBy(m => m.Order)
                 .ToListAsync(ct);
@@ -185,7 +186,7 @@ public sealed class EnvironmentMigrator(
         HashSet<Guid> applied;
         using (RlsScope.Tenant(targetId))
         {
-            applied = (await db.EnvironmentMigrations.IgnoreQueryFilters().AsNoTracking()
+            applied = (await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == targetId && m.RolledBackAt == null)
                 .Select(m => m.MigrationId)
                 .ToListAsync(ct)).ToHashSet();
@@ -350,7 +351,7 @@ public sealed class EnvironmentMigrator(
         EnvironmentMigration? row;
         using (RlsScope.Tenant(targetId))
         {
-            row = await db.EnvironmentMigrations.IgnoreQueryFilters().AsNoTracking()
+            row = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == targetId && m.RolledBackAt == null)
                 .OrderByDescending(m => m.Order)
                 .FirstOrDefaultAsync(ct);
@@ -407,7 +408,7 @@ public sealed class EnvironmentMigrator(
         }
         else
         {
-            var row = await db.EnvironmentMigrations.IgnoreQueryFilters()
+            var row = await db.EnvironmentMigrations.IgnoreTenantFilter()
                 .FirstAsync(m => m.TenantId == targetId && m.Id == migration.Id, ct);
             row.RolledBackAt = DateTimeOffset.UtcNow;
         }
@@ -472,15 +473,24 @@ public sealed class EnvironmentMigrator(
         Guid tenantId, Dictionary<string, Dictionary<string, EnvironmentConfigItem>> current, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        var row = await db.EnvironmentBaselines.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.TenantId == tenantId, ct);
+        var row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.TenantId == tenantId, ct);
         if (row is null)
         {
             var items = current.ToDictionary(
                 k => k.Key, k => k.Value.ToDictionary(i => i.Key, i => i.Value.Value, StringComparer.Ordinal), StringComparer.Ordinal);
             row = new EnvironmentBaseline { Id = Guid.NewGuid(), TenantId = tenantId, ItemsJson = Serialize(items) };
             db.EnvironmentBaselines.Add(row);
-            await db.SaveChangesAsync(ct);
-            return new Baseline(row, items);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return new Baseline(row, items);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+            {
+                // Made at the same moment elsewhere — the copy job finishing, a second reader: that one stands.
+                db.Entry(row).State = EntityState.Detached;
+                row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstAsync(b => b.TenantId == tenantId, ct);
+            }
         }
         return new Baseline(row,
             JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, JsonElement>>>(row.ItemsJson) ?? []);
@@ -489,7 +499,7 @@ public sealed class EnvironmentMigrator(
     private async Task<List<EnvironmentPolicy>> PoliciesAsync(Guid tenantId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
-        return await db.EnvironmentPolicies.IgnoreQueryFilters().AsNoTracking()
+        return await db.EnvironmentPolicies.IgnoreTenantFilter().AsNoTracking()
             .Where(p => p.TenantId == tenantId)
             .ToListAsync(ct);
     }
@@ -498,7 +508,7 @@ public sealed class EnvironmentMigrator(
         EnvironmentPolicies.Ownership(policies, kind, key);
 
     private async Task<long> NextOrderAsync(Guid tenantId, CancellationToken ct) =>
-        (await db.EnvironmentMigrations.IgnoreQueryFilters()
+        (await db.EnvironmentMigrations.IgnoreTenantFilter()
             .Where(m => m.TenantId == tenantId)
             .MaxAsync(m => (long?)m.Order, ct) ?? 0) + 1;
 

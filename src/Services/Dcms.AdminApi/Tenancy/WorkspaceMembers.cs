@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -60,9 +61,9 @@ public sealed class WorkspaceMembers(
         bool isOwner;
         using (RlsScope.Tenant(rootId))
         {
-            source = await db.Memberships.IgnoreQueryFilters().AsNoTracking()
+            source = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
                 .FirstOrDefaultAsync(m => m.TenantId == rootId && m.UserId == userId, ct);
-            isOwner = source is not null && await db.MemberRoles.IgnoreQueryFilters().AnyAsync(
+            isOwner = source is not null && await db.MemberRoles.IgnoreTenantFilter().AnyAsync(
                 r => r.TenantId == rootId && r.MembershipId == source.Id
                      && r.Role!.IsSystem && r.Role.Name == TenantProvisioning.OwnerRole, ct);
         }
@@ -90,18 +91,18 @@ public sealed class WorkspaceMembers(
         List<TenantMembership> members;
         using (RlsScope.Tenant(sourceId))
         {
-            roles = await db.TenantRoles.IgnoreQueryFilters().AsNoTracking()
+            roles = await db.TenantRoles.IgnoreTenantFilter().AsNoTracking()
                 .Where(r => r.TenantId == sourceId)
                 .Include(r => r.Permissions)
                 .ToListAsync(ct);
-            members = await db.Memberships.IgnoreQueryFilters().AsNoTracking()
+            members = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
                 .Where(m => m.TenantId == sourceId)
                 .Include(m => m.Roles)
                 .ToListAsync(ct);
         }
 
         using var rls = RlsScope.Tenant(environmentId);
-        var targetRoles = await db.TenantRoles.IgnoreQueryFilters()
+        var targetRoles = await db.TenantRoles.IgnoreTenantFilter()
             .Where(r => r.TenantId == environmentId)
             .ToListAsync(ct);
         foreach (var role in roles.Where(r => targetRoles.All(t => t.Name != r.Name)))
@@ -120,7 +121,7 @@ public sealed class WorkspaceMembers(
         var roleByName = targetRoles.ToDictionary(r => r.Name, r => r.Id, StringComparer.Ordinal);
         var nameById = roles.ToDictionary(r => r.Id, r => r.Name);
 
-        var existing = await db.Memberships.IgnoreQueryFilters()
+        var existing = await db.Memberships.IgnoreTenantFilter()
             .Where(m => m.TenantId == environmentId)
             .Include(m => m.Roles)
             .ToListAsync(ct);
@@ -154,7 +155,7 @@ public sealed class WorkspaceMembers(
         Guid environment, Guid userId, TenantMembership? source, bool isOwner, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(environment);
-        var existing = await db.Memberships.IgnoreQueryFilters()
+        var existing = await db.Memberships.IgnoreTenantFilter()
             .Include(m => m.Roles)
             .FirstOrDefaultAsync(m => m.TenantId == environment && m.UserId == userId, ct);
 
@@ -177,7 +178,7 @@ public sealed class WorkspaceMembers(
         // Owner mirrors the root exactly, both ways: a root owner who is demoted or transferred
         // away stops owning every environment at the same moment. Owner cannot be granted or
         // revoked inside an environment for the same reason (TenancyEndpoints).
-        var ownerRoleId = await db.TenantRoles.IgnoreQueryFilters()
+        var ownerRoleId = await db.TenantRoles.IgnoreTenantFilter()
             .Where(r => r.TenantId == environment && r.IsSystem && r.Name == TenantProvisioning.OwnerRole)
             .Select(r => (Guid?)r.Id)
             .FirstOrDefaultAsync(ct);

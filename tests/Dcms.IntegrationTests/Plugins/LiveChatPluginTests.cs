@@ -39,7 +39,7 @@ public sealed class LiveChatPluginTests(ContentFlowFixture fixture)
         {
             await conn.OpenAsync(ct);
             await using var cmd = new NpgsqlCommand(
-                """INSERT INTO chat.conversations ("Id","TenantId","VisitorName","Status","CreatedAt","LastMessageAt") VALUES (@id,@t,'Ada',0,now(),now())""", conn);
+                """INSERT INTO chat.conversations ("Id","TenantId","EnvironmentId","VisitorName","Status","CreatedAt","LastMessageAt") VALUES (@id,@t,@t,'Ada',0,now(),now())""", conn);
             cmd.Parameters.AddWithValue("id", conversationId);
             cmd.Parameters.AddWithValue("t", tenantId);
             await cmd.ExecuteNonQueryAsync(ct);

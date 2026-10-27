@@ -14,6 +14,7 @@ using Dcms.Shared.Security.Authorization;
 using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Jobs;
 
 /// <param name="ErrorDetail">
@@ -232,7 +233,7 @@ public static class JobEndpoints
                 return Results.Forbid();
             }
             using var rls = RlsScope.Platform();
-            var query = db.Jobs.IgnoreQueryFilters().AsNoTracking().Where(j => j.ParentId == null);
+            var query = db.Jobs.IgnoreTenantFilter().AsNoTracking().Where(j => j.ParentId == null);
             if (tenantId is { } t)
             {
                 query = query.Where(j => j.TenantId == t);
@@ -258,7 +259,7 @@ public static class JobEndpoints
             }
             using var rls = RlsScope.Platform();
             var since = DateTimeOffset.UtcNow.AddHours(-24);
-            var rows = await db.Jobs.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Jobs.IgnoreTenantFilter().AsNoTracking()
                 .Where(j => j.ParentId == null
                             && (j.Status == JobStatus.Queued || j.Status == JobStatus.Running
                                 || (j.Status == JobStatus.Failed && j.UpdatedAt >= since)))
@@ -288,12 +289,12 @@ public static class JobEndpoints
                 return Results.Forbid();
             }
             using var rls = RlsScope.Platform();
-            var job = await db.Jobs.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, ct);
+            var job = await db.Jobs.IgnoreTenantFilter().AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, ct);
             if (job is null)
             {
                 return Results.NotFound();
             }
-            var children = await db.Jobs.IgnoreQueryFilters().AsNoTracking()
+            var children = await db.Jobs.IgnoreTenantFilter().AsNoTracking()
                 .Where(j => j.ParentId == id && j.TenantId == job.TenantId).OrderBy(j => j.CreatedAt).ToListAsync(ct);
             var names = await TenantNamesAsync(tenancy, [job.TenantId], ct);
             var tenantName = Name(names, job.TenantId);
@@ -377,7 +378,7 @@ public static class JobEndpoints
     private static async Task<Job?> FindAnyAsync(JobsDbContext db, Guid id, CancellationToken ct)
     {
         using var rls = RlsScope.Platform();
-        return await db.Jobs.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, ct);
+        return await db.Jobs.IgnoreTenantFilter().AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, ct);
     }
 
     private static async Task<Dictionary<Guid, (string Slug, string? Name)>> TenantNamesAsync(

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Notifications;
 
 /// <param name="RequiredPermission">
@@ -159,11 +160,11 @@ public sealed class NotificationPublisher(
     {
         var tenantId = request.TenantId;
 
-        var roleIds = tenancy.TenantRolePermissions.IgnoreQueryFilters()
+        var roleIds = tenancy.TenantRolePermissions.IgnoreTenantFilter()
             .Where(p => p.TenantId == tenantId && p.Permission == request.RequiredPermission)
             .Select(p => p.TenantRoleId);
 
-        var permitted = await tenancy.Memberships.AsNoTracking().IgnoreQueryFilters()
+        var permitted = await tenancy.Memberships.AsNoTracking().IgnoreTenantFilter()
             .Where(m => m.TenantId == tenantId && m.Roles.Any(mr => roleIds.Contains(mr.TenantRoleId)))
             .Select(m => m.UserId)
             .ToListAsync(ct);
@@ -175,7 +176,7 @@ public sealed class NotificationPublisher(
             var extras = request.ExtraUserIds.Distinct().ToArray();
             var hasEnvironments = await tenancy.Tenants.AsNoTracking()
                 .AnyAsync(t => t.Id == tenantId.ToString() && t.WorkspaceId != null, ct);
-            var stillMembers = await tenancy.Memberships.AsNoTracking().IgnoreQueryFilters()
+            var stillMembers = await tenancy.Memberships.AsNoTracking().IgnoreTenantFilter()
                 .ThatOpen(hasEnvironments)
                 .Where(m => m.TenantId == tenantId && extras.Contains(m.UserId))
                 .Select(m => m.UserId)

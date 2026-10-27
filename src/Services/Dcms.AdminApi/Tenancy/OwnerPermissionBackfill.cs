@@ -5,6 +5,7 @@ using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
@@ -52,7 +53,7 @@ public static class OwnerPermissionBackfill
         // database too (ADR 0015).
         using var rls = RlsScope.Platform();
         var ownerRoles = await db.TenantRoles
-            .IgnoreQueryFilters()
+            .IgnoreTenantFilter()
             .Where(r => r.IsSystem && r.Name == TenantProvisioning.OwnerRole)
             .Select(r => new
             {

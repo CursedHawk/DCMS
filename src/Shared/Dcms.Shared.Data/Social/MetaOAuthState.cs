@@ -12,7 +12,7 @@ namespace Dcms.Shared.Data.Social;
 /// <para>Because the callback has no tenant context, reads of this table must use
 /// <c>IgnoreQueryFilters()</c> and then act under the <c>TenantId</c> found here.</para>
 /// </summary>
-public sealed class MetaOAuthState : TenantEntity
+public sealed class MetaOAuthState : EnvironmentEntity
 {
     /// <summary>SHA-256 of the state token. The token itself is never stored.</summary>
     public string StateHash { get; set; } = string.Empty;

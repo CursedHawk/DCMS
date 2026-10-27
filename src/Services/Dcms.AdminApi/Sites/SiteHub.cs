@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
+using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Sites;
 
 /// <summary>
@@ -68,7 +69,7 @@ public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) 
         // below checks that claim -- as that tenant, so the database checks it too (ADR 0015).
         using var rls = RlsScope.Tenant(tenantId);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-        var isMember = await tenancy.Memberships.IgnoreQueryFilters()
+        var isMember = await tenancy.Memberships.IgnoreTenantFilter()
             .ThatOpen(tenant.WorkspaceId is not null)
             .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId);
         if (!isMember)
@@ -85,7 +86,7 @@ public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) 
         // the tenant id, but the caller supplies both halves, so only this check ties them
         // together.
         var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
-        var siteBelongs = await sites.Sites.IgnoreQueryFilters()
+        var siteBelongs = await sites.Sites.IgnoreTenantFilter()
             .AnyAsync(s => s.Id == siteId && s.TenantId == tenantId);
         if (!siteBelongs)
         {

@@ -5,7 +5,7 @@ namespace Dcms.Shared.Data.Social;
 /// type rather than per instance because Instagram returns feed posts and reels from
 /// one endpoint under separate caps — they fill, fail and back off independently.
 /// </summary>
-public sealed class MetaSyncState : TenantEntity
+public sealed class MetaSyncState : EnvironmentEntity
 {
     public Guid PluginInstanceId { get; set; }
     public Guid ConnectionId { get; set; }

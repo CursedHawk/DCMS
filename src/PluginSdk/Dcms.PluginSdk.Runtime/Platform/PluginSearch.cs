@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
+using Dcms.Shared.Data;
 namespace Dcms.PluginSdk.Runtime.Platform;
 
 /// <summary>
@@ -44,7 +45,7 @@ public sealed class PluginSearch(IPluginContext caller, SearchDbContext search, 
         using var rls = RlsScope.Tenant(caller.TenantId);
         // EF.Functions.* must stay inside the expression (it throws if invoked directly), so the
         // tsquery is rebuilt inline rather than hoisted to a local.
-        var query = search.Documents.IgnoreQueryFilters().AsNoTracking()
+        var query = search.Documents.IgnoreTenantFilter().AsNoTracking()
             .Where(d => d.TenantId == caller.TenantId
                         && !hidden.Contains(d.PluginInstanceId)
                         && d.SearchVector.Matches(EF.Functions.WebSearchToTsQuery("simple", q)));

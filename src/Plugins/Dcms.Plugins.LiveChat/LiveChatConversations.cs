@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 
+using Dcms.Shared.Data;
 namespace Dcms.Plugins.LiveChat;
 
 /// <summary><see cref="ILiveChat"/> over the chat schema; the caller's tenant is an explicit predicate.</summary>
@@ -33,7 +34,7 @@ internal sealed class LiveChatConversations(IPluginContext context, ChatDbContex
         {
             throw new ContractValidationException("No such conversation.");
         }
-        var rows = await db.Messages.AsNoTracking().IgnoreQueryFilters()
+        var rows = await db.Messages.AsNoTracking().IgnoreTenantFilter()
             .Where(m => m.TenantId == context.TenantId && m.ConversationId == input.ConversationId)
             .OrderBy(m => m.SentAt)
             .Select(m => new { m.Id, m.Sender, m.Body, m.SentAt })
@@ -43,7 +44,7 @@ internal sealed class LiveChatConversations(IPluginContext context, ChatDbContex
     }
 
     private IQueryable<ChatConversation> Conversations() =>
-        db.Conversations.AsNoTracking().IgnoreQueryFilters()
+        db.Conversations.AsNoTracking().IgnoreTenantFilter()
             .Where(c => c.TenantId == context.TenantId);
 }
 
