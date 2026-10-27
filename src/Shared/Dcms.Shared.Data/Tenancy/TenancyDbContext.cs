@@ -38,6 +38,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
     public DbSet<EnvironmentBaseline> EnvironmentBaselines => Set<EnvironmentBaseline>();
     public DbSet<EnvironmentPolicy> EnvironmentPolicies => Set<EnvironmentPolicy>();
     public DbSet<EnvironmentLink> EnvironmentLinks => Set<EnvironmentLink>();
+    public DbSet<TenantEnvironment> Environments => Set<TenantEnvironment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -196,6 +197,19 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasIndex(l => new { l.TenantId, l.Kind, l.TargetKey }).IsUnique().AreNullsDistinct(false);
             e.HasIndex(l => l.TargetTenantId);
             e.HasQueryFilter(l => l.TenantId == CurrentTenantId);
+        });
+
+        // The tenant's environments (ADR 0028), production's id being the tenant's.
+        builder.Entity<TenantEnvironment>(e =>
+        {
+            e.ToTable("environments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(32).IsRequired();
+            e.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.PromotesFrom).HasDefaultValueSql("'{}'::uuid[]");
+            e.Ignore(x => x.IsProduction);
+            e.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            e.HasQueryFilter(x => x.TenantId == CurrentTenantId);
         });
 
         builder.Entity<EnvironmentPolicy>(e =>

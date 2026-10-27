@@ -38,15 +38,26 @@ public static class RlsScope
     /// <summary>The tenant a <see cref="Tenant"/> block names, or null outside one.</summary>
     public static Guid? TenantOverride => Current.Value?.Tenant;
 
+    /// <summary>
+    /// The environment a <see cref="Tenant"/> or <see cref="Environment"/> block names, or null
+    /// outside one. A <see cref="Tenant"/> block names its production, whose id is the tenant's
+    /// (ADR 0028).
+    /// </summary>
+    public static Guid? EnvironmentOverride => Current.Value is { Tenant: { } tenant } state ? state.Environment ?? tenant : null;
+
     /// <summary>True inside a <see cref="Platform"/> block that no <see cref="Tenant"/> block has
     /// narrowed.</summary>
     public static bool IsPlatform => Current.Value?.Platform == true;
 
-    /// <summary>Act as <paramref name="tenantId"/> until disposed, whatever the request's tenant.</summary>
-    public static IDisposable Tenant(Guid tenantId) => Enter(new State(tenantId, Platform: false));
+    /// <summary>Act as <paramref name="tenantId"/> (its production environment) until disposed, whatever the request's tenant.</summary>
+    public static IDisposable Tenant(Guid tenantId) => Enter(new State(tenantId, Environment: null, Platform: false));
+
+    /// <summary>Act as one environment of <paramref name="tenantId"/> until disposed (ADR 0028).</summary>
+    public static IDisposable Environment(Guid tenantId, Guid environmentId) =>
+        Enter(new State(tenantId, environmentId, Platform: false));
 
     /// <summary>Widen to every tenant until disposed.</summary>
-    public static IDisposable Platform() => Enter(new State(Tenant: null, Platform: true));
+    public static IDisposable Platform() => Enter(new State(Tenant: null, Environment: null, Platform: true));
 
     private static Restore Enter(State state)
     {
@@ -55,7 +66,7 @@ public static class RlsScope
         return new Restore(previous);
     }
 
-    private sealed record State(Guid? Tenant, bool Platform);
+    private sealed record State(Guid? Tenant, Guid? Environment, bool Platform);
 
     private sealed class Restore(State? previous) : IDisposable
     {

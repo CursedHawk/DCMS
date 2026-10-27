@@ -47,6 +47,8 @@ public static class RlsConfigurator
         ("tenancy", "environment_baselines"),
         ("tenancy", "environment_policies"),
         ("tenancy", "environment_links"),
+        // The tenant's environments themselves (ADR 0028): a tenant table, not an environment one.
+        ("tenancy", "environments"),
         ("plugins", "plugin_instances"),
         // Every plugin's private documents and Transit-encrypted credentials, all tenants in
         // two tables: the policy is the only thing between one tenant's plugin state and another's.
@@ -134,6 +136,17 @@ public static class RlsConfigurator
     ];
 
     /// <summary>
+    /// The tenant tables whose rows also belong to one environment (ADR 0028): their
+    /// <c>tenant_isolation</c> policy admits a row only in the request's environment as well,
+    /// <c>app.environment_id</c> — production, the tenant's own id, when that is unset. Each is
+    /// in <see cref="TenantTables"/> too; <see cref="AssertCoverage"/> fails startup for an
+    /// <see cref="EnvironmentEntity"/> table missing here.
+    /// </summary>
+    public static readonly IReadOnlySet<(string Schema, string Table)> EnvironmentTables = new HashSet<(string, string)>
+    {
+    };
+
+    /// <summary>
     /// Tables that carry a <c>TenantId</c> and are deliberately left without a policy, because
     /// the code that reads them is a cross-tenant scan and a per-tenant predicate would break
     /// it. Kept as data rather than as a comment so <see cref="AssertCoverage"/> can tell
@@ -194,6 +207,11 @@ public static class RlsConfigurator
                 {
                     missing.Add($"{schema}.{table}");
                 }
+                else if (entity.FindProperty(nameof(EnvironmentEntity.EnvironmentId)) is not null
+                         && !EnvironmentTables.Contains((schema, table)) && !ExemptTables.Contains((schema, table)))
+                {
+                    missing.Add($"{schema}.{table} (environment)");
+                }
             }
         }
 
@@ -208,7 +226,8 @@ public static class RlsConfigurator
         throw new InvalidOperationException(
             $"Refusing to start: tenant-scoped table(s) {string.Join(", ", missing)} have a " +
             "TenantId but no Row-Level Security policy. Add each to RlsConfigurator.TenantTables, " +
-            "or to ExemptTables with a comment saying why a cross-tenant scan needs it unfiltered.");
+            "or to ExemptTables with a comment saying why a cross-tenant scan needs it unfiltered. " +
+            "One marked (environment) carries an EnvironmentId: add it to EnvironmentTables as well.");
     }
 
     /// <summary>
@@ -243,14 +262,15 @@ public static class RlsConfigurator
 
         foreach (var (schema, table) in TenantTables)
         {
-            await ProtectAsync(context, schema, table, logger, ct);
+            await ProtectAsync(context, schema, table, logger, ct, EnvironmentTables.Contains((schema, table)));
         }
 
         // Partitions do not inherit their parent's protection for a query aimed straight at
         // them, so each is protected in its own right. See PartitionsAsync.
+        var environmentPartitions = (await PartitionsAsync(context, [.. EnvironmentTables], ct)).ToHashSet();
         foreach (var (schema, table) in await PartitionsAsync(context, TenantTables, ct))
         {
-            await ProtectAsync(context, schema, table, logger, ct);
+            await ProtectAsync(context, schema, table, logger, ct, environmentPartitions.Contains((schema, table)));
         }
 
         await AssertAppliedAsync(context, logger, ct);
@@ -265,9 +285,15 @@ public static class RlsConfigurator
     /// created, not at the next restart.</para>
     /// </summary>
     public static async Task ProtectAsync(
-        DbContext context, string schema, string table, ILogger logger, CancellationToken ct = default)
+        DbContext context, string schema, string table, ILogger logger, CancellationToken ct = default, bool environment = false)
     {
         var qualified = $"\"{schema}\".\"{table}\"";
+        // An environment table's rows are the request's environment's only (ADR 0028); an unset
+        // environment is the tenant's production, whose id is the tenant's.
+        const string tenant = "nullif(current_setting('app.tenant_id', true), '')::uuid";
+        var isolation = environment
+            ? $"\"TenantId\" = {tenant} AND \"EnvironmentId\" = coalesce(nullif(current_setting('app.environment_id', true), '')::uuid, {tenant})"
+            : $"\"TenantId\" = {tenant}";
         // The policies are the important part — apply them unconditionally.
         // CREATE POLICY has no IF NOT EXISTS; drop-then-create keeps it idempotent.
         //
@@ -283,8 +309,8 @@ public static class RlsConfigurator
             ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY;
             DROP POLICY IF EXISTS tenant_isolation ON {qualified};
             CREATE POLICY tenant_isolation ON {qualified}
-                USING ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid)
-                WITH CHECK ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid);
+                USING ({isolation})
+                WITH CHECK ({isolation});
             DROP POLICY IF EXISTS platform_scope ON {qualified};
             CREATE POLICY platform_scope ON {qualified}
                 USING (public.dcms_platform_scope())
@@ -417,6 +443,29 @@ public static class RlsConfigurator
             while (await reader.ReadAsync(ct))
             {
                 unprotected.Add(reader.GetString(0));
+            }
+        }
+
+        // An environment table whose policy predates ADR 0028 admits every environment of the tenant.
+        const string environmentSql = """
+            SELECT n.nspname || '.' || c.relname
+            FROM unnest(@schemas, @tables) AS w(schema_name, table_name)
+            JOIN pg_namespace n ON n.nspname = w.schema_name
+            JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = w.table_name
+            WHERE NOT EXISTS (
+                SELECT 1 FROM pg_policy p
+                WHERE p.polrelid = c.oid AND p.polname = 'tenant_isolation'
+                  AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app.environment_id%')
+            """;
+        List<(string Schema, string Table)> environmentTargets =
+            [.. EnvironmentTables, .. await PartitionsAsync(context, [.. EnvironmentTables], ct)];
+        if (environmentTargets.Count > 0)
+        {
+            await using var command = await CommandAsync(context, environmentSql, environmentTargets, ct);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                unprotected.Add(reader.GetString(0) + " (environment)");
             }
         }
 

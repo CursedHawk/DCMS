@@ -14,9 +14,10 @@ namespace Dcms.Shared.Data.Rls;
 /// Tells Postgres which tenant a unit of work belongs to, so the row-security policies can
 /// enforce what the EF query filters only request (ADR 0015).
 ///
-/// <para>Sets two GUCs: <c>app.tenant_id</c> from an enclosing <see cref="RlsScope.Tenant"/>
-/// block, else from the context's <see cref="ITenantContext"/>, which the <c>tenant_isolation</c>
-/// policy reads; and <c>app.scope</c> from <see cref="RlsScope.Platform"/>, which <c>platform_scope</c>
+/// <para>Sets three GUCs: <c>app.tenant_id</c> and <c>app.environment_id</c> from an enclosing
+/// <see cref="RlsScope"/> block, else from the context's <see cref="ITenantContext"/>, which the
+/// <c>tenant_isolation</c> policy reads (the environment only on environment tables, ADR 0028);
+/// and <c>app.scope</c> from <see cref="RlsScope.Platform"/>, which <c>platform_scope</c>
 /// reads. Both, always, including when a value is empty — an assignment that only ever sets the
 /// tenant would leave the previous one in place the first time the tenant is absent.</para>
 ///
@@ -61,17 +62,21 @@ public sealed class TenantGucInterceptor(ILogger<TenantGucInterceptor> logger)
     /// left holding nothing.</summary>
     private sealed class Applied
     {
-        public (string Tenant, string Scope)? Values;
+        public (string Tenant, string Environment, string Scope)? Values;
         public bool Fresh;
     }
 
-    private static (string Tenant, string Scope) Desired(DbContext? context)
-        => ((RlsScope.TenantOverride ?? TenantOf(context))?.ToString() ?? string.Empty,
+    private static (string Tenant, string Environment, string Scope) Desired(DbContext? context)
+    {
+        var tenant = ContextOf(context);
+        return ((RlsScope.TenantOverride ?? tenant?.TenantId)?.ToString() ?? string.Empty,
+            (RlsScope.EnvironmentOverride ?? tenant?.EnvironmentId)?.ToString() ?? string.Empty,
             RlsScope.IsPlatform ? "platform" : string.Empty);
+    }
 
-    private static Guid? TenantOf(DbContext? context) => context is ScopedDbContext scoped
-        ? scoped.TenantContext?.TenantId
-        : ScopedDbContext.ServicesOf(context)?.GetService<ITenantContext>()?.TenantId;
+    private static ITenantContext? ContextOf(DbContext? context) => context is ScopedDbContext scoped
+        ? scoped.TenantContext
+        : ScopedDbContext.ServicesOf(context)?.GetService<ITenantContext>();
 
     /// <summary>
     /// For a raw command on a connection EF opened: puts the tenant in front of it, as the interceptor
@@ -230,11 +235,11 @@ public sealed class TenantGucInterceptor(ILogger<TenantGucInterceptor> logger)
 
     /// <summary>What to set before this connection's next command; null when it already holds it. A
     /// session given nothing already holds "no tenant, no scope" (the policies read empty as unset).</summary>
-    private static (string Tenant, string Scope)? Current(DbConnection connection, DbContext? context)
+    private static (string Tenant, string Environment, string Scope)? Current(DbConnection connection, DbContext? context)
     {
         var desired = Desired(context);
         var state = State.GetOrCreateValue(connection);
-        return state.Values == desired || (state.Fresh && desired == (string.Empty, string.Empty)) ? null : desired;
+        return state.Values == desired || (state.Fresh && desired == (string.Empty, string.Empty, string.Empty)) ? null : desired;
     }
 
     // Untraced: before 2026-10-23 this ran on every connection open, and each span cost again in Alloy
@@ -268,10 +273,11 @@ public sealed class TenantGucInterceptor(ILogger<TenantGucInterceptor> logger)
         Record(connection, desired);
     }
 
-    private static string Statement((string Tenant, string Scope) values)
-        => $"{TenantSet}{values.Tenant}'; SET app.scope = '{values.Scope}'; ";
+    // The scope stays last: WithoutPrefix finds the end of the prefix by it.
+    private static string Statement((string Tenant, string Environment, string Scope) values)
+        => $"{TenantSet}{values.Tenant}'; SET app.environment_id = '{values.Environment}'; SET app.scope = '{values.Scope}'; ";
 
-    private static DbCommand Command(DbConnection connection, DbTransaction? transaction, (string Tenant, string Scope) values)
+    private static DbCommand Command(DbConnection connection, DbTransaction? transaction, (string Tenant, string Environment, string Scope) values)
     {
         var command = connection.CreateCommand();
         command.CommandText = Statement(values);
@@ -279,7 +285,7 @@ public sealed class TenantGucInterceptor(ILogger<TenantGucInterceptor> logger)
         return command;
     }
 
-    private void Record(DbConnection connection, (string Tenant, string Scope) values)
+    private void Record(DbConnection connection, (string Tenant, string Environment, string Scope) values)
     {
         var state = State.GetOrCreateValue(connection);
         state.Values = values;
@@ -287,6 +293,6 @@ public sealed class TenantGucInterceptor(ILogger<TenantGucInterceptor> logger)
         // Debug, not information: this runs per unit of work. It is here for the day a page
         // comes back blank under enforcement, when "which tenant did the database think this
         // was" is the first question and nothing else answers it.
-        logger.LogDebug("RLS scope set: tenant={Tenant} scope={Scope}", values.Tenant, values.Scope);
+        logger.LogDebug("RLS scope set: tenant={Tenant} environment={Environment} scope={Scope}", values.Tenant, values.Environment, values.Scope);
     }
 }

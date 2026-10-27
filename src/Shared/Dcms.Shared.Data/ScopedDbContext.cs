@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -23,6 +24,47 @@ public abstract class ScopedDbContext(DbContextOptions options) : DbContext(opti
 
     /// <summary>What the query filters and the RLS interceptor read the request's tenant from.</summary>
     public ITenantContext? TenantContext { get; internal set; }
+
+    /// <summary>
+    /// The environment an <see cref="EnvironmentEntity"/>'s query filter and insert stamp use (ADR
+    /// 0028): an enclosing <see cref="RlsScope"/> block's, else the request's — production, whose
+    /// id is the tenant's, when neither names one.
+    /// </summary>
+    protected Guid CurrentEnvironmentId =>
+        RlsScope.EnvironmentOverride ?? TenantContext?.EnvironmentId ?? TenantContext?.TenantId ?? Guid.Empty;
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampEnvironment();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampEnvironment();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// A new row with no environment gets the one the work is in — of its own tenant: a row
+    /// written for another tenant than the request's lands in that tenant's production unless a
+    /// block names its environment.
+    /// </summary>
+    private void StampEnvironment()
+    {
+        foreach (var entry in ChangeTracker.Entries<EnvironmentEntity>())
+        {
+            if (entry.State != EntityState.Added || entry.Entity.EnvironmentId != Guid.Empty)
+            {
+                continue;
+            }
+            var entity = entry.Entity;
+            entity.EnvironmentId =
+                RlsScope.TenantOverride == entity.TenantId ? RlsScope.EnvironmentOverride!.Value
+                : TenantContext?.TenantId == entity.TenantId ? TenantContext.EnvironmentId ?? entity.TenantId
+                : entity.TenantId;
+        }
+    }
 
     /// <summary>Lends the context to <paramref name="scope"/>.</summary>
     public void Bind(IServiceProvider scope)

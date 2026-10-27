@@ -26,4 +26,10 @@ public interface ITenantContext
     /// reasoning as <see cref="IsSuspended"/>: only the HTTP paths have the row to say so.
     /// </summary>
     bool HasEnvironments => false;
+
+    /// <summary>
+    /// The environment of the tenant this request or message is for (ADR 0028). Production's id
+    /// is the tenant's own, which is what a context that has never heard of environments means.
+    /// </summary>
+    Guid? EnvironmentId => TenantId;
 }

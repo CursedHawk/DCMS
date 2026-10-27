@@ -484,6 +484,54 @@ namespace Dcms.Shared.Data.Migrations
                     b.ToTable("tenants", "tenancy");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TenantEnvironment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("DeleteWhenMerged")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("ForkedFrom")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("MergesOwnChangesOnly")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<List<Guid>>("PromotesFrom")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("environments", "tenancy");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TenantMembership", b =>
                 {
                     b.Property<Guid>("Id")
