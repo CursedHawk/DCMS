@@ -1,6 +1,6 @@
 # ADR 0026: Environments are tenants of one workspace; configuration moves between them as reviewed migrations
 
-**Status:** accepted (2026-10-26) · in progress (kanban epic #351)
+**Status:** accepted (2026-10-26) · its "an environment is a tenant row" architecture is superseded by [0028](0028-environments-as-a-dimension.md); the migration, review and policy model stands
 
 ## Context
 

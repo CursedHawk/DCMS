@@ -33,3 +33,4 @@ as their implementation phase lands.
 - [0024](0024-async-jobs.md) — One ledger for background work, live progress, and one operation per idempotency key
 - [0025](0025-flow-scripts.md) — Flow scripts run in a separate, credential-free Deno sandbox
 - [0026](0026-environments.md) — Environments are tenants of one workspace; configuration moves between them as reviewed migrations
+- [0028](0028-environments-as-a-dimension.md) — Environments are a dimension of one tenant: shared media and members, per-environment configuration and content
