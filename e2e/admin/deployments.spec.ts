@@ -115,6 +115,22 @@ test('a conflict can be decided path by path, keeping what merged cleanly', asyn
     .toEqual([{ from: DEV, upTo: 'm3', resolutions: { 'm3/dynamic-apps/crm#/tables/t1/label': 'ours' } }]);
 });
 
+test('a merging change can be left out here', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments/pending', [{
+    migration: migration('m4', 'Shop code', []),
+    changes: [{ ...change('sites/shop', 'merge', { Release: 'a' }, { Release: 'b' }, { Release: 'c' }), merged: { Release: 'b' } }],
+  }]);
+  api.on('POST', '/api/admin/environments/pending/apply', { jobId: 'j4' });
+  await page.goto('/deployments');
+
+  // A site's code can still clash where git lays it on; nothing forces it in.
+  await page.locator('summary', { hasText: 'Merges' }).click();
+  await page.getByLabel('Skip this change here').check();
+  await page.getByRole('button', { name: 'Deploy', exact: true }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/environments/pending/apply').map((r) => r.body))
+    .toEqual([{ from: DEV, upTo: 'm4', resolutions: { 'm4/sites/shop': 'skip' } }]);
+});
+
 test('the latest migration rolls back after its plan is shown', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments/migrations', [migration('m1', 'Add editors', [change('roles/Editors', null, null, { Permissions: [] })])]);
   api.on('GET', '/api/admin/environments/migrations/:id/rollback', {
