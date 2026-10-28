@@ -150,6 +150,12 @@ namespace Dcms.Shared.Data.Migrations
                     b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
+                    b.PrimitiveCollection<List<string>>("Grants")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("'{}'::text[]");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(32)

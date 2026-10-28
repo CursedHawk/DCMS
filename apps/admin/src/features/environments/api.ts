@@ -59,7 +59,7 @@ function useEnvironmentMutation<TInput>(fn: (input: TInput) => Promise<unknown>)
 
 /** A new environment: a copy of `from`'s configuration (production when absent), and of the `copy` data scopes too. */
 export const useAddEnvironment = () =>
-  useEnvironmentMutation((body: { name: string; from?: string; copy?: string[]; feature?: boolean; deleteWhenMerged?: boolean }) =>
+  useEnvironmentMutation((body: { name: string; from?: string; copy?: string[]; feature?: boolean; deleteWhenMerged?: boolean; service?: boolean }) =>
     api.post<Environment>('/admin/environments', body),
   );
 
@@ -194,7 +194,7 @@ export interface Policy {
 export const CONFIG_KINDS = ['roles', 'plugins', 'api-connections', 'sites', 'user-auth', 'dynamic-apps'] as const;
 
 /** Every kind a policy can name: configuration, and published content (ADR 0028), which a deployment carries only when ticked. */
-export const POLICY_KINDS = [...CONFIG_KINDS, 'content'] as const;
+export const POLICY_KINDS = [...CONFIG_KINDS, 'links', 'content'] as const;
 
 export const usePolicies = (environmentId: string) =>
   useQuery({
@@ -212,10 +212,12 @@ export function useSavePolicies(environmentId: string) {
 
 export interface EnvironmentLink {
   id: string;
-  kind: 'app' | 'users';
+  kind: 'app' | 'users' | 'contracts' | 'tables';
   targetEnvironmentId: string;
   targetKey: string | null;
   access: 'Read' | 'ReadWrite';
+  /** What a contracts link may call (`contract/Operation`) or a tables link may do (`table:verb`). */
+  grants: string[];
 }
 
 export const useLinks = (environmentId: string) =>
@@ -232,7 +234,8 @@ export function useLinkMutations(environmentId: string) {
       mutationFn: (
         body:
           | { kind: 'app'; targetEnvironmentId: string; targetKey: string; access: 'read' | 'readWrite' }
-          | { kind: 'users'; targetEnvironmentId: string },
+          | { kind: 'users'; targetEnvironmentId: string }
+          | { kind: 'contracts' | 'tables'; targetEnvironmentId: string; targetKey: string; grants: string[] },
       ) => api.post(`/admin/environments/${environmentId}/links`, body),
       onSuccess,
     }),

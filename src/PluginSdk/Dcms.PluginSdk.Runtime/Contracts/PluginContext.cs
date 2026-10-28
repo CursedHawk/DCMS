@@ -127,6 +127,40 @@ internal sealed class PluginContext(
         return Candidates(registered).Select(i => Provide<T>(registered, i)).ToList();
     }
 
+    public async Task<T> LinkedAsync<T>(string environment, string providerSlug, CancellationToken ct) where T : class
+    {
+        if (LinkedCall.Active)
+        {
+            throw new ContractAccessDeniedException("A call through an environment link cannot call through another.");
+        }
+        var (registered, _) = Declared<T>();
+        var descriptor = registered.Descriptor;
+        var here = EnvironmentId;
+        var link = await services.GetRequiredService<ContractLinks>().FindAsync(tenantId, here, environment, providerSlug, ct)
+                   ?? throw new ContractAccessDeniedException($"This environment has no link to '{providerSlug}' in environment '{environment}'.");
+        if (link.Kind == Shared.Data.Tenancy.EnvironmentLinkKinds.Tables && descriptor.Name != TablesContract)
+        {
+            throw new ContractAccessDeniedException($"A tables link reaches {TablesContract} only.");
+        }
+
+        // The provider is the target environment's instance, built and run as that environment.
+        using (RlsScope.Environment(tenantId, link.TargetEnvironmentId))
+        {
+            var targetEnabled = await services.GetRequiredService<IPluginInstanceStore>().ListEnabledAsync(tenantId, ct);
+            var provider = targetEnabled.FirstOrDefault(i => i.Slug == providerSlug && registered.ProvidedBy(i.PluginId) is not null)
+                           ?? throw new InvalidOperationException($"No enabled instance '{providerSlug}' in environment '{environment}' provides {descriptor.Id}.");
+            var providerContext = new PluginContext(tenantId, provider.PluginId, provider, actor, targetEnabled, registry, services)
+            {
+                EnvironmentId = link.TargetEnvironmentId,
+            };
+            var implementation = registered.ProvidedBy(provider.PluginId)!.Implementation;
+            var traced = ContractProxy.Create((T)Construct(implementation, providerContext), descriptor, pluginId, provider.PluginId, services);
+            return LinkedContractProxy.Create(traced, descriptor, link, tenantId, here, pluginId, services);
+        }
+    }
+
+    private const string TablesContract = "dynamic-apps.records";
+
     private T? Resolve<T>(Guid? providerInstanceId, bool required) where T : class
     {
         var (registered, requirement) = Declared<T>();

@@ -194,6 +194,7 @@ builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, D
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ApiConnectionsConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.SitesConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ContentConfigKind>();
+builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.LinksConfigKind>();
 builder.Services.AddScoped<Dcms.AdminApi.Environments.EnvironmentDuplicator>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.ContentDraftsCopier>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.PluginDataCopier>();

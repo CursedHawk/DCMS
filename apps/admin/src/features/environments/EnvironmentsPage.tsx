@@ -19,6 +19,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Textarea,
   toastApiError,
   useConfirm,
 } from '@dcms/ui';
@@ -58,6 +59,7 @@ export function EnvironmentsPage() {
   const [copy, setCopy] = useState<string[]>([]);
   const [feature, setFeature] = useState(false);
   const [deleteWhenMerged, setDeleteWhenMerged] = useState(true);
+  const [service, setService] = useState(false);
   const scopes = useCopyScopes();
   const data = environments.data;
   const list = data?.environments ?? [];
@@ -70,6 +72,7 @@ export function EnvironmentsPage() {
         from: from || undefined,
         copy: copy.length > 0 ? copy : undefined,
         ...(feature ? { feature: true, deleteWhenMerged } : {}),
+        ...(service ? { service: true } : {}),
       },
       {
         onSuccess: () => {
@@ -136,8 +139,24 @@ export function EnvironmentsPage() {
             </div>
             <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-6">
               <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={feature} onCheckedChange={(on) => setFeature(on === true)} />
+                <Checkbox
+                  checked={feature}
+                  onCheckedChange={(on) => {
+                    setFeature(on === true);
+                    if (on === true) setService(false);
+                  }}
+                />
                 {t('environments.featureBranch')}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={service}
+                  onCheckedChange={(on) => {
+                    setService(on === true);
+                    if (on === true) setFeature(false);
+                  }}
+                />
+                {t('environments.serviceEnvironment')}
               </label>
               {feature ? (
                 <label className="flex items-center gap-2 text-sm">
@@ -147,6 +166,7 @@ export function EnvironmentsPage() {
               ) : null}
             </div>
             {feature ? <p className="text-xs text-muted-foreground">{t('environments.featureHint')}</p> : null}
+            {service ? <p className="text-xs text-muted-foreground">{t('environments.serviceHint')}</p> : null}
             {scopes.data && scopes.data.length > 0 ? (
               <fieldset className="flex flex-col gap-1.5">
                 <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.copyData')}</legend>
@@ -238,6 +258,7 @@ function EnvironmentCard({
             <>
               <h2 className="min-w-0 truncate text-base font-semibold">{env.name}</h2>
               {env.isProduction ? <Badge tone="destructive">{t('environments.root')}</Badge> : null}
+              {env.purpose === 'service' ? <Badge tone="outline">{t('environments.service')}</Badge> : null}
               {env.forkedFrom ? (
                 <Badge tone="outline">
                   {t('environments.featureOf', { name: all.find((e) => e.id === env.forkedFrom)?.name ?? '?' })}
@@ -361,6 +382,11 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
   const nameOf = (id: string) => all.find((e) => e.id === id)?.name ?? id;
   const onError = (err: unknown) => toastApiError(err, t);
   const usersLink = (links.data ?? []).find((l) => l.kind === 'users');
+  const [useKind, setUseKind] = useState<'tables' | 'contracts'>('tables');
+  const [useTarget, setUseTarget] = useState(others[0]?.id ?? '');
+  const [instance, setInstance] = useState('');
+  const [grants, setGrants] = useState('');
+  const grantList = grants.split(/[\n,]/).map((g) => g.trim()).filter(Boolean);
 
   return (
     <fieldset className="flex flex-col gap-1.5">
@@ -463,6 +489,88 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
         <Button type="submit" variant="outline" disabled={!address.trim() || !target || add.isPending}>
           <Link2 className="h-4 w-4" /> {t('environments.link')}
         </Button>
+      </form>
+
+      {(links.data ?? []).filter((l) => l.kind === 'tables' || l.kind === 'contracts').map((l) => (
+        <div key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 truncate">
+            {t(`environments.useRow.${l.kind}`, { instance: l.targetKey, name: nameOf(l.targetEnvironmentId) })}
+          </span>
+          {l.grants.map((g) => (
+            <Badge key={g} tone="outline">
+              {g}
+            </Badge>
+          ))}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label={t('environments.unlink', { address: l.targetKey })}
+            onClick={() => remove.mutate(l.id, { onError })}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          add.mutate(
+            { kind: useKind, targetEnvironmentId: useTarget, targetKey: instance.trim(), grants: grantList },
+            {
+              onSuccess: () => {
+                setInstance('');
+                setGrants('');
+              },
+              onError,
+            },
+          );
+        }}
+      >
+        <span className="text-sm text-muted-foreground">{t('environments.useHint')}</span>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Select value={useKind} onValueChange={(v) => setUseKind(v as 'tables' | 'contracts')}>
+            <SelectTrigger className="sm:w-40" aria-label={t('environments.useKind')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="tables">{t('environments.useKinds.tables')}</SelectItem>
+              <SelectItem value="contracts">{t('environments.useKinds.contracts')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            aria-label={t('environments.useInstance')}
+            placeholder={t('environments.useInstance')}
+            value={instance}
+            onChange={(e) => setInstance(e.target.value.toLowerCase())}
+          />
+          <Select value={useTarget} onValueChange={setUseTarget}>
+            <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {others.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Textarea
+          aria-label={t('environments.useGrants')}
+          placeholder={t(`environments.useGrantsPlaceholder.${useKind}`)}
+          rows={2}
+          value={grants}
+          onChange={(e) => setGrants(e.target.value)}
+        />
+        <div>
+          <Button type="submit" variant="outline" disabled={!instance.trim() || !useTarget || grantList.length === 0 || add.isPending}>
+            <Link2 className="h-4 w-4" /> {t('environments.useSubmit')}
+          </Button>
+        </div>
       </form>
     </fieldset>
   );

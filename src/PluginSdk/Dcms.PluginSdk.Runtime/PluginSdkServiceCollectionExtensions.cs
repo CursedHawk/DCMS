@@ -134,6 +134,7 @@ public static class PluginSdkServiceCollectionExtensions
         services.TryAddScoped<IPluginInstanceStore, CmsPluginInstanceStore>();
         services.TryAddScoped<Platform.PublishedContentReader>();
         services.AddScoped<PluginContextFactory>();
+        services.TryAddScoped<ContractLinks>();
         services.AddScoped<PluginContextAccessor>();
         services.AddScoped<ContractDispatcher>();
         services.TryAddSingleton<PluginConfigValidator>();

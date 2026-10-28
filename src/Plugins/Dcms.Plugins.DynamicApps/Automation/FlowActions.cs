@@ -93,6 +93,7 @@ public static partial class ActionCatalog
     public static readonly IReadOnlyList<IFlowAction> All =
     [
         new RecordsCreateAction(), new RecordsUpdateAction(), new RecordsDeleteAction(), new RecordsLookupAction(), new RecordsQueryAction(),
+        new LinkedRecordsQueryAction(), new LinkedRecordsCreateAction(), new LinkedRecordsUpdateAction(), new LinkedRecordsDeleteAction(),
         new FlowInvokeAction(), new EventPublishAction(),
         new EmailSendAction(), new NotificationRaiseAction(),
         new ContentGetAction(), new ContentListAction(),
@@ -409,6 +410,112 @@ internal sealed class RecordsQueryAction : FlowAction<RecordFind>
         var page = await context.Services.GetRequiredService<RecordService>().QueryAsync(input.Table,
             new RecordQuery { Filter = input.Filter, Sort = input.Sort ?? [], PageSize = Math.Clamp(input.PageSize, 1, 50) }, RecordPlane.System, ct);
         return new JsonObject { ["items"] = new JsonArray(page.Items.Select(i => (JsonNode)i).ToArray()), ["total"] = page.Total, ["totalCapped"] = page.TotalCapped };
+    }
+}
+
+// ---------------------------------------------------------------------- another environment's records
+
+/// <param name="Environment">The other environment's name.</param>
+/// <param name="App">Its Dynamic Apps instance's slug.</param>
+internal sealed record LinkedRecordInput(
+    string Environment, string App, string Table, Guid? Id = null, JsonObject? Values = null,
+    RecordFilter? Filter = null, IReadOnlyList<RecordSort>? Sort = null, int PageSize = 20);
+
+/// <summary>
+/// Records of another environment of the workspace, through a tables link its managers set up
+/// (ADR 0028): run as that environment, and only for the tables and verbs the link grants.
+/// </summary>
+internal abstract class LinkedRecordsAction : FlowAction<LinkedRecordInput>
+{
+    protected const string Target = "\"environment\":{\"type\":\"string\"},\"app\":{\"type\":\"string\"},\"table\":{\"type\":\"string\"}";
+
+    protected static async Task<IDynamicAppsRecords> RecordsAsync(FlowActionContext context, LinkedRecordInput input, CancellationToken ct)
+    {
+        try
+        {
+            return await context.Plugin.Contracts.LinkedAsync<IDynamicAppsRecords>(input.Environment, input.App, ct);
+        }
+        catch (ContractAccessDeniedException e)
+        {
+            throw new FlowFatalException(e.Message);
+        }
+    }
+
+    protected static async Task<T> CallAsync<T>(Func<Task<T>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (Exception e) when (e is ContractAccessDeniedException or ContractValidationException)
+        {
+            throw new FlowFatalException(e.Message);
+        }
+    }
+}
+
+internal sealed class LinkedRecordsQueryAction : LinkedRecordsAction
+{
+    public override string Id => "environment.records.query";
+    public override string Description => "Records of a table in another environment, through a tables link. Output: { items, total, totalCapped }.";
+    public override OpRisk Risk => OpRisk.Read;
+    protected override string Schema => "{\"type\":\"object\",\"required\":[\"environment\",\"app\",\"table\"],\"properties\":{\"environment\":{\"type\":\"string\"},\"app\":{\"type\":\"string\"},\"table\":{\"type\":\"string\"},\"filter\":{\"type\":\"object\"},\"sort\":{\"type\":\"array\"},\"pageSize\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":50}}}";
+
+    protected override async Task<JsonNode?> RunAsync(FlowActionContext context, LinkedRecordInput input, CancellationToken ct)
+    {
+        var records = await RecordsAsync(context, input, ct);
+        var page = await CallAsync(() => records.QueryRecordsAsync(new TableQuery(input.Table,
+            new RecordQuery { Filter = input.Filter, Sort = input.Sort ?? [], PageSize = Math.Clamp(input.PageSize, 1, 50) }), ct));
+        return new JsonObject { ["items"] = new JsonArray(page.Items.Select(i => (JsonNode)i.DeepClone()).ToArray()), ["total"] = page.Total, ["totalCapped"] = page.TotalCapped };
+    }
+}
+
+internal sealed class LinkedRecordsCreateAction : LinkedRecordsAction
+{
+    public override string Id => "environment.records.create";
+    public override string Description => "Create a record in a table of another environment, through a tables link. Output: the record.";
+    public override OpRisk Risk => OpRisk.Safe;
+    protected override string Schema => "{\"type\":\"object\",\"required\":[\"environment\",\"app\",\"table\",\"values\"],\"properties\":{\"environment\":{\"type\":\"string\"},\"app\":{\"type\":\"string\"},\"table\":{\"type\":\"string\"},\"values\":{\"type\":\"object\"}}}";
+
+    protected override async Task<JsonNode?> RunAsync(FlowActionContext context, LinkedRecordInput input, CancellationToken ct)
+    {
+        context.CountWrite();
+        var records = await RecordsAsync(context, input, ct);
+        return await CallAsync(() => records.CreateRecordAsync(new RecordCreate(input.Table, input.Values ?? []), ct));
+    }
+}
+
+internal sealed class LinkedRecordsUpdateAction : LinkedRecordsAction
+{
+    public override string Id => "environment.records.update";
+    public override string Description => "Change fields of a record in another environment, through a tables link. Output: the record.";
+    public override OpRisk Risk => OpRisk.Safe;
+    protected override string Schema => "{\"type\":\"object\",\"required\":[\"environment\",\"app\",\"table\",\"id\",\"values\"],\"properties\":{\"environment\":{\"type\":\"string\"},\"app\":{\"type\":\"string\"},\"table\":{\"type\":\"string\"},\"id\":{\"type\":\"string\",\"format\":\"uuid\"},\"values\":{\"type\":\"object\"}}}";
+
+    protected override async Task<JsonNode?> RunAsync(FlowActionContext context, LinkedRecordInput input, CancellationToken ct)
+    {
+        context.CountWrite();
+        var id = input.Id ?? throw new FlowFatalException("environment.records.update needs an id.");
+        var records = await RecordsAsync(context, input, ct);
+        return await CallAsync(() => records.UpdateRecordAsync(new RecordUpdate(input.Table, id, input.Values ?? []), ct))
+               ?? throw new FlowFatalException($"There is no {input.Table} record {id} in environment {input.Environment}.");
+    }
+}
+
+internal sealed class LinkedRecordsDeleteAction : LinkedRecordsAction
+{
+    public override string Id => "environment.records.delete";
+    public override string Description => "Delete a record in another environment, through a tables link. Output: { deleted }.";
+    public override OpRisk Risk => OpRisk.Dangerous;
+    protected override string Schema => "{\"type\":\"object\",\"required\":[\"environment\",\"app\",\"table\",\"id\"],\"properties\":{\"environment\":{\"type\":\"string\"},\"app\":{\"type\":\"string\"},\"table\":{\"type\":\"string\"},\"id\":{\"type\":\"string\",\"format\":\"uuid\"}}}";
+
+    protected override async Task<JsonNode?> RunAsync(FlowActionContext context, LinkedRecordInput input, CancellationToken ct)
+    {
+        context.CountWrite();
+        var id = input.Id ?? throw new FlowFatalException("environment.records.delete needs an id.");
+        var records = await RecordsAsync(context, input, ct);
+        await CallAsync(async () => { await records.DeleteRecordAsync(new RecordRequest(input.Table, id), ct); return true; });
+        return new JsonObject { ["deleted"] = true };
     }
 }
 

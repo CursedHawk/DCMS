@@ -93,3 +93,17 @@ test('a feature environment branches from the one chosen and can go once merged'
   await expect.poll(() => api.requestsTo('POST', '/api/admin/environments').map((c) => c.body))
     .toEqual([{ name: 'development-feature1', from: DEV, feature: true, deleteWhenMerged: true }]);
 });
+
+test('an environment uses a service environment’s tables for what is granted', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('POST', '/api/admin/environments/:id/links', { id: 'l1' });
+  await page.goto('/settings/environments');
+
+  // development is listed first; its form is the one around its grants.
+  const form = page.getByLabel('Grants').first().locator('xpath=ancestor::form[1]');
+  await form.getByLabel('App address there').fill('crm');
+  await form.getByLabel('Grants').fill('companies:read\ndeals:create');
+  await form.getByRole('button', { name: 'Use from there' }).click();
+  await expect.poll(() => api.requestsTo('POST', `/api/admin/environments/${DEV}/links`).map((r) => r.body))
+    .toEqual([{ kind: 'tables', targetEnvironmentId: TENANT.tenantId, targetKey: 'crm', grants: ['companies:read', 'deals:create'] }]);
+});

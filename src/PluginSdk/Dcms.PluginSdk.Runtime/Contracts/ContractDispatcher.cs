@@ -229,10 +229,12 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             var value = task.GetType().GetProperty(nameof(Task<object>.Result))!.GetValue(task);
             return new ContractOutcome(StatusCodes.Status200OK, value);
         }
-        catch (Exception e) when (Unwrap(e) is var inner && inner is ContractValidationException or ContractConflictException or ContractLimitException)
+        catch (Exception e) when (Unwrap(e) is var inner
+                                  && inner is ContractValidationException or ContractConflictException or ContractLimitException or ContractAccessDeniedException)
         {
             return inner switch
             {
+                ContractAccessDeniedException => new ContractOutcome(StatusCodes.Status403Forbidden, Error: inner.Message),
                 ContractConflictException => new ContractOutcome(StatusCodes.Status409Conflict, Error: inner.Message),
                 ContractLimitException => new ContractOutcome(StatusCodes.Status429TooManyRequests, Error: inner.Message),
                 _ => new ContractOutcome(StatusCodes.Status400BadRequest, Error: inner.Message),

@@ -115,6 +115,8 @@ public sealed class DynamicAppsPlugin : IPlugin
             // Imports and bulk changes too large for a request: stored, then run as tracked jobs.
             ContractRequirement.Of<IPluginBlobs>(),
             ContractRequirement.Of<IPluginTrackedJobs>(),
+            // Another environment's tables, through a tables link (ADR 0028): environment.records.* actions.
+            ContractRequirement.Of<IDynamicAppsRecords>(optional: true),
         ],
         jobs: [JobDeclaration.Of<Data.RecordBulkJob>(Data.RecordBulkJob.Name)],
         // Other plugins' events, forwarded to the flows that trigger on them.

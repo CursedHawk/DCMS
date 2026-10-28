@@ -36,6 +36,7 @@ public static class AuditActions
     public const string EnvironmentDeleted = "environment.deleted";
     public const string EnvironmentLinkCreated = "environment.link.created";
     public const string EnvironmentLinkDeleted = "environment.link.deleted";
+    public const string EnvironmentLinkCalled = "environment.link.called";
     public const string EnvironmentPoliciesChanged = "environment.policies.changed";
     public const string EnvironmentMigrationCreated = "environment.migration.created";
     public const string EnvironmentMigrationApplied = "environment.migration.applied";

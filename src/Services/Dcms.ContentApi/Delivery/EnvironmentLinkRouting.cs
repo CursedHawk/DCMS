@@ -80,7 +80,7 @@ public static class EnvironmentLinkRouting
             using var rls = consumer.Scope();
             links = await services.GetRequiredService<TenancyDbContext>().EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
                 .Where(l => l.TenantId == consumer.TenantId && l.EnvironmentId == consumer.Id)
-                .Select(l => new EnvironmentLinkEntry(l.Kind, l.TargetKey, l.TargetEnvironmentId, l.Access))
+                .Select(l => new EnvironmentLinkEntry(l.Kind, l.TargetKey, l.TargetEnvironmentId, l.Access, l.Grants))
                 .ToArrayAsync(ct);
             await cache.SetAsync(key, links, Ttl, ct);
         }

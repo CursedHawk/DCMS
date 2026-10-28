@@ -11,3 +11,6 @@ public sealed class ContractConflictException(string message) : Exception(messag
 
 /// <summary>A quota or rate limit refused the call. The dispatcher answers 429.</summary>
 public sealed class ContractLimitException(string message) : Exception(message);
+
+/// <summary>Nothing grants the call: a link that does not exist or does not cover it. The dispatcher answers 403.</summary>
+public sealed class ContractAccessDeniedException(string message) : Exception(message);

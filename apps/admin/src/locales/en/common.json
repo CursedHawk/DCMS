@@ -2274,6 +2274,26 @@
     "deleteWhenMerged": "Delete once merged",
     "featureHint": "A branch of the environment it copies from: it sits beside it, merges back into it, and deploys only the migrations made in it.",
     "featureOf": "Feature of {{name}}",
+    "serviceEnvironment": "Service environment",
+    "serviceHint": "Outside the pipeline: nothing deploys into or out of it. Other environments use its apps and tables through links.",
+    "service": "Service",
+    "useSubmit": "Use from there",
+    "useHint": "Use an app's tables or operations in another environment: a plugin or flow here calls it, running there, for exactly what is granted.",
+    "useKind": "What to use",
+    "useKinds": {
+      "tables": "Dynamic Apps tables",
+      "contracts": "Plugin operations"
+    },
+    "useInstance": "App address there",
+    "useGrants": "Grants",
+    "useGrantsPlaceholder": {
+      "tables": "companies:read, deals:create",
+      "contracts": "billing.invoices/CreateInvoice"
+    },
+    "useRow": {
+      "tables": "Tables of {{instance}} in {{name}}",
+      "contracts": "Operations of {{instance}} in {{name}}"
+    },
     "addLabel": "New environment",
     "add": "Add environment",
     "addHint": "Lowercase letters, digits and dashes. A new environment starts before the first one, gets the workspace members with their current roles, and deploys into the stage after it.",
@@ -2382,7 +2402,8 @@
       "api-connections": "API connection",
       "user-auth": "User access",
       "dynamic-apps": "Dynamic app",
-      "content": "Published content"
+      "content": "Published content",
+      "links": "Environment link"
     }
   }
 }

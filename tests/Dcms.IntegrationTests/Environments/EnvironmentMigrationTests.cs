@@ -341,6 +341,32 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_link_to_a_service_environment_deploys_with_the_pipeline()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var billing = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "billing", service = true, empty = true }), ct), ct)).GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, $"{ws.Prod}/billing",
+            new { pluginId = "blog", slug = "invoices", name = "Invoices", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/environments/{ws.DevId}/links", ws.Owner, ws.Prod,
+            new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants = new[] { "content.read/GetItem" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var changes = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/changes", ws.Owner, ws.Dev), ct), ct);
+        changes.EnumerateArray().Select(c => c.GetProperty("id").GetString()).Should().Contain("links/contracts/billing/invoices");
+        var migration = await CutAsync(client, ws, "Use billing", ct);
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+
+        var prodLinks = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/environments/{ws.ProdId}/links", ws.Owner, ws.Prod), ct), ct);
+        var link = prodLinks.EnumerateArray().Single();
+        (link.GetProperty("kind").GetString(), link.GetProperty("targetEnvironmentId").GetGuid(), link.GetProperty("targetKey").GetString())
+            .Should().Be(("contracts", billing, "invoices"));
+        link.GetProperty("grants").EnumerateArray().Select(g => g.GetString()).Should().Equal("content.read/GetItem");
+    }
+
+    [DockerFact]
     public async Task A_deployment_cannot_grant_what_its_deployer_could_not()
     {
         var ct = TestContext.Current.CancellationToken;

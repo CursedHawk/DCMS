@@ -106,6 +106,13 @@ public sealed class EnvironmentLink : EnvironmentEntity
     public string Kind { get; set; } = EnvironmentLinkKinds.App;
     public string? TargetKey { get; set; }
     public EnvironmentLinkAccess Access { get; set; } = EnvironmentLinkAccess.Read;
+
+    /// <summary>
+    /// What a <c>contracts</c> link may call (<c>{contractId}/{Operation}</c>) or a <c>tables</c>
+    /// link may do (<c>{table}:{read|create|update|delete}</c>); anything else is refused.
+    /// </summary>
+    public List<string> Grants { get; set; } = [];
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -114,8 +121,14 @@ public static class EnvironmentLinkKinds
     public const string App = "app";
     public const string Users = "users";
 
+    /// <summary>A plugin here calls contract operations of an instance there, run as that environment (ADR 0028).</summary>
+    public const string Contracts = "contracts";
+
+    /// <summary>Dynamic Apps tables of an instance there, by table and verb: data access, not part of the model.</summary>
+    public const string Tables = "tables";
+
     /// <summary>The cached links of one consuming environment: read by content-api, cleared by admin-api on any change.</summary>
-    public static string CacheKey(Guid environmentId) => $"t:{environmentId}:environment-links:v2";
+    public static string CacheKey(Guid environmentId) => $"t:{environmentId}:environment-links:v3";
 }
 
 /// <summary>
@@ -157,7 +170,7 @@ public static class EnvironmentRealm
 }
 
 /// <summary>A link as content-api caches it.</summary>
-public sealed record EnvironmentLinkEntry(string Kind, string? TargetKey, Guid TargetEnvironmentId, EnvironmentLinkAccess Access);
+public sealed record EnvironmentLinkEntry(string Kind, string? TargetKey, Guid TargetEnvironmentId, EnvironmentLinkAccess Access, List<string>? Grants = null);
 
 public enum EnvironmentLinkAccess
 {

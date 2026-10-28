@@ -34,6 +34,10 @@ public sealed class FinbuckleTenantContext(
     // ADR 0028: more environments than production, as UseDcmsEnvironment found.
     public bool HasEnvironments => EnvironmentResolution.Many(http?.HttpContext);
 
-    // ADR 0028: what UseDcmsEnvironment resolved from the request; production otherwise.
-    public Guid? EnvironmentId => EnvironmentResolution.Of(http?.HttpContext) ?? TenantId;
+    // ADR 0028: the environment in force for this tenant -- an enclosing RlsScope block's, such as
+    // a linked contract call running as another environment, else what UseDcmsEnvironment resolved
+    // from the request; production otherwise.
+    public Guid? EnvironmentId => TenantId is { } tenant
+        ? Rls.RlsScope.EnvironmentFor(tenant) ?? EnvironmentResolution.Of(http?.HttpContext) ?? tenant
+        : null;
 }

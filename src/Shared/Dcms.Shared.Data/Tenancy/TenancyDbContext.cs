@@ -205,6 +205,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasIndex(l => new { l.TenantId, l.EnvironmentId, l.Kind, l.TargetKey }).IsUnique().AreNullsDistinct(false);
             e.HasIndex(l => l.TargetEnvironmentId);
             e.Property(l => l.TargetEnvironmentId).HasColumnName("TargetTenantId");
+            e.Property(l => l.Grants).HasDefaultValueSql("'{}'::text[]");
             e.HasQueryFilter(QueryFilters.Tenant, l => l.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, l => CurrentEnvironmentId == null || l.EnvironmentId == CurrentEnvironmentId);
         });

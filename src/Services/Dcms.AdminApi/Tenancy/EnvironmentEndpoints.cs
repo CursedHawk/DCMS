@@ -111,11 +111,19 @@ public static class EnvironmentEndpoints
             }
 
             // A stage goes in front of the pipeline; a feature beside what it branched from.
+            // A service (billing, a shared catalogue) is outside the pipeline: the others use it
+            // through links, and nothing deploys into or out of it unless set up so.
+            var service = body.Service == true;
+            if (service && feature)
+            {
+                return Results.BadRequest(new { error = "An environment is a feature or a service, not both." });
+            }
             var upstream = feature ? source : all.MinBy(e => e.Order)!;
             var created = new TenantEnvironment
             {
-                Id = Guid.NewGuid(), TenantId = tenantId, Name = name, Order = upstream.Order - 1,
-                Purpose = feature ? EnvironmentPurpose.Feature : EnvironmentPurpose.Stage,
+                Id = Guid.NewGuid(), TenantId = tenantId, Name = name,
+                Order = service ? all.Max(e => e.Order) + 1 : upstream.Order - 1,
+                Purpose = feature ? EnvironmentPurpose.Feature : service ? EnvironmentPurpose.Service : EnvironmentPurpose.Stage,
                 ForkedFrom = feature ? source.Id : null,
                 MergesOwnChangesOnly = body.MergesOwnChangesOnly ?? feature,
                 DeleteWhenMerged = feature && body.DeleteWhenMerged == true,
@@ -124,8 +132,11 @@ public static class EnvironmentEndpoints
             using (RlsScope.Tenant(tenantId))
             {
                 db.Environments.Add(created);
-                var tracked = await db.Environments.IgnoreTenantFilter().FirstAsync(e => e.TenantId == tenantId && e.Id == upstream.Id, ct);
-                tracked.PromotesFrom = [.. tracked.PromotesFrom, created.Id];
+                if (!service)
+                {
+                    var tracked = await db.Environments.IgnoreTenantFilter().FirstAsync(e => e.TenantId == tenantId && e.Id == upstream.Id, ct);
+                    tracked.PromotesFrom = [.. tracked.PromotesFrom, created.Id];
+                }
                 await db.SaveChangesAsync(ct);
             }
             environments.Evict(tenantId);
@@ -291,7 +302,8 @@ public static class EnvironmentEndpoints
             return Results.NoContent();
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "environment");
 
-        // Links (ADR 0026): this environment using another's resource, within the workspace.
+        // Links (ADR 0026, 0028): this environment using another's resource, within the workspace --
+        // an app's /api, sign-in, contract operations, or Dynamic Apps tables.
         app.MapGet("/api/admin/environments/{id:guid}/links", async (
             Guid id, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CancellationToken ct) =>
         {
@@ -299,7 +311,7 @@ public static class EnvironmentEndpoints
             using var rls = target.Scope();
             return Results.Ok(await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
                 .Where(l => l.TenantId == target.TenantId && l.EnvironmentId == target.Id)
-                .Select(l => new { id = l.Id, kind = l.Kind, targetEnvironmentId = l.TargetEnvironmentId, targetKey = l.TargetKey, access = l.Access.ToString() })
+                .Select(l => new { id = l.Id, kind = l.Kind, targetEnvironmentId = l.TargetEnvironmentId, targetKey = l.TargetKey, access = l.Access.ToString(), grants = l.Grants })
                 .ToListAsync(ct));
         }).RequireAuthorization();
 
@@ -329,6 +341,36 @@ public static class EnvironmentEndpoints
                     return Results.Conflict(new { error = "An environment takes its users from one other environment, which keeps its own." });
                 }
             }
+            else if (body.Kind is EnvironmentLinkKinds.Contracts or EnvironmentLinkKinds.Tables)
+            {
+                // A plugin here calls an instance there (ADR 0028): what it may call is listed, not implied.
+                access = EnvironmentLinkAccess.ReadWrite;
+                if (string.IsNullOrWhiteSpace(body.TargetKey) || body.Grants is not { Count: > 0 and <= 100 } grants
+                    || grants.Any(g => !LinkGrant(body.Kind, g)))
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = body.Kind == EnvironmentLinkKinds.Tables
+                            ? "A tables link names a Dynamic Apps instance there and grants table:read, table:create, table:update or table:delete."
+                            : "A contracts link names an instance there and grants contract/Operation.",
+                    });
+                }
+                using (provider.Scope())
+                {
+                    var instance = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                        .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == body.TargetKey, ct);
+                    if (instance is null || (body.Kind == EnvironmentLinkKinds.Tables && instance.PluginId != DynamicAppsPluginId))
+                    {
+                        return Results.BadRequest(new { error = "That environment has no such instance to link to." });
+                    }
+                }
+                using var rls = consumer.Scope();
+                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.TenantId == tenantId && l.Kind == body.Kind
+                        && l.TargetEnvironmentId == provider.Id && l.TargetKey == body.TargetKey, ct))
+                {
+                    return Results.Conflict(new { error = "This instance is already linked." });
+                }
+            }
             else
             {
                 if (body.Kind != EnvironmentLinkKinds.App || string.IsNullOrWhiteSpace(body.TargetKey)
@@ -355,6 +397,9 @@ public static class EnvironmentEndpoints
             {
                 Id = Guid.NewGuid(), TenantId = tenantId, EnvironmentId = consumer.Id, TargetEnvironmentId = provider.Id, Kind = body.Kind,
                 TargetKey = body.Kind == EnvironmentLinkKinds.Users ? null : body.TargetKey!.Trim(), Access = access,
+                Grants = body.Kind is EnvironmentLinkKinds.Contracts or EnvironmentLinkKinds.Tables
+                    ? body.Grants!.Select(g => g.Trim()).Distinct(StringComparer.Ordinal).ToList()
+                    : [],
             };
             db.EnvironmentLinks.Add(link);
             audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("environment", consumer.Name)
@@ -444,10 +489,31 @@ public static class EnvironmentEndpoints
     /// <param name="Feature">A feature environment: a branch of <paramref name="From"/>, merging back into it.</param>
     /// <param name="MergesOwnChangesOnly">Deploying from it offers only the migrations cut in it; a feature's default.</param>
     /// <param name="DeleteWhenMerged">A feature deleted once everything it cut is deployed into what it branched from.</param>
+    /// <param name="Service">A service environment: outside the pipeline, used by the others through links.</param>
     private sealed record CreateEnvironmentRequest(
-        string? Name, bool? Empty, Guid? From, List<string>? Copy, bool? Feature, bool? MergesOwnChangesOnly, bool? DeleteWhenMerged);
+        string? Name, bool? Empty, Guid? From, List<string>? Copy, bool? Feature, bool? MergesOwnChangesOnly, bool? DeleteWhenMerged,
+        bool? Service);
     private sealed record UpdateEnvironmentRequest(
         string? Name, int? Order, List<Guid>? PromotesFrom, bool? MergesOwnChangesOnly, bool? DeleteWhenMerged);
     private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
-    private sealed record LinkRequest(string Kind, Guid TargetEnvironmentId, string? TargetKey, string? Access);
+    /// <param name="Grants">What a contracts link may call (<c>contract/Operation</c>) or a tables link may do (<c>table:verb</c>).</param>
+    private sealed record LinkRequest(string Kind, Guid TargetEnvironmentId, string? TargetKey, string? Access, List<string>? Grants);
+
+    private const string DynamicAppsPluginId = "dynamic-apps";
+
+    private static readonly string[] TableVerbs = ["read", "create", "update", "delete"];
+
+    /// <summary>A grant of the link's kind: <c>contract/Operation</c>, or <c>table:verb</c>.</summary>
+    internal static bool LinkGrant(string kind, string grant)
+    {
+        var g = grant.Trim();
+        if (g.Length is 0 or > 200) return false;
+        if (kind == EnvironmentLinkKinds.Tables)
+        {
+            var colon = g.LastIndexOf(':');
+            return colon > 0 && TableVerbs.Contains(g[(colon + 1)..]);
+        }
+        var slash = g.IndexOf('/');
+        return slash > 0 && slash < g.Length - 1 && g.IndexOf('/', slash + 1) < 0;
+    }
 }

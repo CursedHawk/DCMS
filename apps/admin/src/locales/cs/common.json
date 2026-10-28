@@ -2320,6 +2320,26 @@
     "deleteWhenMerged": "Po sloučení smazat",
     "featureHint": "Větev prostředí, ze kterého se kopíruje: stojí vedle něj, slučuje se zpět do něj a nasazuje jen migrace vytvořené v něm.",
     "featureOf": "Funkce z {{name}}",
+    "serviceEnvironment": "Servisní prostředí",
+    "serviceHint": "Mimo pipeline: nic se do něj ani z něj nenasazuje. Ostatní prostředí používají jeho aplikace a tabulky přes propojení.",
+    "service": "Služba",
+    "useSubmit": "Používat odtud",
+    "useHint": "Používat tabulky nebo operace aplikace z jiného prostředí: plugin nebo tok odsud je volá, běží tam a smí přesně to, co je povoleno.",
+    "useKind": "Co používat",
+    "useKinds": {
+      "tables": "Tabulky Dynamic Apps",
+      "contracts": "Operace pluginu"
+    },
+    "useInstance": "Adresa aplikace tam",
+    "useGrants": "Oprávnění",
+    "useGrantsPlaceholder": {
+      "tables": "companies:read, deals:create",
+      "contracts": "billing.invoices/CreateInvoice"
+    },
+    "useRow": {
+      "tables": "Tabulky {{instance}} v {{name}}",
+      "contracts": "Operace {{instance}} v {{name}}"
+    },
     "addLabel": "Nové prostředí",
     "add": "Přidat prostředí",
     "addHint": "Malá písmena, číslice a pomlčky. Nové prostředí začíná před prvním, dostane členy pracovního prostoru s jejich současnými rolemi a nasazuje do fáze za sebou.",
@@ -2434,7 +2454,8 @@
       "api-connections": "Připojení API",
       "user-auth": "Přístup uživatelů",
       "dynamic-apps": "Dynamická aplikace",
-      "content": "Publikovaný obsah"
+      "content": "Publikovaný obsah",
+      "links": "Propojení prostředí"
     }
   }
 }

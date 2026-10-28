@@ -106,6 +106,18 @@ public interface IPluginContracts
     /// offering every <c>IPaymentGateway</c>. Empty when none is enabled.
     /// </summary>
     IReadOnlyList<T> GetAll<T>() where T : class;
+
+    /// <summary>
+    /// A contract provided by an instance in another environment of the workspace -- a service
+    /// environment's billing, another environment's Dynamic Apps tables -- through a link that
+    /// environment's managers set up (ADR 0028). It runs entirely as that environment, may call
+    /// only the operations the link grants, and cannot itself call through a link.
+    /// </summary>
+    /// <param name="environment">The other environment's name.</param>
+    /// <param name="providerSlug">The providing instance's slug there.</param>
+    /// <exception cref="ContractAccessDeniedException">No link grants this, or the call would chain.</exception>
+    Task<T> LinkedAsync<T>(string environment, string providerSlug, CancellationToken ct) where T : class =>
+        throw new NotSupportedException("This host does not resolve linked contracts.");
 }
 
 public interface IPluginEventHandler<in TEvent> where TEvent : IPluginEvent
