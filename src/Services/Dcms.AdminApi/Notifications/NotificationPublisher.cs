@@ -174,10 +174,7 @@ public sealed class NotificationPublisher(
             // Extras still have to be members — an addressee who has since left the tenant
             // must not keep receiving its notifications.
             var extras = request.ExtraUserIds.Distinct().ToArray();
-            var hasEnvironments = await tenancy.Tenants.AsNoTracking()
-                .AnyAsync(t => t.Id == tenantId.ToString() && t.WorkspaceId != null, ct);
             var stillMembers = await tenancy.Memberships.AsNoTracking().IgnoreTenantFilter()
-                .ThatOpen(hasEnvironments)
                 .Where(m => m.TenantId == tenantId && extras.Contains(m.UserId))
                 .Select(m => m.UserId)
                 .ToListAsync(ct);

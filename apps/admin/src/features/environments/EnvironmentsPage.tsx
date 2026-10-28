@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Layers, Link2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -9,7 +9,6 @@ import {
   CardContent,
   CenteredSpinner,
   Checkbox,
-  EmptyState,
   Input,
   Label,
   LoadFailed,
@@ -26,8 +25,6 @@ import {
 import {
   useAddEnvironment,
   useDeleteEnvironment,
-  useDisableEnvironments,
-  useEnableEnvironments,
   useEnvironments,
   useLinkMutations,
   useLinks,
@@ -45,16 +42,14 @@ const DEPLOYMENTS: string = '/deployments';
 const NAME = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
 /**
- * Settings → Environments (ADR 0026): turning environments on, adding them, their order and which
- * of them may promote configuration into which. Each environment is a separate copy of the
- * workspace with its own data; the pill beside the workspace switcher moves between them.
+ * Settings → Environments (ADR 0028): adding them, their order and which of them may deploy
+ * configuration into which. Each environment has its own configuration and content and shares the
+ * workspace's members and media; the pill beside the workspace switcher moves between them.
  */
 export function EnvironmentsPage() {
   const { t } = useTranslation();
   const environments = useEnvironments();
   const navigate = useNavigate();
-  const enable = useEnableEnvironments();
-  const disable = useDisableEnvironments();
   const add = useAddEnvironment();
   const [name, setName] = useState('');
   const data = environments.data;
@@ -81,24 +76,11 @@ export function EnvironmentsPage() {
       {environments.isLoading ? <CenteredSpinner /> : null}
       {environments.isError ? <LoadFailed onRetry={() => void environments.refetch()} /> : null}
 
-      {data && !data.enabled ? (
-        <EmptyState
-          icon={Layers}
-          title={t('environments.offTitle')}
-          description={t('environments.offHint')}
-          action={
-            <Button onClick={() => enable.mutate(undefined, { onError: (err) => toastApiError(err, t) })} disabled={enable.isPending}>
-              {t('environments.enable')}
-            </Button>
-          }
-        />
-      ) : null}
-
-      {data?.enabled ? (
+      {data ? (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{t('environments.pipelineHint')}</p>
+          <p className="text-sm text-muted-foreground">{t(data.enabled ? 'environments.pipelineHint' : 'environments.offHint')}</p>
           {list.map((env, index) => (
-            <EnvironmentCard key={env.tenantId} env={env} all={list} above={list[index - 1]} below={list[index + 1]} />
+            <EnvironmentCard key={env.id} env={env} all={list} above={list[index - 1]} below={list[index + 1]} />
           ))}
 
           <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -116,14 +98,6 @@ export function EnvironmentsPage() {
             </Button>
           </form>
           <p className="text-xs text-muted-foreground">{t('environments.addHint')}</p>
-
-          {list.length === 1 ? (
-            <div>
-              <Button variant="outline" onClick={() => disable.mutate(undefined, { onError: (err) => toastApiError(err, t) })} disabled={disable.isPending}>
-                {t('environments.disable')}
-              </Button>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </Page>
@@ -151,13 +125,13 @@ function EnvironmentCard({
 
   // Swapping orders with a neighbour: the server keeps no positions of its own.
   const swap = (other: Environment) => {
-    update.mutate({ id: env.tenantId, order: other.order }, { onError });
-    update.mutate({ id: other.tenantId, order: env.order }, { onError });
+    update.mutate({ id: env.id, order: other.order }, { onError });
+    update.mutate({ id: other.id, order: env.order }, { onError });
   };
   const toggleSource = (source: string, on: boolean) =>
     update.mutate(
       {
-        id: env.tenantId,
+        id: env.id,
         promotesFrom: on ? [...env.promotesFrom, source] : env.promotesFrom.filter((s) => s !== source),
       },
       { onError },
@@ -169,7 +143,7 @@ function EnvironmentCard({
       confirmLabel: t('actions.delete'),
       destructive: true,
     });
-    if (ok) remove.mutate(env.tenantId, { onError });
+    if (ok) remove.mutate(env.id, { onError });
   };
 
   return (
@@ -181,7 +155,7 @@ function EnvironmentCard({
               className="flex min-w-0 flex-1 gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                update.mutate({ id: env.tenantId, name: draft.trim() }, { onSuccess: () => setRenaming(false), onError });
+                update.mutate({ id: env.id, name: draft.trim() }, { onSuccess: () => setRenaming(false), onError });
               }}
             >
               <Input aria-label={t('environments.name')} value={draft} onChange={(e) => setDraft(e.target.value.toLowerCase())} />
@@ -192,8 +166,7 @@ function EnvironmentCard({
           ) : (
             <>
               <h2 className="min-w-0 truncate text-base font-semibold">{env.name}</h2>
-              {env.isRoot ? <Badge tone="destructive">{t('environments.root')}</Badge> : null}
-              <span className="min-w-0 truncate text-xs text-muted-foreground">{env.slug}</span>
+              {env.isProduction ? <Badge tone="destructive">{t('environments.root')}</Badge> : null}
             </>
           )}
           <div className="ml-auto flex gap-1">
@@ -206,7 +179,7 @@ function EnvironmentCard({
             <Button variant="ghost" size="icon" aria-label={t('environments.rename')} onClick={() => setRenaming((r) => !r)}>
               <Pencil className="h-4 w-4" />
             </Button>
-            {!env.isRoot ? (
+            {!env.isProduction ? (
               <Button variant="ghost" size="icon" aria-label={t('actions.delete')} onClick={() => void destroy()}>
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -214,7 +187,7 @@ function EnvironmentCard({
           </div>
         </div>
 
-        {all.length > 1 ? <OwnershipGrid environmentId={env.tenantId} /> : null}
+        {all.length > 1 ? <OwnershipGrid environmentId={env.id} /> : null}
         {all.length > 1 ? <Links env={env} all={all} /> : null}
 
         {all.length > 1 ? (
@@ -222,15 +195,15 @@ function EnvironmentCard({
             <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.receivesFrom')}</legend>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5">
               {all
-                .filter((other) => other.tenantId !== env.tenantId)
+                .filter((other) => other.id !== env.id)
                 .map((other) => {
-                  const id = `from-${env.tenantId}-${other.tenantId}`;
+                  const id = `from-${env.id}-${other.id}`;
                   return (
-                    <label key={other.tenantId} htmlFor={id} className="flex items-center gap-2 text-sm">
+                    <label key={other.id} htmlFor={id} className="flex items-center gap-2 text-sm">
                       <Checkbox
                         id={id}
-                        checked={env.promotesFrom.includes(other.tenantId)}
-                        onCheckedChange={(on) => toggleSource(other.tenantId, on === true)}
+                        checked={env.promotesFrom.includes(other.id)}
+                        onCheckedChange={(on) => toggleSource(other.id, on === true)}
                       />
                       {other.name}
                     </label>
@@ -302,14 +275,14 @@ function OwnershipGrid({ environmentId }: { environmentId: string }) {
  */
 function Links({ env, all }: { env: Environment; all: Environment[] }) {
   const { t } = useTranslation();
-  const links = useLinks(env.tenantId);
-  const { add, remove } = useLinkMutations(env.tenantId);
-  const others = all.filter((e) => e.tenantId !== env.tenantId);
-  const [target, setTarget] = useState(others[0]?.tenantId ?? '');
+  const links = useLinks(env.id);
+  const { add, remove } = useLinkMutations(env.id);
+  const others = all.filter((e) => e.id !== env.id);
+  const [target, setTarget] = useState(others[0]?.id ?? '');
   const [address, setAddress] = useState('');
   const [access, setAccess] = useState<'read' | 'readWrite'>('read');
-  const [usersFrom, setUsersFrom] = useState(others[0]?.tenantId ?? '');
-  const nameOf = (id: string) => all.find((e) => e.tenantId === id)?.name ?? id;
+  const [usersFrom, setUsersFrom] = useState(others[0]?.id ?? '');
+  const nameOf = (id: string) => all.find((e) => e.id === id)?.name ?? id;
   const onError = (err: unknown) => toastApiError(err, t);
   const usersLink = (links.data ?? []).find((l) => l.kind === 'users');
 
@@ -319,7 +292,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
       {usersLink ? (
         <div className="flex items-center gap-2 text-sm">
           <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="min-w-0 truncate">{t('environments.usersLinkRow', { name: nameOf(usersLink.targetTenantId) })}</span>
+          <span className="min-w-0 truncate">{t('environments.usersLinkRow', { name: nameOf(usersLink.targetEnvironmentId) })}</span>
           <Button
             variant="ghost"
             size="icon"
@@ -335,7 +308,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
           className="flex flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(e) => {
             e.preventDefault();
-            add.mutate({ kind: 'users', targetTenantId: usersFrom }, { onError });
+            add.mutate({ kind: 'users', targetEnvironmentId: usersFrom }, { onError });
           }}
         >
           <span className="text-sm text-muted-foreground sm:flex-1">{t('environments.usersLinkHint')}</span>
@@ -345,7 +318,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
             </SelectTrigger>
             <SelectContent>
               {others.map((o) => (
-                <SelectItem key={o.tenantId} value={o.tenantId}>
+                <SelectItem key={o.id} value={o.id}>
                   {o.name}
                 </SelectItem>
               ))}
@@ -360,7 +333,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
         <div key={l.id} className="flex items-center gap-2 text-sm">
           <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="min-w-0 truncate">
-            {t('environments.linkRow', { address: l.targetKey, name: nameOf(l.targetTenantId) })}
+            {t('environments.linkRow', { address: l.targetKey, name: nameOf(l.targetEnvironmentId) })}
           </span>
           <Badge tone="outline">{t(`environments.access.${l.access}`)}</Badge>
           <Button
@@ -379,7 +352,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
         onSubmit={(e) => {
           e.preventDefault();
           add.mutate(
-            { kind: 'app', targetTenantId: target, targetKey: address.trim(), access },
+            { kind: 'app', targetEnvironmentId: target, targetKey: address.trim(), access },
             { onSuccess: () => setAddress(''), onError },
           );
         }}
@@ -396,7 +369,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
           </SelectTrigger>
           <SelectContent>
             {others.map((o) => (
-              <SelectItem key={o.tenantId} value={o.tenantId}>
+              <SelectItem key={o.id} value={o.id}>
                 {o.name}
               </SelectItem>
             ))}

@@ -9,21 +9,7 @@ import {
   setCurrentTenantSlug,
   switchTenant,
   useMyTenants,
-  workspaceOf,
-  type TenantSummary,
 } from '../tenants';
-
-/**
- * The tenant to open for a workspace: its production environment when the caller has a role
- * there, else the one furthest upstream they can open (ADR 0026). /me/tenants lists only
- * environments the caller can open.
- */
-function entryOf(environments: TenantSummary[]): TenantSummary {
-  return (
-    environments.find((t) => !t.workspaceId || t.workspaceId === t.tenantId) ??
-    [...environments].sort((a, b) => (a.environmentOrder ?? 0) - (b.environmentOrder ?? 0))[0]
-  );
-}
 
 export function TenantSwitcher() {
   const { t } = useTranslation();
@@ -53,14 +39,6 @@ export function TenantSwitcher() {
   }, [tenants.data, me.data, current]);
 
   const active = tenants.data?.find((x) => x.slug === current);
-  // One entry per workspace: its environments are switched with the pill beside this.
-  const workspaces = Object.values(
-    (tenants.data ?? []).reduce<Record<string, TenantSummary[]>>((acc, tn) => {
-      (acc[workspaceOf(tn)] ??= []).push(tn);
-      return acc;
-    }, {}),
-  );
-
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -72,24 +50,20 @@ export function TenantSwitcher() {
       <PopoverContent align="start" className="w-60 p-1.5">
         <p className="px-2 py-1 text-xs font-medium text-muted-foreground">{t('tenant.switcher')}</p>
         <div className="max-h-64 overflow-y-auto">
-          {workspaces.map((environments) => {
-            const entry = entryOf(environments);
-            const selected = !!active && workspaceOf(active) === workspaceOf(entry);
-            return (
-              <button
-                key={workspaceOf(entry)}
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  switchTenant(entry.slug);
-                }}
-                className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-              >
-                <span className="truncate">{entry.name}</span>
-                {selected ? <Check className="h-4 w-4 text-primary" /> : null}
-              </button>
-            );
-          })}
+          {(tenants.data ?? []).map((tenant) => (
+            <button
+              key={tenant.tenantId}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                switchTenant(tenant.slug);
+              }}
+              className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+            >
+              <span className="truncate">{tenant.name}</span>
+              {tenant.slug === current ? <Check className="h-4 w-4 text-primary" /> : null}
+            </button>
+          ))}
           {tenants.data?.length === 0 ? (
             <p className="px-2 py-2 text-xs text-muted-foreground">{t('tenant.selectFirst')}</p>
           ) : null}

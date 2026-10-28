@@ -13,12 +13,12 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// <summary>
 /// Sites whose source is in git, by their identity across environments (ADR 0026): name, kind,
 /// and the commit their <c>release</c> branch holds. Applying puts that commit on the receiving
-/// environment's repository — fetched from whichever environment of the workspace has it — and
+/// environment's repository — fetched from whichever environment of the tenant has it — and
 /// the push builds and deploys it there as any push to release does. Domains, publishing
 /// branches, builds and uploaded (static-files) sites are each environment's own.
 /// </summary>
-// rls: EnvironmentMigrator calls every kind inside RlsScope.Tenant(tenantId), the tenant each
-// query names; IgnoreQueryFilters only drops the request's own, which is another environment.
+// rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
+// on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
 public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy, SiteGitService git, SiteDeleter deleter)
     : IEnvironmentConfigKind
 {
@@ -103,21 +103,16 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             .FirstOrDefaultAsync(s => s.TenantId == tenantId && (s.EnvironmentKey == key || (s.EnvironmentKey == null && s.Id == id)), ct);
     }
 
-    /// <summary>The same site's repositories in the workspace's other environments.</summary>
+    /// <summary>The same site's repositories in the tenant's other environments.</summary>
     private async Task<List<string>> SourcesAsync(Guid tenantId, string key, CancellationToken ct)
     {
-        var workspaceId = await tenancy.Tenants.AsNoTracking()
-            .Where(t => t.Id == tenantId.ToString()).Select(t => t.WorkspaceId).FirstOrDefaultAsync(ct);
-        if (workspaceId is null) return [];
-        var environments = (await tenancy.Tenants.AsNoTracking()
-                .Where(t => t.WorkspaceId == workspaceId && t.Id != tenantId.ToString()).Select(t => t.Id).ToListAsync(ct))
-            .Select(Guid.Parse).ToList();
+        var here = Dcms.Shared.Data.Rls.RlsScope.EnvironmentFor(tenantId) ?? tenantId;
         var id = Guid.TryParse(key, out var g) ? g : Guid.Empty;
-        // rls: platform -- one site's repository name in each of this workspace's environments,
+        // rls: platform -- one site's repository name in each of this tenant's other environments,
         // which the deployment already reviewed; nothing else is read.
         using var rls = Dcms.Shared.Data.Rls.RlsScope.Platform();
-        return await db.Sites.IgnoreTenantFilter().AsNoTracking()
-            .Where(s => environments.Contains(s.TenantId) && s.GitRepoFullName != null
+        return await db.Sites.IgnoreQueryFilters().AsNoTracking()
+            .Where(s => s.TenantId == tenantId && s.EnvironmentId != here && s.GitRepoFullName != null
                         && (s.EnvironmentKey == key || (s.EnvironmentKey == null && s.Id == id)))
             .Select(s => s.GitRepoFullName!)
             .ToListAsync(ct);

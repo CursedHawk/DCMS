@@ -62,37 +62,45 @@ public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) 
             return;
         }
 
+        // The site must be that tenant's. Without this a member of tenant A could name any site
+        // id and join the group another tenant's pushes land in — the group key contains the
+        // tenant id, but the caller supplies both halves, so only this check ties them together.
+        // It also says which environment the site is in (ADR 0028), which is where the caller
+        // needs a role.
+        var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+        Guid? environmentId;
+        using (RlsScope.Platform())
+        {
+            // rls: platform -- one site, named by id and tenant, to learn its environment.
+            environmentId = await sites.Sites.IgnoreQueryFilters()
+                .Where(s => s.Id == siteId && s.TenantId == tenantId)
+                .Select(s => (Guid?)s.EnvironmentId)
+                .FirstOrDefaultAsync();
+        }
+        if (environmentId is not { } environment)
+        {
+            logger.LogWarning(
+                "Site hub connection refused: site {Site} does not belong to tenant {Tenant}.",
+                siteId, tenantId);
+            Context.Abort();
+            return;
+        }
+
         // Membership is re-checked here rather than trusted from the token: per ADR 0003 the
         // access token carries no tenant claim at all, so this is the only thing between an
-        // authenticated user and another tenant's build stream.
-        // A hub connection resolves no tenant of its own: the caller names one, and everything
-        // below checks that claim -- as that tenant, so the database checks it too (ADR 0015).
-        using var rls = RlsScope.Tenant(tenantId);
+        // authenticated user and another tenant's build stream. As that environment, so the
+        // database checks it too (ADR 0015) and the role counted is one held there.
+        using var rls = RlsScope.Environment(tenantId, environment);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        var hasEnvironments = (await scope.ServiceProvider.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, default)).Count > 1;
         var isMember = await tenancy.Memberships.IgnoreTenantFilter()
-            .ThatOpen(tenant.WorkspaceId is not null)
+            .ThatOpen(hasEnvironments)
             .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId);
         if (!isMember)
         {
             logger.LogWarning(
                 "Site hub connection refused: user {User} is not a member of tenant {Tenant}.",
                 userId, tenantId);
-            Context.Abort();
-            return;
-        }
-
-        // And the site must be that tenant's. Without this a member of tenant A could name any
-        // site id and join the group another tenant's pushes land in — the group key contains
-        // the tenant id, but the caller supplies both halves, so only this check ties them
-        // together.
-        var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
-        var siteBelongs = await sites.Sites.IgnoreTenantFilter()
-            .AnyAsync(s => s.Id == siteId && s.TenantId == tenantId);
-        if (!siteBelongs)
-        {
-            logger.LogWarning(
-                "Site hub connection refused: site {Site} does not belong to tenant {Tenant}.",
-                siteId, tenantId);
             Context.Abort();
             return;
         }

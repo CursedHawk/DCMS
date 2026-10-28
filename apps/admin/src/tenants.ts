@@ -9,27 +9,34 @@ export interface TenantSummary {
   tenantId: string;
   slug: string;
   name: string;
-  /** The workspace root's id when the workspace has environments (ADR 0026), else null. */
-  workspaceId?: string | null;
-  /** The environment's name; `production` on the root. Null while environments are off. */
-  environment?: string | null;
-  environmentOrder?: number;
 }
 
-/** What groups a tenant with its environments: the workspace root's id, or its own. */
-export const workspaceOf = (t: TenantSummary): string => t.workspaceId ?? t.tenantId;
+/** Switches tenant with a full load, because permissions and almost every query are tenant-scoped. */
+export function switchTenant(slug: string): void {
+  setCurrentTenantSlug(slug);
+  window.location.assign('/');
+}
+
+const environmentKey = (slug: string) => `dcms.environment:${slug}`;
+
+/** The environment selected in the current tenant (ADR 0028); null is production. */
+export function getCurrentEnvironment(): string | null {
+  const slug = getCurrentTenantSlug();
+  return slug ? localStorage.getItem(environmentKey(slug)) : null;
+}
 
 /**
- * Switches tenant with a full load, because permissions and almost every query are tenant-scoped.
- *
- * <p>Between environments of one workspace the section is kept (`/sites/abc/settings` lands on
+ * Switches environment with a full load, keeping the section (`/sites/abc/settings` lands on
  * `/sites`): the same screens exist there, but the ids in the rest of the path are the other
- * environment's. Anywhere else it is home, since the other workspace may have nothing alike.</p>
+ * environment's.
  */
-export function switchTenant(slug: string, keepSection = false): void {
-  setCurrentTenantSlug(slug);
+export function switchEnvironment(name: string | null): void {
+  const slug = getCurrentTenantSlug();
+  if (!slug) return;
+  if (name && name !== 'production') localStorage.setItem(environmentKey(slug), name);
+  else localStorage.removeItem(environmentKey(slug));
   const section = window.location.pathname.split('/')[1];
-  window.location.assign(keepSection && section ? `/${section}` : '/');
+  window.location.assign(section ? `/${section}` : '/');
 }
 
 /**
@@ -75,8 +82,8 @@ export function setCurrentTenantSlug(slug: string | null): void {
 /**
  * The ambient headers every admin-api call carries.
  *
- * <p>`X-Dcms-Tenant` carries the tenant SLUG (Finbuckle resolves the tenant by identifier),
- * in both authentication modes — it names a tenant rather than claiming one, and
+ * <p>`X-Dcms-Tenant` carries the tenant SLUG (Finbuckle resolves the tenant by identifier), and
+ * `X-Dcms-Environment` the environment's name outside production (ADR 0028), in both authentication modes — it names a tenant rather than claiming one, and
  * TenantMembershipMiddleware still refuses a caller who is not a member.</p>
  *
  * <p>No Authorization header, and that absence is the point: it is what tells the edge to
@@ -88,6 +95,8 @@ export async function adminHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { ...csrfHeader() };
   const slug = getCurrentTenantSlug();
   if (slug) headers['X-Dcms-Tenant'] = slug;
+  const environment = getCurrentEnvironment();
+  if (environment) headers['X-Dcms-Environment'] = environment;
   return headers;
 }
 

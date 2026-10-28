@@ -30,11 +30,13 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             return;
         }
 
-        // rls: request tenant -- every query below names it, and Finbuckle resolved it.
+        // rls: request tenant and environment -- every query below names the tenant, and the
+        // environment filter keeps it to the request's environment (ADR 0028).
         var services = http.RequestServices;
         var tenancy = services.GetRequiredService<TenancyDbContext>();
+        var environmentId = tenant.EnvironmentId ?? tenantId;
         var policies = await tenancy.EnvironmentPolicies.AsNoTracking()
-            .Where(p => p.TenantId == tenantId && p.Kind == managed.Kind)
+            .Where(p => p.TenantId == tenantId && p.EnvironmentId == environmentId && p.Kind == managed.Kind)
             .ToListAsync(http.RequestAborted);
         if (policies.Count == 0)
         {
@@ -60,10 +62,9 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             return;
         }
 
-        var sources = await tenancy.Tenants.AsNoTracking()
-            .Where(t => t.Id == tenantId.ToString()).Select(t => t.PromotesFrom).FirstOrDefaultAsync(http.RequestAborted) ?? [];
-        var names = await tenancy.Tenants.AsNoTracking()
-            .Where(t => sources.Select(s => s.ToString()).Contains(t.Id)).Select(t => t.EnvironmentName).ToListAsync(http.RequestAborted);
+        var environments = await services.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, http.RequestAborted);
+        var sources = environments.FirstOrDefault(e => e.Id == environmentId)?.PromotesFrom ?? [];
+        var names = environments.Where(e => sources.Contains(e.Id)).Select(e => e.Name).ToList();
         http.Response.StatusCode = StatusCodes.Status409Conflict;
         await http.Response.WriteAsJsonAsync(new
         {

@@ -1,30 +1,41 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { runtimeConfig } from '../../runtime-config';
+import { adminHeaders } from '../../tenants';
 
-/** One environment of the workspace (ADR 0026): a whole tenant of its own. */
+/** One environment of the workspace (ADR 0028): a dimension of the tenant, production's id the tenant's. */
 export interface Environment {
-  tenantId: string;
-  slug: string;
+  id: string;
   name: string;
   order: number;
-  isRoot: boolean;
-  /** The environments allowed to promote configuration into this one. */
+  purpose: 'stage' | 'feature' | 'service';
+  isProduction: boolean;
+  /** The environments allowed to deploy configuration into this one. */
   promotesFrom: string[];
-  status: string;
   /** Whether the caller holds a role there, and so can open it. */
   isMember: boolean;
 }
 
 export interface Environments {
+  /** More than production. */
   enabled: boolean;
   workspaceId: string;
   environments: Environment[];
 }
 
+/**
+ * The workspace's environments, asked for without the environment header: the list is how a
+ * member finds one they can open, so it has to answer when the selected one is gone or closed to them.
+ */
 export function useEnvironments() {
   return useQuery({
     queryKey: ['environments'],
-    queryFn: () => api.get<Environments>('/admin/environments'),
+    queryFn: async () => {
+      const { 'X-Dcms-Environment': _, ...headers } = await adminHeaders();
+      const res = await fetch(`${runtimeConfig.adminApiBase}/admin/environments`, { headers });
+      if (!res.ok) throw new Error(`environments failed: ${res.status}`);
+      return (await res.json()) as Environments;
+    },
   });
 }
 
@@ -40,8 +51,6 @@ function useEnvironmentMutation<TInput>(fn: (input: TInput) => Promise<unknown>)
   });
 }
 
-export const useEnableEnvironments = () => useEnvironmentMutation(() => api.post('/admin/environments/enable'));
-export const useDisableEnvironments = () => useEnvironmentMutation(() => api.post('/admin/environments/disable'));
 export const useAddEnvironment = () =>
   useEnvironmentMutation((name: string) => api.post<Environment>('/admin/environments', { name }));
 export const useUpdateEnvironment = () =>
@@ -157,7 +166,7 @@ export function useSavePolicies(environmentId: string) {
 export interface EnvironmentLink {
   id: string;
   kind: 'app' | 'users';
-  targetTenantId: string;
+  targetEnvironmentId: string;
   targetKey: string | null;
   access: 'Read' | 'ReadWrite';
 }
@@ -175,8 +184,8 @@ export function useLinkMutations(environmentId: string) {
     add: useMutation({
       mutationFn: (
         body:
-          | { kind: 'app'; targetTenantId: string; targetKey: string; access: 'read' | 'readWrite' }
-          | { kind: 'users'; targetTenantId: string },
+          | { kind: 'app'; targetEnvironmentId: string; targetKey: string; access: 'read' | 'readWrite' }
+          | { kind: 'users'; targetEnvironmentId: string },
       ) => api.post(`/admin/environments/${environmentId}/links`, body),
       onSuccess,
     }),

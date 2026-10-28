@@ -44,8 +44,9 @@ adds an environment.
 - Sites, their builds, drafts and publishing branches. Domains, since a domain serves one site.
 - Dynamic Apps, entirely.
 - User Authentication's roles, grants, gates and API rules.
-- Search documents, analytics, visitors, chat, form submissions, social connections, edge site
-  gates.
+- Search documents, visitors, chat, form submissions, social connections.
+- Edge site gates, which are host-keyed and outside RLS: their `TenantId` is the environment's id,
+  which is also its realm's.
 - Roles, their permissions and members' role assignments.
 - Saved table views.
 - The environment engine's own tables.
@@ -55,6 +56,7 @@ adds an environment.
 - The media library, with one quota.
 - AI settings and assistant chats.
 - Notifications.
+- Analytics events, which name their site and through it their environment.
 - Usage.
 - The audit log, which records the environment in each event's details. The hash chain's format
   does not change.
@@ -74,7 +76,15 @@ adds an environment.
   environment id. Production's are therefore unchanged.
 
 Permissions are resolved for (tenant, environment, user). A member's roles in one environment
-say nothing about another. The workspace owner is owner in every environment.
+say nothing about another. Once a workspace has more than production, a member gets into an
+environment only with a role there. Owner is held in production and mirrored into every other
+environment; it cannot be granted or revoked anywhere else. Members are added and removed in
+production only, so someone who manages members in development cannot touch production's.
+
+Configuration kinds (`IEnvironmentConfigKind`) still take the tenant's id: the engine calls each
+one inside `RlsScope.Environment` for the environment it works on, and a kind's
+`RlsScope.Tenant(tenantId)` blocks inherit it. One realm per environment, keyed by its id; a
+non-production realm's slug is the tenant's followed by the environment's name.
 
 ### What builds on it
 - **Deployments** keep ADR 0026's model: baselines, named migrations, review, apply, rollback,
@@ -102,10 +112,16 @@ say nothing about another. The workspace owner is owner in every environment.
 ### Moving from ADR 0026
 A deploy-time step converts each environment tenant into an environment of its workspace:
 - its rows are re-keyed to the workspace's tenant id with the old tenant id as their environment
-  id,
-- its media objects are copied into the workspace's prefix,
-- its mirrored memberships are dropped,
+  id, so realms, edge rows, Redis keys and plugin files keyed by it stay valid,
+- its media rows move to the workspace and keep their object keys, so nothing is copied,
+- its mirrored memberships are dropped, and its role assignments move to the workspace's
+  membership of the same person,
+- its invitations, usage and AI settings are dropped; its audit rows stay as written, because the
+  log is append-only,
 - its tenant row is deleted.
+
+The step (`EnvironmentConversion`) runs at startup after every migration, and is a no-op once it
+has dropped the old columns.
 
 Environment slugs, `WorkspaceId` and the per-environment tenant rows go away.
 

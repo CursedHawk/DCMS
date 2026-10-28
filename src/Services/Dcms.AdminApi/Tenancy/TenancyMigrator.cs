@@ -108,6 +108,11 @@ public static class DcmsMigrationRunner
 
         logger.LogInformation("All databases migrated.");
 
+        // ADR 0028: ADR 0026's environment tenants become environments of their workspace. After
+        // every migration, because it re-keys every schema's rows; before the reporting views,
+        // because dropping the old columns drops the view that read them.
+        await EnvironmentConversion.ApplyAsync(scoped.GetRequiredService<TenancyDbContext>(), logger, ct);
+
         // Defense-in-depth: apply the RLS backstop once tables exist.
         if (configuration.GetValue("Tenancy:ApplyRls", true))
         {

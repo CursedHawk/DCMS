@@ -4,7 +4,7 @@ namespace Dcms.Shared.Data.Tenancy;
 
 /// <summary>
 /// A migration as applied in one environment (ADR 0026): a named, ordered set of configuration
-/// changes, cut in <see cref="OriginTenantId"/> and applied — in the same order and under the same
+/// changes, cut in <see cref="OriginEnvironmentId"/> and applied — in the same order and under the same
 /// <see cref="MigrationId"/> — in every environment downstream. The environment it was cut in holds
 /// a row too, so an environment's rows are its whole history, which is what the next environment
 /// reads to learn what is pending.
@@ -15,7 +15,8 @@ namespace Dcms.Shared.Data.Tenancy;
 public sealed class EnvironmentMigration : EnvironmentEntity
 {
     public Guid MigrationId { get; set; }
-    public Guid OriginTenantId { get; set; }
+    /// <summary>The environment the migration was cut in (column <c>OriginTenantId</c>, from ADR 0026).</summary>
+    public Guid OriginEnvironmentId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? AuthorUserId { get; set; }
@@ -100,7 +101,8 @@ public static class EnvironmentPolicies
 /// </summary>
 public sealed class EnvironmentLink : EnvironmentEntity
 {
-    public Guid TargetTenantId { get; set; }
+    /// <summary>The environment providing what is linked (column <c>TargetTenantId</c>, from ADR 0026).</summary>
+    public Guid TargetEnvironmentId { get; set; }
     public string Kind { get; set; } = EnvironmentLinkKinds.App;
     public string? TargetKey { get; set; }
     public EnvironmentLinkAccess Access { get; set; } = EnvironmentLinkAccess.Read;
@@ -113,33 +115,49 @@ public static class EnvironmentLinkKinds
     public const string Users = "users";
 
     /// <summary>The cached links of one consuming environment: read by content-api, cleared by admin-api on any change.</summary>
-    public static string CacheKey(Guid tenantId) => $"t:{tenantId}:environment-links";
+    public static string CacheKey(Guid environmentId) => $"t:{environmentId}:environment-links:v2";
 }
 
-/// <summary>Whose realm signs people in for an environment's sites: a <c>users</c> link's target, or its own.</summary>
+/// <summary>
+/// Whose realm signs people in for an environment's sites: a <c>users</c> link's target, or its
+/// own. One realm per environment, keyed by the environment's id (ADR 0028), so production's is
+/// keyed by the tenant's, as it always was.
+/// </summary>
 public static class EnvironmentRealm
 {
+    /// <summary>The realm of the tenant's environment in force (<see cref="Rls.RlsScope.EnvironmentFor"/>), production's otherwise.</summary>
     public static async Task<Guid> OfAsync(TenancyDbContext db, Guid tenantId, CancellationToken ct)
     {
-        using var rls = Rls.RlsScope.Tenant(tenantId);
+        var environmentId = Rls.RlsScope.EnvironmentFor(tenantId) ?? tenantId;
+        using var rls = Rls.RlsScope.Environment(tenantId, environmentId);
         return await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
-            .Where(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.Users)
-            .Select(l => (Guid?)l.TargetTenantId).FirstOrDefaultAsync(ct) ?? tenantId;
+            .Where(l => l.TenantId == tenantId && l.EnvironmentId == environmentId && l.Kind == EnvironmentLinkKinds.Users)
+            .Select(l => (Guid?)l.TargetEnvironmentId).FirstOrDefaultAsync(ct) ?? environmentId;
     }
 
-    /// <summary>The environments whose sites sign people in through <paramref name="realmTenantId"/>'s realm.</summary>
-    public static async Task<List<Guid>> ConsumersAsync(TenancyDbContext db, Guid realmTenantId, CancellationToken ct)
+    /// <summary>The environments of the tenant whose sites sign people in through <paramref name="realmId"/>'s realm.</summary>
+    public static async Task<List<Guid>> ConsumersAsync(TenancyDbContext db, Guid tenantId, Guid realmId, CancellationToken ct)
     {
-        // rls: platform -- the links are rows of the consumers, which are what is being looked for.
+        // rls: platform -- the links are rows of the consumers, which are what is being looked
+        // for; the tenant is named.
         using var rls = Rls.RlsScope.Platform();
-        return await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
-            .Where(l => l.TargetTenantId == realmTenantId && l.Kind == EnvironmentLinkKinds.Users)
-            .Select(l => l.TenantId).ToListAsync(ct);
+        return await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.TenantId == tenantId && l.TargetEnvironmentId == realmId && l.Kind == EnvironmentLinkKinds.Users)
+            .Select(l => l.EnvironmentId).ToListAsync(ct);
+    }
+
+    /// <summary>The tenant an environment belongs to; null for one that does not exist.</summary>
+    public static async Task<Guid?> TenantOfAsync(TenancyDbContext db, Guid environmentId, CancellationToken ct)
+    {
+        // rls: platform -- one environment row, by its globally unique id, to learn its tenant.
+        using var rls = Rls.RlsScope.Platform();
+        return await db.Environments.IgnoreQueryFilters().AsNoTracking()
+            .Where(e => e.Id == environmentId).Select(e => (Guid?)e.TenantId).FirstOrDefaultAsync(ct);
     }
 }
 
 /// <summary>A link as content-api caches it.</summary>
-public sealed record EnvironmentLinkEntry(string Kind, string? TargetKey, Guid TargetTenantId, EnvironmentLinkAccess Access);
+public sealed record EnvironmentLinkEntry(string Kind, string? TargetKey, Guid TargetEnvironmentId, EnvironmentLinkAccess Access);
 
 public enum EnvironmentLinkAccess
 {

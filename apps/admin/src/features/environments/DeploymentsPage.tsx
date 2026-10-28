@@ -24,7 +24,7 @@ import {
   usePermissions,
 } from '@dcms/ui';
 import { can, Perm } from '../../lib/permissions';
-import { getCurrentTenantSlug } from '../../tenants';
+import { getCurrentEnvironment } from '../../tenants';
 import {
   useApplyPending,
   useCutMigration,
@@ -51,10 +51,10 @@ export function DeploymentsPage() {
   const me = usePermissions();
   const environments = useEnvironments();
   const history = useHistory();
-  const slug = getCurrentTenantSlug();
+  const current = getCurrentEnvironment() ?? 'production';
   const all = environments.data?.environments ?? [];
-  const here = all.find((e) => e.slug === slug);
-  const sources = all.filter((e) => here?.promotesFrom.includes(e.tenantId));
+  const here = all.find((e) => e.name === current);
+  const sources = all.filter((e) => here?.promotesFrom.includes(e.id));
 
   if (environments.isLoading) return <CenteredSpinner />;
   if (environments.isError) return <LoadFailed onRetry={() => void environments.refetch()} />;
@@ -71,7 +71,7 @@ export function DeploymentsPage() {
         <div className="flex flex-col gap-8">
           {can(me, Perm.EnvironmentsManage) ? <Unpublished /> : null}
           {can(me, Perm.EnvironmentsPromote)
-            ? sources.map((source) => <PendingFrom key={source.tenantId} source={source} />)
+            ? sources.map((source) => <PendingFrom key={source.id} source={source} />)
             : null}
           <section className="flex flex-col gap-3">
             <h2 className="flex items-center gap-2 text-base font-semibold">
@@ -150,14 +150,14 @@ function Unpublished() {
 
 function PendingFrom({ source }: { source: Environment }) {
   const { t } = useTranslation();
-  const pending = usePending(source.tenantId, true);
+  const pending = usePending(source.id, true);
   const apply = useApplyPending();
   const [resolutions, setResolutions] = useState<Resolutions>({});
   const list = pending.data ?? [];
 
   const deploy = (upTo: string) =>
     apply.mutate(
-      { from: source.tenantId, upTo, resolutions },
+      { from: source.id, upTo, resolutions },
       { onSuccess: () => toast.success(t('deployments.queued')), onError: (err) => toastApiError(err, t) },
     );
 

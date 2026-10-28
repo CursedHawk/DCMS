@@ -49,7 +49,7 @@ public static class PlatformOverviewEndpoints
         long QuotaBytes,
         // Everything the tenant stores, from its latest usage snapshot; 0 before the first one.
         long UsageBytes,
-        // The workspace it is an environment of, and which (ADR 0026); null while environments are off.
+        // Its own id, and its environments besides production (ADR 0028); null with production alone.
         Guid? WorkspaceId,
         string? Environment);
 

@@ -1,4 +1,3 @@
-using Dcms.Shared.Caching;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using NATS.Client.JetStream;
@@ -8,13 +7,12 @@ namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
 /// Invalidates the Redis permission cache on membership.changed events from any
-/// instance/service (the local mutation path also clears it directly), and mirrors the change
-/// into the workspace's other environments (<see cref="WorkspaceMembers"/>). Resilient
+/// instance/service (the local mutation path also clears it directly), and mirrors Owner into
+/// the tenant's other environments (<see cref="WorkspaceMembers"/>). Resilient
 /// to NATS being unavailable at startup — retries without crashing the host.
 /// </summary>
 public sealed class MembershipChangedConsumer(
     INatsJSContext jetStream,
-    ICacheService cache,
     IServiceScopeFactory scopes,
     ILogger<MembershipChangedConsumer> logger) : BackgroundService
 {
@@ -41,12 +39,12 @@ public sealed class MembershipChangedConsumer(
                     {
                         if (msg.Data is { } evt)
                         {
-                            await cache.RemoveAsync(
-                                TenancyPermissionResolver.CacheKey(evt.TenantId, evt.UserId), stoppingToken);
-                            // The workspace's other environments follow the root's member list.
                             await using var scope = scopes.CreateAsyncScope();
+                            await scope.ServiceProvider.GetRequiredService<TenancyPermissionResolver>()
+                                .InvalidateAsync(evt.TenantId, evt.UserId, stoppingToken);
+                            // Owner in production is Owner in every environment (ADR 0028).
                             await scope.ServiceProvider.GetRequiredService<WorkspaceMembers>()
-                                .SyncUserAsync(evt.TenantId, evt.UserId, stoppingToken);
+                                .SyncOwnerAsync(evt.TenantId, evt.UserId, stoppingToken);
                         }
                         await msg.AckAsync(cancellationToken: stoppingToken);
                     }

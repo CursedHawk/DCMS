@@ -29,31 +29,17 @@ public static class TenancyEndpoints
             var userId = me.RequireUserId();
             // The caller's memberships across every tenant, with no ambient one (ADR 0015).
             using var rls = RlsScope.Platform();
-            var memberships = await db.Memberships
+            var tenantIds = await db.Memberships
                 .IgnoreTenantFilter()
                 .Where(m => m.UserId == userId)
-                .Select(m => new { m.TenantId, HasRoles = m.Roles.Any() })
+                .Select(m => m.TenantId.ToString())
                 .ToListAsync(ct);
-
-            var tenantIds = memberships.Select(m => m.TenantId.ToString()).ToList();
-            var tenants = await db.Tenants
+            // Workspaces only: which of a workspace's environments the caller can open is
+            // /api/admin/environments' answer (ADR 0028).
+            var result = await db.Tenants
                 .Where(t => tenantIds.Contains(t.Id))
-                .ToDictionaryAsync(t => t.TenantId, ct);
-
-            // An environment the caller holds no role in is one they cannot open (ADR 0026).
-            var result = memberships
-                .Where(m => tenants.TryGetValue(m.TenantId, out var t) && (m.HasRoles || t.WorkspaceId is null))
-                .Select(m => tenants[m.TenantId])
-                .Select(t => new
-                {
-                    tenantId = t.TenantId,
-                    slug = t.Identifier,
-                    name = t.Name,
-                    // Environments (ADR 0026): the switcher groups tenants by workspace.
-                    workspaceId = t.WorkspaceId,
-                    environment = t.EnvironmentName,
-                    environmentOrder = t.EnvironmentOrder,
-                });
+                .Select(t => new { tenantId = t.Id, slug = t.Identifier, name = t.Name })
+                .ToListAsync(ct);
             return Results.Ok(result);
         }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
 
@@ -761,15 +747,6 @@ public static class TenancyEndpoints
 
         var suspended = status == TenantStatus.Suspended;
         tenant.Status = status;
-        // A workspace is suspended or resumed whole: its environments follow the root (ADR 0026).
-        var environments = tenant.WorkspaceId == tenantId
-            ? await db.Tenants.Where(t => t.WorkspaceId == tenantId && t.Id != tenant.Id).ToListAsync(ct)
-            : [];
-        foreach (var environment in environments)
-        {
-            environment.Status = status;
-        }
-
         // BEFORE SaveChangesAsync, and that ordering is load-bearing. The EF interceptor drains
         // the audit buffer into the transaction that commits the change, so anything added to
         // the entry afterwards is written nowhere -- the record still appears, silently missing
@@ -783,7 +760,6 @@ public static class TenancyEndpoints
         // TenantStore caches resolution for 30 s; TenantMembershipMiddleware, which enforces the
         // suspension on this plane, reads through it -- so this process drops its copy now.
         store.Evict(tenant);
-        environments.ForEach(store.Evict);
 
         // Best-effort, and deliberately not allowed to fail the request.
         //
@@ -796,14 +772,11 @@ public static class TenancyEndpoints
         // completed suspension is a lie.
         try
         {
-            foreach (var t in environments.Prepend(tenant))
-            {
-                await events.PublishAsync(
-                    suspended ? Subjects.TenantSuspended : Subjects.TenantResumed,
-                    new TenantStatusChanged(
-                        Guid.NewGuid(), DateTimeOffset.UtcNow, t.TenantId, t.Identifier, suspended),
-                    ct);
-            }
+            await events.PublishAsync(
+                suspended ? Subjects.TenantSuspended : Subjects.TenantResumed,
+                new TenantStatusChanged(
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenant.TenantId, tenant.Identifier, suspended),
+                ct);
         }
         catch (Exception ex)
         {

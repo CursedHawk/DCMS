@@ -14,8 +14,8 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// to a sandbox account) — so a connection arriving with a new key requirement waits for one, and
 /// the snapshots are refetched by the scheduler rather than copied.
 /// </summary>
-// rls: EnvironmentMigrator calls every kind inside RlsScope.Tenant(tenantId), the tenant each
-// query names; IgnoreQueryFilters only drops the request's own, which is another environment.
+// rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
+// on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
 public sealed class ApiConnectionsConfigKind(CmsDbContext db, IConfiguration config) : IEnvironmentConfigKind
 {
     public string Kind => "api-connections";

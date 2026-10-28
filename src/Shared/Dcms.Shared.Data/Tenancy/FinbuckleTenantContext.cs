@@ -31,7 +31,8 @@ public sealed class FinbuckleTenantContext(
     // costs no query. Reading the status from a second lookup would add one to every request.
     public bool IsSuspended => Current?.Status == TenantStatus.Suspended;
 
-    public bool HasEnvironments => Current?.WorkspaceId is not null;
+    // ADR 0028: more environments than production, as UseDcmsEnvironment found.
+    public bool HasEnvironments => EnvironmentResolution.Many(http?.HttpContext);
 
     // ADR 0028: what UseDcmsEnvironment resolved from the request; production otherwise.
     public Guid? EnvironmentId => EnvironmentResolution.Of(http?.HttpContext) ?? TenantId;

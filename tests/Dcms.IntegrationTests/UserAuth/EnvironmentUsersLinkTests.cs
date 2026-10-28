@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Dcms.IntegrationTests.UserAuth;
 
 /// <summary>
-/// A users link (ADR 0026): development's sites sign people in through production's realm. Its
+/// A users link (ADR 0026, 0028): development's sites sign people in through production's realm. Its
 /// hosts stay development's, naming production's realm; production's realm takes them as redirect
 /// hosts; content-api in development accepts production's tokens and no longer its own; and what
 /// those people may do there is still development's roles and grants.
@@ -28,19 +28,18 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
         var app = await AppHarness.CreateAsync(fixture, ct);
         await app.InstallAsync("user-auth", "users", "{}", ct);
         var prodId = await TenantIdAsync(app.Tenant, ct);
-        await Ok(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/environments/enable", app.Owner, app.Tenant), ct), ct);
         var devId = (await Ok(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/environments", app.Owner, app.Tenant,
-            body: new { name = "development", empty = true }), ct), ct)).GetProperty("tenantId").GetGuid();
-        var dev = $"{app.Tenant}-development";
+            body: new { name = "development", empty = true }), ct), ct)).GetProperty("id").GetGuid();
+        var dev = $"{app.Tenant}/development";
         foreach (var (pluginId, slug) in new[] { ("dynamic-apps", "crm"), ("user-auth", "users") })
         {
             await Ok(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/instances", app.Owner, dev,
                 body: new { pluginId, slug, name = slug, config = "{}" }), ct), ct);
         }
-        var host = $"{dev}.example.test";
+        var host = $"{app.Tenant}-development.example.test";
         await ExecuteAsync($$"""
             INSERT INTO tenancy.domains ("Id","TenantId","EnvironmentId","Hostname","VerificationToken","VerifiedAt","IsPrimary","SiteId","CreatedAt")
-            VALUES ('{{Guid.NewGuid()}}','{{devId}}','{{devId}}','{{host}}','t',now(),true,'{{Guid.NewGuid()}}',now());
+            VALUES ('{{Guid.NewGuid()}}','{{prodId}}','{{devId}}','{{host}}','t',now(),true,'{{Guid.NewGuid()}}',now());
             """, ct);
 
         // Production's people, given a role in development by development.
@@ -51,11 +50,11 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
             body: new { subjectType = "user", subjectId = pat }), ct), ct);
 
         await Ok(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{devId}/links", app.Owner, app.Tenant,
-            body: new { kind = "users", targetTenantId = prodId }), ct), ct);
+            body: new { kind = "users", targetEnvironmentId = prodId }), ct), ct);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{prodId}/links", app.Owner, app.Tenant,
-            body: new { kind = "users", targetTenantId = devId }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict, "never a chain");
+            body: new { kind = "users", targetEnvironmentId = devId }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict, "never a chain");
 
-        (await PublishAsync(devId, ct)).Should().BeTrue();
+        (await PublishAsync(prodId, devId, ct)).Should().BeTrue();
         var row = (await RowsAsync(devId, ct)).Single();
         (row.Hostname, row.RealmSlug, row.RealmTenantId).Should().Be((host, app.Tenant, prodId));
         fixture.Realms.RealmOf(prodId)!.Hosts.Should().Contain(host, "production's realm sends people back to development's sites");
@@ -78,10 +77,10 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
             .EnumerateArray().Single().GetProperty("id").GetGuid();
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Delete, $"/api/admin/environments/{devId}/links/{link}", app.Owner, app.Tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await PublishAsync(devId, ct)).Should().BeTrue();
-        await PublishAsync(prodId, ct);
+        (await PublishAsync(prodId, devId, ct)).Should().BeTrue();
+        await PublishAsync(prodId, prodId, ct);
         row = (await RowsAsync(devId, ct)).Single();
-        (row.RealmSlug, row.RealmTenantId).Should().Be((dev, null));
+        (row.RealmSlug, row.RealmTenantId).Should().Be(($"{app.Tenant}-development", null));
         fixture.Realms.RealmOf(devId)!.Hosts.Should().Equal(host);
         fixture.Realms.RealmOf(prodId)!.Hosts.Should().NotContain(host);
     }
@@ -96,15 +95,16 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
     private async Task<bool> CheckAsync(string tenant, string token, CancellationToken ct)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/users/_contracts/users.access@1/Check") { Content = JsonContent.Create(new { permission = Deals }) };
-        req.Headers.Add("X-Dcms-Tenant", tenant);
+        Environments.EnvironmentTarget.Apply(req, tenant);
         req.Headers.Add("X-Dcms-Realm-Token", token);
         var res = await fixture.Content.CreateClient().SendAsync(req, ct);
         return (await Ok(res, ct)).GetProperty("allowed").GetBoolean();
     }
 
-    private async Task<bool> PublishAsync(Guid tenantId, CancellationToken ct)
+    private async Task<bool> PublishAsync(Guid tenantId, Guid environmentId, CancellationToken ct)
     {
         using var scope = fixture.Admin.Services.CreateScope();
+        using var rls = Dcms.Shared.Data.Rls.RlsScope.Environment(tenantId, environmentId);
         return await scope.ServiceProvider.GetRequiredService<SiteGatePublisher>().PublishAsync(tenantId, ct, announce: false);
     }
 

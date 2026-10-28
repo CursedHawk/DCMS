@@ -52,9 +52,9 @@ internal static partial class UserAuthAdminEndpoints
             .RequirePluginPermission("users-read");
 
         endpoints.MapPut("/realm", async (RealmSettings body, IPluginContext context, SiteGatePublisher publisher, RealmRelay relay, CancellationToken ct) =>
-                await relay.RealmTenantAsync(ct) != context.TenantId
+                await relay.RealmTenantAsync(ct) != context.EnvironmentId
                     ? RealmRelay.Linked
-                    : await Guarded(async () => Results.Ok(await publisher.SyncRealmAsync(context.TenantId, body.PasswordEnabled, ct))))
+                    : await Guarded(async () => Results.Ok(await publisher.SyncRealmAsync(context.EnvironmentId, body.PasswordEnabled, ct))))
             .RequirePluginPermission("providers-manage")
             .AuditAs("realm.updated");
 
@@ -514,7 +514,7 @@ public sealed class RealmRelay(RealmAdminClient realms, SiteGatePublisher publis
         var realmTenant = await RealmTenantAsync(ct);
         // Every write refused, "view as" too: a token for the other environment's person is one
         // that environment would accept, and nobody there granted this member that.
-        if (realmTenant != context.TenantId && method != HttpMethod.Get)
+        if (realmTenant != context.EnvironmentId && method != HttpMethod.Get)
         {
             return Linked;
         }

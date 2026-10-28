@@ -17,12 +17,12 @@ export const ALL_TENANT_PERMISSIONS = [
   'audit:read', 'audit:export', 'environments:manage', 'environments:promote',
 ];
 
-/** GET /api/admin/environments for a workspace that has not turned environments on (ADR 0026). */
+/** GET /api/admin/environments for a workspace with production alone (ADR 0028). */
 export const ENVIRONMENTS_OFF = {
   enabled: false,
   workspaceId: TENANT.tenantId,
   environments: [
-    { tenantId: TENANT.tenantId, slug: TENANT.slug, name: 'production', order: 0, isRoot: true, promotesFrom: [], status: 'Active', isMember: true },
+    { id: TENANT.tenantId, name: 'production', order: 0, purpose: 'stage', isProduction: true, promotesFrom: [], isMember: true },
   ],
 };
 

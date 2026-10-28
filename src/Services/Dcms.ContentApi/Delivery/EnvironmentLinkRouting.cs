@@ -9,13 +9,13 @@ namespace Dcms.ContentApi.Delivery;
 /// <summary>
 /// An app link (ADR 0026): the consuming environment's <c>/api/{slug}</c> is served by the app of
 /// that slug in another environment of its workspace — its published content, its Dynamic Apps
-/// data. Done by naming the target as the request's tenant before Finbuckle reads it, so
-/// everything after (the app's routes, its API access rules, its caches, its row rules) is simply
-/// the target's, unchanged. A read link passes reads only; a write through it is refused rather
-/// than quietly landing in the consumer's own app.
+/// data. Done by naming the target as the request's environment (ADR 0028) before it is resolved,
+/// so everything after (the app's routes, its API access rules, its caches, its row rules) is
+/// simply the target's, unchanged. A read link passes reads only; a write through it is refused
+/// rather than quietly landing in the consumer's own app.
 ///
-/// <para>Runs after <see cref="SiteHostResolution"/> has named the tenant, and only for a tenant
-/// in a workspace with environments. The header saying which environment it came from is this
+/// <para>Runs after <see cref="SiteHostResolution"/> has named the tenant and environment, and only
+/// for a tenant with environments. The header saying which environment it came from is this
 /// service's own: whatever a caller sent under that name is dropped first.</para>
 /// </summary>
 public static class EnvironmentLinkRouting
@@ -38,14 +38,18 @@ public static class EnvironmentLinkRouting
         }
 
         var services = context.RequestServices;
-        var store = services.GetRequiredService<TenantStore>();
-        var consumer = await store.GetByIdentifierAsync(slug);
-        if (consumer?.WorkspaceId is null)
+        var tenant = await services.GetRequiredService<TenantStore>().GetByIdentifierAsync(slug);
+        var all = tenant is null ? [] : await services.GetRequiredService<EnvironmentStore>().ListAsync(tenant.TenantId, context.RequestAborted);
+        var name = request.Headers[EnvironmentResolution.Header].ToString();
+        var consumer = all.Count < 2 ? null
+            : name.Length == 0 ? all.FirstOrDefault(e => e.IsProduction)
+            : all.FirstOrDefault(e => e.Name == name);
+        if (consumer is null)
         {
             await next(context);
             return;
         }
-        var link = await LinkAsync(services, consumer.TenantId, appSlug, context.RequestAborted);
+        var link = await LinkAsync(services, consumer, appSlug, context.RequestAborted);
         if (link is null)
         {
             await next(context);
@@ -58,26 +62,25 @@ public static class EnvironmentLinkRouting
             await context.Response.WriteAsJsonAsync(new { error = "This app is read from another environment and cannot be changed here." }, context.RequestAborted);
             return;
         }
-        var target = await store.GetAsync(link.TargetTenantId.ToString());
-        if (target is not null && target.WorkspaceId == consumer.WorkspaceId)
+        if (all.FirstOrDefault(e => e.Id == link.TargetEnvironmentId) is { } target)
         {
-            request.Headers[TenancyServiceCollectionExtensions.TenantHeader] = target.Identifier;
-            request.Headers[LinkedFromHeader] = slug;
+            request.Headers[EnvironmentResolution.Header] = target.Name;
+            request.Headers[LinkedFromHeader] = consumer.Name;
         }
         await next(context);
     });
 
-    private static async Task<EnvironmentLinkEntry?> LinkAsync(IServiceProvider services, Guid tenantId, string appSlug, CancellationToken ct)
+    private static async Task<EnvironmentLinkEntry?> LinkAsync(IServiceProvider services, TenantEnvironment consumer, string appSlug, CancellationToken ct)
     {
         var cache = services.GetRequiredService<ICacheService>();
-        var key = EnvironmentLinkKinds.CacheKey(tenantId);
+        var key = EnvironmentLinkKinds.CacheKey(consumer.Id);
         var links = await cache.GetAsync<EnvironmentLinkEntry[]>(key, ct);
         if (links is null)
         {
-            using var rls = RlsScope.Tenant(tenantId);
+            using var rls = consumer.Scope();
             links = await services.GetRequiredService<TenancyDbContext>().EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
-                .Where(l => l.TenantId == tenantId)
-                .Select(l => new EnvironmentLinkEntry(l.Kind, l.TargetKey, l.TargetTenantId, l.Access))
+                .Where(l => l.TenantId == consumer.TenantId && l.EnvironmentId == consumer.Id)
+                .Select(l => new EnvironmentLinkEntry(l.Kind, l.TargetKey, l.TargetEnvironmentId, l.Access))
                 .ToArrayAsync(ct);
             await cache.SetAsync(key, links, Ttl, ct);
         }

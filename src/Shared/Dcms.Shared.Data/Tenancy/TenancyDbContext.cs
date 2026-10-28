@@ -57,8 +57,6 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasIndex(t => t.Identifier).IsUnique();
             e.Property(t => t.Name).HasMaxLength(256);
             e.Property(t => t.Status).HasConversion<string>().HasMaxLength(32);
-            e.Property(t => t.EnvironmentName).HasMaxLength(32);
-            e.HasIndex(t => t.WorkspaceId);
         });
 
         builder.Entity<Domain>(e =>
@@ -175,6 +173,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
         {
             e.ToTable("environment_migrations");
             e.HasKey(m => m.Id);
+            e.Property(m => m.OriginEnvironmentId).HasColumnName("OriginTenantId");
             e.Property(m => m.Name).HasMaxLength(200).IsRequired();
             e.Property(m => m.Description).HasMaxLength(2000);
             e.Property(m => m.AuthorEmail).HasMaxLength(256);
@@ -204,7 +203,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(l => l.TargetKey).HasMaxLength(256);
             e.Property(l => l.Access).HasConversion<string>().HasMaxLength(16);
             e.HasIndex(l => new { l.TenantId, l.EnvironmentId, l.Kind, l.TargetKey }).IsUnique().AreNullsDistinct(false);
-            e.HasIndex(l => l.TargetTenantId);
+            e.HasIndex(l => l.TargetEnvironmentId);
+            e.Property(l => l.TargetEnvironmentId).HasColumnName("TargetTenantId");
             e.HasQueryFilter(QueryFilters.Tenant, l => l.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, l => CurrentEnvironmentId == null || l.EnvironmentId == CurrentEnvironmentId);
         });

@@ -35,45 +35,52 @@ public sealed class SiteGatePublisher(
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>Brings the tenant's rows in line with its rules; true when anything changed (and the edge was told).</summary>
+    /// <summary>
+    /// Brings the rows of the tenant's environment in force -- the request's, or an enclosing
+    /// <see cref="RlsScope.Environment"/> block's -- in line with its rules; true when anything
+    /// changed (and the edge was told).
+    /// </summary>
     public async Task<bool> PublishAsync(Guid tenantId, CancellationToken ct, bool announce = true)
     {
+        var environmentId = RlsScope.EnvironmentFor(tenantId) ?? tenantId;
         // An environment that takes its users from another (ADR 0026) keeps its rows — its hosts,
         // its rules — but they name that realm, and that realm, not its own, answers its hosts.
-        var realmTenant = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct);
-        Dictionary<string, (string Slug, string Rules)> wanted;
+        Guid realm;
         Wanted target;
-        using (RlsScope.Tenant(tenantId))
+        Dictionary<string, (string Slug, string Rules)> wanted;
+        using (RlsScope.Environment(tenantId, environmentId))
         {
-            target = await TargetAsync(tenantId, ct);
+            realm = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct);
+            target = await TargetAsync(tenantId, environmentId, ct);
         }
         var realmSlug = target.Slug;
-        if (realmTenant != tenantId)
+        if (realm != environmentId)
         {
-            using (RlsScope.Tenant(realmTenant))
+            using (RlsScope.Environment(tenantId, realm))
             {
-                realmSlug = (await TargetAsync(realmTenant, ct)).Slug;
+                realmSlug = (await TargetAsync(tenantId, realm, ct)).Slug;
             }
         }
-        using (RlsScope.Tenant(tenantId))
+        using (RlsScope.Environment(tenantId, environmentId))
         {
             wanted = await WantedAsync(tenantId, target with { Slug = realmSlug }, ct);
         }
         // Identity first: if it cannot be told, the edge is not changed either, and the next
         // pass tries both again. The realm takes the hosts before the edge sends anyone to it.
-        await SyncRealmAsync(realmTenant, null, ct);
-        if (realmTenant != tenantId)
+        await SyncRealmAsync(realm, null, ct);
+        if (realm != environmentId)
         {
-            await SyncRealmAsync(tenantId, null, ct);
+            await SyncRealmAsync(environmentId, null, ct);
         }
 
-        // The edge's table is host-keyed and outside tenant RLS: this tenant's rows, and any row
-        // for a hostname that has since moved to it from another tenant.
+        // The edge's table is host-keyed and outside tenant RLS: this environment's rows -- whose
+        // TenantId is the environment's, its realm's by default (ADR 0028) -- and any row for a
+        // hostname that has since moved to it from elsewhere.
         var hosts = wanted.Keys.ToList();
-        Guid? realmOf = realmTenant == tenantId ? null : realmTenant;
-        var existing = await edge.SiteGates.Where(r => r.TenantId == tenantId || hosts.Contains(r.Hostname)).ToListAsync(ct);
+        Guid? realmOf = realm == environmentId ? null : realm;
+        var existing = await edge.SiteGates.Where(r => r.TenantId == environmentId || hosts.Contains(r.Hostname)).ToListAsync(ct);
         var changed = false;
-        foreach (var row in existing.Where(r => r.TenantId == tenantId && !wanted.ContainsKey(r.Hostname)))
+        foreach (var row in existing.Where(r => r.TenantId == environmentId && !wanted.ContainsKey(r.Hostname)))
         {
             edge.SiteGates.Remove(row);
             changed = true;
@@ -83,12 +90,12 @@ public sealed class SiteGatePublisher(
             var row = existing.FirstOrDefault(r => r.Hostname == host);
             if (row is null)
             {
-                edge.SiteGates.Add(new EdgeSiteGate { Hostname = host, TenantId = tenantId, RealmSlug = slug, RealmTenantId = realmOf, RulesJson = rules });
+                edge.SiteGates.Add(new EdgeSiteGate { Hostname = host, TenantId = environmentId, RealmSlug = slug, RealmTenantId = realmOf, RulesJson = rules });
                 changed = true;
             }
-            else if (row.TenantId != tenantId || row.RealmSlug != slug || row.RealmTenantId != realmOf || !SameJson(row.RulesJson, rules))
+            else if (row.TenantId != environmentId || row.RealmSlug != slug || row.RealmTenantId != realmOf || !SameJson(row.RulesJson, rules))
             {
-                (row.TenantId, row.RealmSlug, row.RealmTenantId, row.RulesJson, row.UpdatedAt) = (tenantId, slug, realmOf, rules, DateTimeOffset.UtcNow);
+                (row.TenantId, row.RealmSlug, row.RealmTenantId, row.RulesJson, row.UpdatedAt) = (environmentId, slug, realmOf, rules, DateTimeOffset.UtcNow);
                 changed = true;
             }
         }
@@ -122,31 +129,35 @@ public sealed class SiteGatePublisher(
     }
 
     /// <summary>
-    /// The tenant's realm as it should be, after any change to the realm's own settings, and
-    /// returned as identity now has it — creating it if the plugin is enabled and it does not exist.
-    /// Its hosts are those of every environment signing in through it (ADR 0026); one that signs
-    /// in through another's has none.
+    /// The realm of environment <paramref name="realmId"/> as it should be, after any change to the
+    /// realm's own settings, and returned as identity now has it — creating it if the plugin is
+    /// enabled there and it does not exist. Its hosts are those of every environment signing in
+    /// through it (ADR 0026); one that signs in through another's has none.
     /// </summary>
-    public async Task<RealmInfo?> SyncRealmAsync(Guid tenantId, bool? passwordEnabled, CancellationToken ct)
+    public async Task<RealmInfo?> SyncRealmAsync(Guid realmId, bool? passwordEnabled, CancellationToken ct)
     {
+        if (await EnvironmentRealm.TenantOfAsync(tenancy, realmId, ct) is not { } tenantId)
+        {
+            return await realms.GetRealmAsync(realmId, ct);
+        }
         Wanted target;
         var hosts = new List<string>();
-        using (RlsScope.Tenant(tenantId))
+        using (RlsScope.Environment(tenantId, realmId))
         {
-            target = await TargetAsync(tenantId, ct);
-        }
-        if (await EnvironmentRealm.OfAsync(tenancy, tenantId, ct) == tenantId)
-        {
-            foreach (var environment in (await EnvironmentRealm.ConsumersAsync(tenancy, tenantId, ct)).Prepend(tenantId))
+            target = await TargetAsync(tenantId, realmId, ct);
+            if (await EnvironmentRealm.OfAsync(tenancy, tenantId, ct) == realmId)
             {
-                using (RlsScope.Tenant(environment))
+                foreach (var environment in (await EnvironmentRealm.ConsumersAsync(tenancy, tenantId, realmId, ct)).Prepend(realmId))
                 {
-                    var own = environment == tenantId ? target : await TargetAsync(environment, ct);
-                    hosts.AddRange((await WantedAsync(environment, own, ct)).Keys.Order(StringComparer.Ordinal));
+                    using (RlsScope.Environment(tenantId, environment))
+                    {
+                        var own = environment == realmId ? target : await TargetAsync(tenantId, environment, ct);
+                        hosts.AddRange((await WantedAsync(tenantId, own, ct)).Keys.Order(StringComparer.Ordinal));
+                    }
                 }
             }
         }
-        return await SyncRealmAsync(tenantId, target, hosts.Distinct(), passwordEnabled, ct);
+        return await SyncRealmAsync(realmId, target, hosts.Distinct(), passwordEnabled, ct);
     }
 
     private async Task<RealmInfo?> SyncRealmAsync(Guid tenantId, Wanted target, IEnumerable<string> hosts, bool? passwordEnabled, CancellationToken ct)
@@ -173,16 +184,23 @@ public sealed class SiteGatePublisher(
     /// <param name="Name">Shown on the realm's sign-in pages and in its emails.</param>
     private sealed record Wanted(bool Enabled, string? Slug, string Name);
 
-    private async Task<Wanted> TargetAsync(Guid tenantId, CancellationToken ct)
+    /// <summary>The environment's realm as it should be; its slug is the tenant's, followed by the environment's name outside production.</summary>
+    private async Task<Wanted> TargetAsync(Guid tenantId, Guid environmentId, CancellationToken ct)
     {
-        // Explicit tenant predicates under the tenant RLS scope: no request context to filter by.
+        // Explicit tenant predicates under the environment's RLS scope: no request context to filter by.
         var enabled = await cms.PluginInstances.IgnoreTenantFilter()
             .AnyAsync(p => p.TenantId == tenantId && p.PluginId == UserAuthPermissions.PluginId && p.Enabled, ct);
         var tenant = await tenancy.Tenants.IgnoreTenantFilter().Where(t => t.Id == tenantId.ToString())
             .Select(t => new { t.Identifier, t.Name }).FirstOrDefaultAsync(ct);
+        var environment = environmentId == tenantId ? null
+            : await tenancy.Environments.IgnoreTenantFilter().Where(e => e.TenantId == tenantId && e.Id == environmentId)
+                .Select(e => e.Name).FirstOrDefaultAsync(ct);
         // Identity refuses control characters (the name goes into email subjects) and more than 200 of them.
         var name = new string((string.IsNullOrWhiteSpace(tenant?.Name) ? tenant?.Identifier ?? "" : tenant.Name).Where(c => !char.IsControl(c)).ToArray()).Trim();
-        return new Wanted(enabled, tenant?.Identifier, name.Length > 200 ? name[..200].Trim() : name);
+        var slug = tenant is null || (environmentId != tenantId && environment is null) ? null
+            : environment is null ? tenant.Identifier
+            : $"{tenant.Identifier}-{environment}";
+        return new Wanted(enabled, slug, name.Length > 200 ? name[..200].Trim() : name);
     }
 
     private async Task<Dictionary<string, (string Slug, string Rules)>> WantedAsync(Guid tenantId, Wanted target, CancellationToken ct)
@@ -241,30 +259,43 @@ public sealed class SiteGateReconciler(IServiceScopeFactory scopes, ILogger<Site
 
     public async Task ReconcileAsync(CancellationToken ct)
     {
-        List<Guid> tenants;
+        List<(Guid Tenant, Guid Environment)> environments;
+        var changed = false;
         using (var scope = scopes.CreateScope())
         using (RlsScope.Platform())
         {
             var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
             var edge = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
-            // Tenants with the plugin, and tenants the edge still has rows for (which may have lost it).
-            tenants = (await cms.PluginInstances.IgnoreTenantFilter().Where(p => p.PluginId == UserAuthPermissions.PluginId)
-                    .Select(p => p.TenantId).Distinct().ToListAsync(ct))
-                .Union(await edge.SiteGates.Select(r => r.TenantId).Distinct().ToListAsync(ct))
-                .ToList();
+            var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+            // Environments with the plugin, and environments the edge still has rows for (which
+            // may have lost it); an edge row's TenantId is its environment's (ADR 0028).
+            var withPlugin = await cms.PluginInstances.IgnoreQueryFilters().Where(p => p.PluginId == UserAuthPermissions.PluginId)
+                .Select(p => new { p.TenantId, p.EnvironmentId }).Distinct().ToListAsync(ct);
+            var gated = await edge.SiteGates.Select(r => r.TenantId).Distinct().ToListAsync(ct);
+            var gatedEnvironments = await tenancy.Environments.IgnoreQueryFilters().Where(e => gated.Contains(e.Id))
+                .Select(e => new { e.TenantId, EnvironmentId = e.Id }).ToListAsync(ct);
+            environments = withPlugin.Concat(gatedEnvironments).Select(e => (e.TenantId, e.EnvironmentId)).Distinct().ToList();
+            // A row whose environment has gone entirely: the tenant was deleted. Its rows go now.
+            var orphans = gated.Except(gatedEnvironments.Select(e => e.EnvironmentId)).ToList();
+            if (orphans.Count > 0)
+            {
+                edge.SiteGates.RemoveRange(await edge.SiteGates.Where(r => orphans.Contains(r.TenantId)).ToListAsync(ct));
+                await edge.SaveChangesAsync(ct);
+                changed = true;
+            }
         }
-        var changed = false;
-        foreach (var tenantId in tenants)
+        foreach (var (tenantId, environmentId) in environments)
         {
-            // One tenant identity refuses (or a blip) must not hold up every other tenant's rules.
+            // One environment identity refuses (or a blip) must not hold up every other's rules.
             try
             {
                 using var scope = scopes.CreateScope();
+                using var rls = RlsScope.Environment(tenantId, environmentId);
                 changed |= await scope.ServiceProvider.GetRequiredService<SiteGatePublisher>().PublishAsync(tenantId, ct, announce: false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "Could not publish the site rules of tenant {TenantId}; retrying next pass.", tenantId);
+                logger.LogWarning(ex, "Could not publish the site rules of environment {EnvironmentId}; retrying next pass.", environmentId);
             }
         }
         if (changed)

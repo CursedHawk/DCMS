@@ -136,7 +136,7 @@ public sealed class AppHarness(ContentFlowFixture fixture, HttpClient admin, Gui
         req.Headers.Add("X-Test-Sub", sub.ToString());
         req.Headers.Add("X-Test-Email", $"{sub:N}@dcms.test");
         if (!string.IsNullOrEmpty(roles)) req.Headers.Add("X-Test-Roles", roles);
-        if (slug.Length > 0) req.Headers.Add("X-Dcms-Tenant", slug);
+        if (slug.Length > 0) Environments.EnvironmentTarget.Apply(req, slug);
         if (body is not null) req.Content = JsonContent.Create(body);
         return req;
     }

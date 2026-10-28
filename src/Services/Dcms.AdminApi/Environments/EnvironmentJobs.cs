@@ -12,16 +12,16 @@ public sealed record EnvironmentRollbackPayload(Guid MigrationId, Dictionary<str
 public sealed record EnvironmentCopyPayload(Guid Source);
 
 /// <summary>Gives a new environment its source's configuration (ADR 0026: "copy configuration from").</summary>
-public sealed class EnvironmentCopyJob(EnvironmentMigrator migrator, TenancyDbContext db) : IJobHandler<EnvironmentCopyPayload>
+public sealed class EnvironmentCopyJob(EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments) : IJobHandler<EnvironmentCopyPayload>
 {
     public const string Kind = "environments.copy";
 
     public async Task<object?> RunAsync(EnvironmentCopyPayload payload, IJobContext context)
     {
-        var target = context.TenantId!.Value;
-        await EnvironmentLock.RunAsync(db, target, context.Cancellation, async () =>
+        var (target, source) = await environments.JobPairAsync(context, payload.Source);
+        await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, async () =>
         {
-            await migrator.CopyAsync(target, payload.Source, context.Cancellation);
+            await migrator.CopyAsync(target, source, context.Cancellation);
             return true;
         });
         return null;
@@ -29,22 +29,23 @@ public sealed class EnvironmentCopyJob(EnvironmentMigrator migrator, TenancyDbCo
 }
 
 /// <summary>
-/// Applies a reviewed deployment into the job's tenant (ADR 0026). One at a time per environment:
+/// Applies a reviewed deployment into the job's environment (ADR 0026). One at a time per environment:
 /// two applies racing would each read the target as the other had not changed it.
 /// </summary>
-public sealed class EnvironmentApplyJob(EnvironmentMigrator migrator, TenancyDbContext db, IAuditRecorder audit)
+public sealed class EnvironmentApplyJob(EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments, IAuditRecorder audit)
     : IJobHandler<EnvironmentApplyPayload>
 {
     public const string Kind = "environments.apply";
 
     public async Task<object?> RunAsync(EnvironmentApplyPayload payload, IJobContext context)
     {
-        var target = context.TenantId!.Value;
-        var applied = await EnvironmentLock.RunAsync(db, target, context.Cancellation, () =>
-            migrator.ApplyAsync(target, payload.Source, payload.UpTo, payload.Resolutions,
+        var (target, source) = await environments.JobPairAsync(context, payload.Source);
+        var applied = await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, () =>
+            migrator.ApplyAsync(target, source, payload.UpTo, payload.Resolutions,
                 new EnvironmentApplier(payload.AppliedBy, payload.IsSuperAdmin), context.Cancellation));
         audit.Record(AuditActions.EnvironmentMigrationApplied)
-            .InTenant(target)
+            .InTenant(target.TenantId)
+            .With("environment", target.Name)
             .For("environment_migration", payload.UpTo, null)
             .With("source", payload.Source)
             .With("migrations", applied)
@@ -55,19 +56,20 @@ public sealed class EnvironmentApplyJob(EnvironmentMigrator migrator, TenancyDbC
 }
 
 /// <summary>Reverts the environment's last migration, as reviewed.</summary>
-public sealed class EnvironmentRollbackJob(EnvironmentMigrator migrator, TenancyDbContext db, IAuditRecorder audit)
+public sealed class EnvironmentRollbackJob(EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments, IAuditRecorder audit)
     : IJobHandler<EnvironmentRollbackPayload>
 {
     public const string Kind = "environments.rollback";
 
     public async Task<object?> RunAsync(EnvironmentRollbackPayload payload, IJobContext context)
     {
-        var target = context.TenantId!.Value;
-        var row = await EnvironmentLock.RunAsync(db, target, context.Cancellation, () =>
+        var target = await environments.JobTargetAsync(context);
+        var row = await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, () =>
             migrator.RollbackAsync(target, payload.MigrationId, payload.Resolutions,
                 new EnvironmentApplier(payload.By, payload.IsSuperAdmin), context.Cancellation));
         audit.Record(AuditActions.EnvironmentMigrationRolledBack)
-            .InTenant(target)
+            .InTenant(target.TenantId)
+            .With("environment", target.Name)
             .For("environment_migration", payload.MigrationId, row.Name)
             .With("resolutions", payload.Resolutions);
         await audit.FlushAsync(context.Cancellation);
@@ -82,9 +84,9 @@ internal static class EnvironmentLock
     /// lock on a connection held open for the duration; a refusal becomes a job failure that is
     /// not retried, because the same input would be refused again.
     /// </summary>
-    public static async Task<T> RunAsync<T>(TenancyDbContext db, Guid tenantId, CancellationToken ct, Func<Task<T>> work)
+    public static async Task<T> RunAsync<T>(TenancyDbContext db, Guid environmentId, CancellationToken ct, Func<Task<T>> work)
     {
-        var key = $"environment-migrations:{tenantId:N}";
+        var key = $"environment-migrations:{environmentId:N}";
         await db.Database.OpenConnectionAsync(ct);
         try
         {
@@ -106,5 +108,26 @@ internal static class EnvironmentLock
         {
             await db.Database.CloseConnectionAsync();
         }
+    }
+}
+
+internal static class EnvironmentJobContext
+{
+    /// <summary>The environment a job runs in (ADR 0028); a job refused when it has gone.</summary>
+    public static async Task<TenantEnvironment> JobTargetAsync(this EnvironmentStore environments, IJobContext context)
+    {
+        var tenantId = context.TenantId!.Value;
+        return await environments.GetAsync(tenantId, context.EnvironmentId ?? tenantId, context.Cancellation)
+               ?? throw new JobFailedException("environments.errors.environmentGone");
+    }
+
+    /// <summary>The job's environment and the one it takes configuration from, both of its tenant.</summary>
+    public static async Task<(TenantEnvironment Target, TenantEnvironment Source)> JobPairAsync(
+        this EnvironmentStore environments, IJobContext context, Guid sourceId)
+    {
+        var target = await environments.JobTargetAsync(context);
+        var source = await environments.GetAsync(target.TenantId, sourceId, context.Cancellation)
+                     ?? throw new JobFailedException("environments.errors.environmentGone");
+        return (target, source);
     }
 }

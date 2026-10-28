@@ -39,6 +39,10 @@ public sealed class EnvironmentStore(TenancyDbContext db, IMemoryCache cache)
     public async Task<TenantEnvironment?> GetAsync(Guid tenantId, Guid environmentId, CancellationToken ct) =>
         (await ListAsync(tenantId, ct)).FirstOrDefault(e => e.Id == environmentId);
 
+    /// <summary>The environment the request or message is in; null with no tenant.</summary>
+    public async Task<TenantEnvironment?> CurrentAsync(Kernel.Abstractions.ITenantContext tenant, CancellationToken ct) =>
+        tenant.TenantId is { } tenantId ? await GetAsync(tenantId, tenant.EnvironmentId ?? tenantId, ct) : null;
+
     /// <summary>Drops what this process cached, so a change it made applies to its next request.</summary>
     public void Evict(Guid tenantId) => cache.Remove(Key(tenantId));
 
@@ -51,6 +55,7 @@ public static class EnvironmentResolution
     public const string Header = "X-Dcms-Environment";
 
     internal const string Item = "dcms.environment";
+    private const string ManyItem = "dcms.environments.many";
 
     /// <summary>
     /// After the tenant is resolved: the environment <see cref="Header"/> names, or 404 for one the
@@ -60,17 +65,18 @@ public static class EnvironmentResolution
     {
         var name = context.Request.Headers[Header].ToString();
         var tenant = context.RequestServices.GetRequiredService<Kernel.Abstractions.ITenantContext>().TenantId;
-        if (name.Length > 0 && tenant is { } tenantId)
+        if (tenant is { } tenantId)
         {
-            var environment = await context.RequestServices.GetRequiredService<EnvironmentStore>()
-                .FindAsync(tenantId, name, context.RequestAborted);
-            if (environment is null)
+            var all = await context.RequestServices.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, context.RequestAborted);
+            context.Items[ManyItem] = all.Count > 1;
+            var environment = name.Length > 0 ? all.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.Ordinal)) : null;
+            if (name.Length > 0 && environment is null)
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(new { error = "This workspace has no environment of that name." }, context.RequestAborted);
                 return;
             }
-            context.Items[Item] = environment.Id;
+            if (environment is not null) context.Items[Item] = environment.Id;
         }
         if (tenant is { } current)
         {
@@ -84,4 +90,7 @@ public static class EnvironmentResolution
 
     /// <summary>The environment the request resolved to, when it named one.</summary>
     public static Guid? Of(HttpContext? http) => http?.Items[Item] is Guid id ? id : null;
+
+    /// <summary>The request's tenant has environments besides production.</summary>
+    public static bool Many(HttpContext? http) => http?.Items[ManyItem] is true;
 }

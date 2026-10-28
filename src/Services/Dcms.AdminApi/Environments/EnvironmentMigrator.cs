@@ -36,14 +36,15 @@ public sealed record EnvironmentApplier(Guid? UserId, bool IsSuperAdmin);
 public sealed record PendingMigration(EnvironmentMigration Migration, IReadOnlyList<ReviewedChange> Changes);
 
 /// <summary>
-/// Configuration migrations between a workspace's environments (ADR 0026), on EF's model: each
+/// Configuration migrations between a tenant's environments (ADR 0026, on ADR 0028's dimension), on EF's model: each
 /// environment keeps a baseline of its configuration; <see cref="CutAsync"/> records what changed
 /// since as a named migration; <see cref="PendingAsync"/> lists what a source has applied that the
 /// target has not, each change reviewed against what the target holds now; <see cref="ApplyAsync"/>
 /// applies them in the source's order; <see cref="RollbackAsync"/> reverts the target's last one.
 ///
-/// <para>Every query names its tenant and runs inside that tenant's database scope: this reads and
-/// writes environments other than the request's.</para>
+/// <para>Every query names its environment and runs inside that environment's database scope: this
+/// reads and writes environments other than the request's. A kind is called inside that scope with
+/// the tenant's id, so what it reads and writes stays in the environment.</para>
 /// </summary>
 public sealed class EnvironmentMigrator(
     IEnumerable<IEnvironmentConfigKind> kinds, TenancyDbContext db, Dcms.Shared.Security.Authorization.IPermissionResolver permissions)
@@ -51,24 +52,24 @@ public sealed class EnvironmentMigrator(
     private readonly IReadOnlyList<IEnvironmentConfigKind> _kinds = kinds.OrderBy(k => k.Order).ToList();
 
     /// <summary><c>{kind: {key: item}}</c>, in kind registration order.</summary>
-    public async Task<Dictionary<string, Dictionary<string, EnvironmentConfigItem>>> ExportAsync(Guid tenantId, CancellationToken ct)
+    public async Task<Dictionary<string, Dictionary<string, EnvironmentConfigItem>>> ExportAsync(TenantEnvironment environment, CancellationToken ct)
     {
         var snapshot = new Dictionary<string, Dictionary<string, EnvironmentConfigItem>>(StringComparer.Ordinal);
         foreach (var kind in _kinds)
         {
-            using var rls = RlsScope.Tenant(tenantId);
-            var items = await kind.ExportAsync(tenantId, ct);
+            using var rls = environment.Scope();
+            var items = await kind.ExportAsync(environment.TenantId, ct);
             snapshot[kind.Kind] = items.ToDictionary(i => i.Key, StringComparer.Ordinal);
         }
         return snapshot;
     }
 
-    /// <summary>What changed in <paramref name="tenantId"/> since its baseline, leaving out what it owns itself.</summary>
-    public async Task<List<ConfigChange>> UnpublishedAsync(Guid tenantId, CancellationToken ct)
+    /// <summary>What changed in <paramref name="environment"/> since its baseline, leaving out what it owns itself.</summary>
+    public async Task<List<ConfigChange>> UnpublishedAsync(TenantEnvironment environment, CancellationToken ct)
     {
-        var current = await ExportAsync(tenantId, ct);
-        var baseline = await BaselineAsync(tenantId, current, ct);
-        var policies = await PoliciesAsync(tenantId, ct);
+        var current = await ExportAsync(environment, ct);
+        var baseline = await BaselineAsync(environment, current, ct);
+        var policies = await PoliciesAsync(environment, ct);
         return Diff(baseline.Items, current)
             .Where(c => Ownership(policies, c.Kind, c.Key) != EnvironmentOwnership.Local)
             .ToList();
@@ -76,29 +77,30 @@ public sealed class EnvironmentMigrator(
 
     /// <summary>Records the unpublished changes as a migration and moves the baseline past them; null when there are none.</summary>
     public async Task<EnvironmentMigration?> CutAsync(
-        Guid tenantId, string name, string? description, Guid? userId, string? email, CancellationToken ct)
+        TenantEnvironment environment, string name, string? description, Guid? userId, string? email, CancellationToken ct)
     {
-        var current = await ExportAsync(tenantId, ct);
-        var baseline = await BaselineAsync(tenantId, current, ct);
-        var policies = await PoliciesAsync(tenantId, ct);
+        var current = await ExportAsync(environment, ct);
+        var baseline = await BaselineAsync(environment, current, ct);
+        var policies = await PoliciesAsync(environment, ct);
         var changes = Diff(baseline.Items, current)
             .Where(c => Ownership(policies, c.Kind, c.Key) != EnvironmentOwnership.Local)
             .ToList();
         if (changes.Count == 0) return null;
 
-        using var rls = RlsScope.Tenant(tenantId);
+        using var rls = environment.Scope();
         var migration = new EnvironmentMigration
         {
             Id = Guid.NewGuid(),
-            TenantId = tenantId,
+            TenantId = environment.TenantId,
+            EnvironmentId = environment.Id,
             MigrationId = Guid.NewGuid(),
-            OriginTenantId = tenantId,
+            OriginEnvironmentId = environment.Id,
             Name = name,
             Description = description,
             AuthorUserId = userId,
             AuthorEmail = email,
             ChangesJson = JsonSerializer.Serialize(changes.Select(ToJson)),
-            Order = await NextOrderAsync(tenantId, ct),
+            Order = await NextOrderAsync(environment, ct),
             AppliedBy = userId,
         };
         db.EnvironmentMigrations.Add(migration);
@@ -114,43 +116,43 @@ public sealed class EnvironmentMigrator(
     /// source, the source's history adopted as its own (what it applied is in the copy, so none of
     /// it is pending), and the copy as its baseline.
     /// </summary>
-    public async Task CopyAsync(Guid targetId, Guid sourceId, CancellationToken ct)
+    public async Task CopyAsync(TenantEnvironment target, TenantEnvironment sourceEnvironment, CancellationToken ct)
     {
-        var source = await ExportAsync(sourceId, ct);
+        var source = await ExportAsync(sourceEnvironment, ct);
         foreach (var kind in _kinds)
         {
             foreach (var item in source[kind.Kind].Values.OrderBy(i => i.Key, StringComparer.Ordinal))
             {
-                using var scope = RlsScope.Tenant(targetId);
-                await kind.ApplyAsync(targetId, item.Key, item.Value, new EnvironmentApplyContext(null), ct);
+                using var scope = target.Scope();
+                await kind.ApplyAsync(target.TenantId, item.Key, item.Value, new EnvironmentApplyContext(null), ct);
             }
         }
 
         List<EnvironmentMigration> history;
-        using (RlsScope.Tenant(sourceId))
+        using (sourceEnvironment.Scope())
         {
             history = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
-                .Where(m => m.TenantId == sourceId && m.RolledBackAt == null)
+                .Where(m => m.EnvironmentId == sourceEnvironment.Id && m.RolledBackAt == null)
                 .OrderBy(m => m.Order)
                 .ToListAsync(ct);
         }
-        using var rls = RlsScope.Tenant(targetId);
-        var order = await NextOrderAsync(targetId, ct);
+        using var rls = target.Scope();
+        var order = await NextOrderAsync(target, ct);
         foreach (var m in history)
         {
             db.EnvironmentMigrations.Add(new EnvironmentMigration
             {
-                Id = Guid.NewGuid(), TenantId = targetId, MigrationId = m.MigrationId, OriginTenantId = m.OriginTenantId,
+                Id = Guid.NewGuid(), TenantId = target.TenantId, EnvironmentId = target.Id, MigrationId = m.MigrationId, OriginEnvironmentId = m.OriginEnvironmentId,
                 Name = m.Name, Description = m.Description, AuthorUserId = m.AuthorUserId, AuthorEmail = m.AuthorEmail,
                 CreatedAt = m.CreatedAt, ChangesJson = m.ChangesJson, Order = order++, AppliedBy = m.AppliedBy,
             });
         }
         var items = source.ToDictionary(
             k => k.Key, k => k.Value.ToDictionary(i => i.Key, i => i.Value.Value, StringComparer.Ordinal), StringComparer.Ordinal);
-        var baseline = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.TenantId == targetId, ct);
+        var baseline = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.EnvironmentId == target.Id, ct);
         if (baseline is null)
         {
-            baseline = new EnvironmentBaseline { Id = Guid.NewGuid(), TenantId = targetId };
+            baseline = new EnvironmentBaseline { Id = Guid.NewGuid(), TenantId = target.TenantId, EnvironmentId = target.Id };
             db.EnvironmentBaselines.Add(baseline);
         }
         baseline.ItemsJson = Serialize(items);
@@ -159,43 +161,43 @@ public sealed class EnvironmentMigrator(
     }
 
     /// <summary>The target's history, newest first.</summary>
-    public async Task<List<EnvironmentMigration>> HistoryAsync(Guid tenantId, CancellationToken ct)
+    public async Task<List<EnvironmentMigration>> HistoryAsync(TenantEnvironment environment, CancellationToken ct)
     {
-        using var rls = RlsScope.Tenant(tenantId);
+        using var rls = environment.Scope();
         return await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
-            .Where(m => m.TenantId == tenantId)
+            .Where(m => m.EnvironmentId == environment.Id)
             .OrderByDescending(m => m.Order)
             .ToListAsync(ct);
     }
 
     /// <summary>
-    /// What <paramref name="sourceId"/> has applied and <paramref name="targetId"/> has not, in the
+    /// What <paramref name="source"/> has applied and <paramref name="target"/> has not, in the
     /// source's order, each change reviewed against the target as it will be by then: an earlier
     /// pending change to the same item counts as applied.
     /// </summary>
-    public async Task<List<PendingMigration>> PendingAsync(Guid targetId, Guid sourceId, CancellationToken ct)
+    public async Task<List<PendingMigration>> PendingAsync(TenantEnvironment target, TenantEnvironment source, CancellationToken ct)
     {
-        List<EnvironmentMigration> source;
-        using (RlsScope.Tenant(sourceId))
+        List<EnvironmentMigration> sourceHistory;
+        using (source.Scope())
         {
-            source = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
-                .Where(m => m.TenantId == sourceId && m.RolledBackAt == null)
+            sourceHistory = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
+                .Where(m => m.EnvironmentId == source.Id && m.RolledBackAt == null)
                 .OrderBy(m => m.Order)
                 .ToListAsync(ct);
         }
         HashSet<Guid> applied;
-        using (RlsScope.Tenant(targetId))
+        using (target.Scope())
         {
             applied = (await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
-                .Where(m => m.TenantId == targetId && m.RolledBackAt == null)
+                .Where(m => m.EnvironmentId == target.Id && m.RolledBackAt == null)
                 .Select(m => m.MigrationId)
                 .ToListAsync(ct)).ToHashSet();
         }
 
-        var current = await ExportAsync(targetId, ct);
-        var policies = await PoliciesAsync(targetId, ct);
+        var current = await ExportAsync(target, ct);
+        var policies = await PoliciesAsync(target, ct);
         var pending = new List<PendingMigration>();
-        foreach (var migration in source.Where(m => !applied.Contains(m.MigrationId)))
+        foreach (var migration in sourceHistory.Where(m => !applied.Contains(m.MigrationId)))
         {
             var reviewed = Review(Changes(migration), current, policies, forward: true);
             pending.Add(new PendingMigration(migration, reviewed));
@@ -209,7 +211,7 @@ public sealed class EnvironmentMigrator(
     }
 
     /// <summary>
-    /// Applies the pending migrations from <paramref name="sourceId"/> up to and including
+    /// Applies the pending migrations from <paramref name="source"/> up to and including
     /// <paramref name="upTo"/>, in order, each recorded in the target's history once all of its
     /// changes are in. A conflict needs a resolution in <paramref name="resolutions"/>
     /// (<c>overwrite</c> or <c>skip</c>, keyed <c>{migrationId}/{changeId}</c>), except in an item the target lets
@@ -218,18 +220,18 @@ public sealed class EnvironmentMigrator(
     /// </summary>
     /// <returns>How many migrations were applied.</returns>
     public async Task<int> ApplyAsync(
-        Guid targetId, Guid sourceId, Guid upTo, IReadOnlyDictionary<string, string> resolutions,
+        TenantEnvironment target, TenantEnvironment source, Guid upTo, IReadOnlyDictionary<string, string> resolutions,
         EnvironmentApplier applier, CancellationToken ct)
     {
-        var pending = await PendingAsync(targetId, sourceId, ct);
+        var pending = await PendingAsync(target, source, ct);
         var last = pending.FindIndex(p => p.Migration.MigrationId == upTo);
         if (last < 0) throw new EnvironmentMigrationException("environments.errors.migrationNotPending");
 
         // Reviewed again here, in order, against what the target really holds and will hold: the
         // review screen assumed every conflict overwritten, and a skipped one leaves the item as it
         // was for every later change — to the outcome of those changes and to what they add.
-        var policies = await PoliciesAsync(targetId, ct);
-        var state = await ExportAsync(targetId, ct);
+        var policies = await PoliciesAsync(target, ct);
+        var state = await ExportAsync(target, ct);
         var plans = new List<(EnvironmentMigration Migration, List<ReviewedChange> Changes, Dictionary<string, string> Chosen)>();
         foreach (var p in pending.Take(last + 1))
         {
@@ -238,27 +240,27 @@ public sealed class EnvironmentMigrator(
             foreach (var w in Writes(reviewed, chosen)) SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
             plans.Add((p.Migration, reviewed, chosen));
         }
-        var context = await AuthorizeAsync(targetId, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
+        var context = await AuthorizeAsync(target, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
 
         foreach (var (migration, reviewed, chosen) in plans)
         {
-            await WriteAsync(targetId, Writes(reviewed, chosen), context, ct);
-            await RecordAsync(targetId, migration, reviewed, chosen, applier.UserId, forward: true, ct);
+            await WriteAsync(target, Writes(reviewed, chosen), context, ct);
+            await RecordAsync(target, migration, reviewed, chosen, applier.UserId, forward: true, ct);
         }
         return plans.Count;
     }
 
     /// <summary>Reverts the target's most recent migration, change by change in reverse, the same way.</summary>
     public async Task<EnvironmentMigration> RollbackAsync(
-        Guid targetId, Guid migrationId, IReadOnlyDictionary<string, string> resolutions,
+        TenantEnvironment target, Guid migrationId, IReadOnlyDictionary<string, string> resolutions,
         EnvironmentApplier applier, CancellationToken ct)
     {
-        var (row, reviewed) = await RollbackPlanAsync(targetId, migrationId, ct);
+        var (row, reviewed) = await RollbackPlanAsync(target, migrationId, ct);
         // A rollback restores what the migration replaced; no item is the target's to keep here.
         var chosen = Choose(row.MigrationId, reviewed, resolutions, []);
-        var context = await AuthorizeAsync(targetId, applier, Writes(reviewed, chosen), ct);
-        await WriteAsync(targetId, Writes(reviewed, chosen), context, ct);
-        await RecordAsync(targetId, row, reviewed, chosen, applier.UserId, forward: false, ct);
+        var context = await AuthorizeAsync(target, applier, Writes(reviewed, chosen), ct);
+        await WriteAsync(target, Writes(reviewed, chosen), context, ct);
+        await RecordAsync(target, row, reviewed, chosen, applier.UserId, forward: false, ct);
         return row;
     }
 
@@ -292,14 +294,17 @@ public sealed class EnvironmentMigrator(
     /// in the target: each kind's own permission, and for roles every permission a change adds —
     /// the rule that stops a role editor from minting a role beyond their own (SEC-06).
     /// </summary>
-    private async Task<EnvironmentApplyContext> AuthorizeAsync(Guid targetId, EnvironmentApplier applier, IEnumerable<ReviewedChange> writes, CancellationToken ct)
+    private async Task<EnvironmentApplyContext> AuthorizeAsync(TenantEnvironment target, EnvironmentApplier applier, IEnumerable<ReviewedChange> writes, CancellationToken ct)
     {
         if (applier.IsSuperAdmin) return new EnvironmentApplyContext(null);
-        var held = applier.UserId is { } userId
-            ? await permissions.GetPermissionsAsync(targetId, userId, ct)
-            : new HashSet<string>();
+        IReadOnlySet<string> held = new HashSet<string>();
+        if (applier.UserId is { } userId)
+        {
+            using var scope = target.Scope();
+            held = await permissions.GetPermissionsAsync(target.TenantId, userId, ct);
+        }
         // What each role really holds as the writes go in: the live export, moved only by them.
-        var state = await ExportAsync(targetId, ct);
+        var state = await ExportAsync(target, ct);
         foreach (var w in writes)
         {
             var kind = KindOf(w.Change.Kind);
@@ -309,8 +314,8 @@ public sealed class EnvironmentMigrator(
             }
             if (w.Change.After is { } after)
             {
-                using var rls = RlsScope.Tenant(targetId);
-                if ((await kind.PermissionsForAsync(targetId, w.Change.Key, after, ct)).FirstOrDefault(p => !held.Contains(p)) is { } lacking)
+                using var rls = target.Scope();
+                if ((await kind.PermissionsForAsync(target.TenantId, w.Change.Key, after, ct)).FirstOrDefault(p => !held.Contains(p)) is { } lacking)
                 {
                     throw new EnvironmentMigrationException("environments.errors.notAllowed", lacking);
                 }
@@ -328,14 +333,14 @@ public sealed class EnvironmentMigrator(
         return new EnvironmentApplyContext(held);
     }
 
-    private async Task WriteAsync(Guid targetId, IEnumerable<ReviewedChange> writes, EnvironmentApplyContext context, CancellationToken ct)
+    private async Task WriteAsync(TenantEnvironment target, IEnumerable<ReviewedChange> writes, EnvironmentApplyContext context, CancellationToken ct)
     {
         foreach (var w in writes)
         {
-            using var rls = RlsScope.Tenant(targetId);
+            using var rls = target.Scope();
             try
             {
-                await KindOf(w.Change.Kind).ApplyAsync(targetId, w.Change.Key, w.Change.After, context, ct);
+                await KindOf(w.Change.Kind).ApplyAsync(target.TenantId, w.Change.Key, w.Change.After, context, ct);
             }
             catch (EnvironmentConfigException ex)
             {
@@ -346,13 +351,13 @@ public sealed class EnvironmentMigrator(
 
     /// <summary>What rolling back the target's last migration would do: its changes inverted, reviewed.</summary>
     public async Task<(EnvironmentMigration Row, List<ReviewedChange> Changes)> RollbackPlanAsync(
-        Guid targetId, Guid migrationId, CancellationToken ct)
+        TenantEnvironment target, Guid migrationId, CancellationToken ct)
     {
         EnvironmentMigration? row;
-        using (RlsScope.Tenant(targetId))
+        using (target.Scope())
         {
             row = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
-                .Where(m => m.TenantId == targetId && m.RolledBackAt == null)
+                .Where(m => m.EnvironmentId == target.Id && m.RolledBackAt == null)
                 .OrderByDescending(m => m.Order)
                 .FirstOrDefaultAsync(ct);
         }
@@ -363,18 +368,18 @@ public sealed class EnvironmentMigrator(
         var inverse = Changes(row).AsEnumerable().Reverse()
             .Select(c => c with { Before = c.After, After = c.Before })
             .ToList();
-        var current = await ExportAsync(targetId, ct);
-        var policies = await PoliciesAsync(targetId, ct);
+        var current = await ExportAsync(target, ct);
+        var policies = await PoliciesAsync(target, ct);
         return (row, Review(inverse, current, policies, forward: false));
     }
 
     private async Task RecordAsync(
-        Guid targetId, EnvironmentMigration migration, IReadOnlyList<ReviewedChange> reviewed,
+        TenantEnvironment target, EnvironmentMigration migration, IReadOnlyList<ReviewedChange> reviewed,
         Dictionary<string, string> chosen, Guid? userId, bool forward, CancellationToken ct)
     {
-        using var rls = RlsScope.Tenant(targetId);
-        var current = await ExportAsync(targetId, ct);
-        var baseline = await BaselineAsync(targetId, current, ct);
+        using var rls = target.Scope();
+        var current = await ExportAsync(target, ct);
+        var baseline = await BaselineAsync(target, current, ct);
         // The baseline follows what the migration wrote, so it is not mistaken for a local edit
         // and cut again here; what was skipped stays a difference, which it is.
         foreach (var r in reviewed)
@@ -392,16 +397,17 @@ public sealed class EnvironmentMigrator(
             db.EnvironmentMigrations.Add(new EnvironmentMigration
             {
                 Id = Guid.NewGuid(),
-                TenantId = targetId,
+                TenantId = target.TenantId,
+                EnvironmentId = target.Id,
                 MigrationId = migration.MigrationId,
-                OriginTenantId = migration.OriginTenantId,
+                OriginEnvironmentId = migration.OriginEnvironmentId,
                 Name = migration.Name,
                 Description = migration.Description,
                 AuthorUserId = migration.AuthorUserId,
                 AuthorEmail = migration.AuthorEmail,
                 CreatedAt = migration.CreatedAt,
                 ChangesJson = migration.ChangesJson,
-                Order = await NextOrderAsync(targetId, ct),
+                Order = await NextOrderAsync(target, ct),
                 AppliedBy = userId,
                 ResolutionsJson = JsonSerializer.Serialize(chosen),
             });
@@ -409,7 +415,7 @@ public sealed class EnvironmentMigrator(
         else
         {
             var row = await db.EnvironmentMigrations.IgnoreTenantFilter()
-                .FirstAsync(m => m.TenantId == targetId && m.Id == migration.Id, ct);
+                .FirstAsync(m => m.EnvironmentId == target.Id && m.Id == migration.Id, ct);
             row.RolledBackAt = DateTimeOffset.UtcNow;
         }
         await db.SaveChangesAsync(ct);
@@ -468,17 +474,17 @@ public sealed class EnvironmentMigrator(
 
     private sealed record Baseline(EnvironmentBaseline Row, Dictionary<string, Dictionary<string, JsonElement>> Items);
 
-    /// <summary>The tenant's baseline, made from <paramref name="current"/> the first time it is asked for.</summary>
+    /// <summary>The environment's baseline, made from <paramref name="current"/> the first time it is asked for.</summary>
     private async Task<Baseline> BaselineAsync(
-        Guid tenantId, Dictionary<string, Dictionary<string, EnvironmentConfigItem>> current, CancellationToken ct)
+        TenantEnvironment environment, Dictionary<string, Dictionary<string, EnvironmentConfigItem>> current, CancellationToken ct)
     {
-        using var rls = RlsScope.Tenant(tenantId);
-        var row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.TenantId == tenantId, ct);
+        using var rls = environment.Scope();
+        var row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.EnvironmentId == environment.Id, ct);
         if (row is null)
         {
             var items = current.ToDictionary(
                 k => k.Key, k => k.Value.ToDictionary(i => i.Key, i => i.Value.Value, StringComparer.Ordinal), StringComparer.Ordinal);
-            row = new EnvironmentBaseline { Id = Guid.NewGuid(), TenantId = tenantId, ItemsJson = Serialize(items) };
+            row = new EnvironmentBaseline { Id = Guid.NewGuid(), TenantId = environment.TenantId, EnvironmentId = environment.Id, ItemsJson = Serialize(items) };
             db.EnvironmentBaselines.Add(row);
             try
             {
@@ -489,27 +495,27 @@ public sealed class EnvironmentMigrator(
             {
                 // Made at the same moment elsewhere — the copy job finishing, a second reader: that one stands.
                 db.Entry(row).State = EntityState.Detached;
-                row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstAsync(b => b.TenantId == tenantId, ct);
+                row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstAsync(b => b.EnvironmentId == environment.Id, ct);
             }
         }
         return new Baseline(row,
             JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, JsonElement>>>(row.ItemsJson) ?? []);
     }
 
-    private async Task<List<EnvironmentPolicy>> PoliciesAsync(Guid tenantId, CancellationToken ct)
+    private async Task<List<EnvironmentPolicy>> PoliciesAsync(TenantEnvironment environment, CancellationToken ct)
     {
-        using var rls = RlsScope.Tenant(tenantId);
+        using var rls = environment.Scope();
         return await db.EnvironmentPolicies.IgnoreTenantFilter().AsNoTracking()
-            .Where(p => p.TenantId == tenantId)
+            .Where(p => p.EnvironmentId == environment.Id)
             .ToListAsync(ct);
     }
 
     public static EnvironmentOwnership Ownership(IEnumerable<EnvironmentPolicy> policies, string kind, string key) =>
         EnvironmentPolicies.Ownership(policies, kind, key);
 
-    private async Task<long> NextOrderAsync(Guid tenantId, CancellationToken ct) =>
+    private async Task<long> NextOrderAsync(TenantEnvironment environment, CancellationToken ct) =>
         (await db.EnvironmentMigrations.IgnoreTenantFilter()
-            .Where(m => m.TenantId == tenantId)
+            .Where(m => m.EnvironmentId == environment.Id)
             .MaxAsync(m => (long?)m.Order, ct) ?? 0) + 1;
 
     public static List<ConfigChange> Changes(EnvironmentMigration migration) =>

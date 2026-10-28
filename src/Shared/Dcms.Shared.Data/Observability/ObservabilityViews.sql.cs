@@ -312,10 +312,12 @@ internal static class ObservabilityViews
             (SELECT count(*) FROM plugins.plugin_instances x   WHERE x."TenantId" = t."Id"::uuid AND x."Enabled") AS enabled_plugins,
             (SELECT count(*) FROM visitors.visitor_accounts x  WHERE x."TenantId" = t."Id"::uuid) AS visitor_accounts,
             (SELECT count(*) FROM forms.form_submissions x     WHERE x."TenantId" = t."Id"::uuid) AS form_submissions,
-            -- Last: CREATE OR REPLACE VIEW only appends columns. ADR 0026: an environment is a
-            -- tenant, grouped under its workspace's root.
-            t."WorkspaceId"                                                                    AS workspace_id,
-            t."EnvironmentName"                                                                AS environment
+            -- Last: CREATE OR REPLACE VIEW only appends columns. ADR 0028: environments are a
+            -- dimension of the tenant (the conversion dropped the view ADR 0026's columns fed), so
+            -- each row is a workspace, with its environments besides production.
+            t."Id"::uuid                                                                       AS workspace_id,
+            (SELECT string_agg(e."Name", ', ' ORDER BY e."Order") FROM tenancy.environments e
+             WHERE e."TenantId" = t."Id"::uuid AND e."Id" <> e."TenantId")                     AS environment
         FROM tenancy.tenants t
         """,
 

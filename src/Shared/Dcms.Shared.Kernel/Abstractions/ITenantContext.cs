@@ -22,7 +22,7 @@ public interface ITenantContext
     bool IsSuspended => false;
 
     /// <summary>
-    /// The tenant belongs to a workspace with environments (ADR 0026). Same default and the same
+    /// The tenant has environments besides production (ADR 0028). Same default and the same
     /// reasoning as <see cref="IsSuspended"/>: only the HTTP paths have the row to say so.
     /// </summary>
     bool HasEnvironments => false;

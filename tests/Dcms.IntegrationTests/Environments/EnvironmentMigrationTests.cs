@@ -5,7 +5,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AdminApiApp::Dcms.AdminApi.Environments;
 using Dcms.IntegrationTests.Tenancy;
+using Dcms.Shared.Data;
 using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.UserAuth;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Dcms.IntegrationTests.Environments;
 
 /// <summary>
-/// Configuration moves between environments as migrations (ADR 0026): cut from what changed since
+/// Configuration moves between environments as migrations (ADR 0026, on ADR 0028's dimension): cut from what changed since
 /// the baseline, every change reviewed against the receiving environment before it is applied, a
 /// conflict resolved by the reviewer, the last one rolled back. The jobs that apply them are run
 /// here by calling the engine they call, since the fixture keeps job lanes off.
@@ -30,7 +32,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         req.Headers.Add("X-Test-Sub", sub.ToString());
         req.Headers.Add("X-Test-Email", $"{sub:N}@dcms.test");
         if (roles.Length > 0) req.Headers.Add("X-Test-Roles", roles);
-        if (tenantSlug is not null) req.Headers.Add("X-Dcms-Tenant", tenantSlug);
+        if (tenantSlug is not null) EnvironmentTarget.Apply(req, tenantSlug);
         if (body is not null) req.Content = JsonContent.Create(body);
         return req;
     }
@@ -41,7 +43,11 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         return await res.Content.ReadFromJsonAsync<JsonElement>(ct);
     }
 
-    private sealed record Workspace(string Prod, string Dev, Guid ProdId, Guid DevId, Guid Owner);
+    private sealed record Workspace(string Prod, string Dev, Guid ProdId, Guid DevId, Guid Owner)
+    {
+        public TenantEnvironment ProdEnv { get; init; } = null!;
+        public TenantEnvironment DevEnv { get; init; } = null!;
+    }
 
     private async Task<Workspace> WorkspaceAsync(HttpClient client, CancellationToken ct)
     {
@@ -49,11 +55,15 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var owner = Guid.NewGuid();
         var created = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/tenants", SuperAdmin, roles: "SuperAdmin",
             body: new { slug, name = slug, ownerUserId = owner, ownerEmail = $"{owner:N}@dcms.test" }), ct), ct);
-        await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/enable", owner, slug), ct);
         var dev = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, slug, new { name = "development" }), ct), ct);
-        var ws = new Workspace(slug, $"{slug}-development", created.GetProperty("tenantId").GetGuid(), dev.GetProperty("tenantId").GetGuid(), owner);
+        var (prodId, devId) = (created.GetProperty("tenantId").GetGuid(), dev.GetProperty("id").GetGuid());
+        var ws = new Workspace(slug, $"{slug}/development", prodId, devId, owner)
+        {
+            ProdEnv = await EnvironmentTarget.LoadAsync(fixture.Factory.Services, prodId, prodId),
+            DevEnv = await EnvironmentTarget.LoadAsync(fixture.Factory.Services, prodId, devId),
+        };
         // The copy job, as jobs-worker would run it.
-        await Engine(m => m.CopyAsync(ws.DevId, ws.ProdId, ct));
+        await Engine(m => m.CopyAsync(ws.DevEnv, ws.ProdEnv, ct));
         return ws;
     }
 
@@ -115,7 +125,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         // Applying is a job; the request only queues it.
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/pending/apply", ws.Owner, ws.Prod,
             new { from = ws.DevId, upTo = migration }), ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read", "content:write");
         (await PendingAsync(client, ws, ct)).Should().BeEmpty();
@@ -135,7 +145,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var ws = await WorkspaceAsync(client, ct);
         await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
         var first = await CutAsync(client, ws, "Add editors", ct);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         // Both sides change the role: development widens it, production narrows it by hand.
         var devRoles = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, ws.Dev), ct), ct);
@@ -151,18 +161,18 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var pending = await PendingAsync(client, ws, ct);
         pending[0].GetProperty("changes")[0].GetProperty("outcome").GetString().Should().Be("conflict");
 
-        var unresolved = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        var unresolved = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await unresolved.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.conflictUnresolved");
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("media:read");
 
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second,
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second,
             new Dictionary<string, string> { [$"{second}/roles/Editors"] = "overwrite" }, new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:publish", "content:read");
 
         // Only the last one rolls back, and it puts back what the migration replaced.
-        var older = () => Engine(m => m.RollbackAsync(ws.ProdId, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        var older = () => Engine(m => m.RollbackAsync(ws.ProdEnv, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await older.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.rollbackNotLast");
-        await Engine(m => m.RollbackAsync(ws.ProdId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.RollbackAsync(ws.ProdEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read");
         (await PendingAsync(client, ws, ct)).Should().ContainSingle("a rolled-back migration is pending again");
     }
@@ -192,7 +202,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
         var migration = await CutAsync(client, ws, "News blog", ct);
 
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         var instances = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/instances", ws.Owner, ws.Prod), ct), ct);
         instances.EnumerateArray().Select(i => i.GetProperty("slug").GetString()).Should().Contain("news");
@@ -221,7 +231,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { email = $"{deployer:N}@dcms.test", roleIds = new[] { role.GetProperty("id").GetString() } }), ct), ct);
         await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations/accept", deployer, body: new { token = invite.GetProperty("token").GetString() }), ct);
 
-        var refused = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(),
+        var refused = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(),
             new EnvironmentApplier(deployer, false), ct));
         var error = (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which;
         error.Key.Should().Be("environments.errors.notAllowed");
@@ -229,7 +239,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().NotContain("members:manage");
 
         // The owner, who holds it, may.
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(),
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(),
             new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Contain("members:manage");
     }
@@ -269,7 +279,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             [$"{first}/roles/Member"] = "skip",
             [$"{second}/roles/Member"] = "overwrite",
         };
-        var refused = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, resolutions, new EnvironmentApplier(deployer, false), ct));
+        var refused = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, resolutions, new EnvironmentApplier(deployer, false), ct));
         (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Detail.Should().Be("members:manage");
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Equal("media:read");
     }
@@ -281,30 +291,30 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var client = fixture.Factory.CreateClient();
         var ws = await WorkspaceAsync(client, ct);
         using (var scope = fixture.Factory.Services.CreateScope())
-        using (RlsScope.Tenant(ws.DevId))
+        using (RlsScope.Environment(ws.ProdId, ws.DevId))
         {
             var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
             cms.ApiConnections.Add(new ApiConnection
             {
-                Id = Guid.NewGuid(), TenantId = ws.DevId, Slug = "events", Name = "Events", BaseUrl = "https://api.example.test",
+                Id = Guid.NewGuid(), TenantId = ws.ProdId, Slug = "events", Name = "Events", BaseUrl = "https://api.example.test",
                 AuthKind = "bearer", SecretCiphertext = "vault:v1:dev-only", Operations = ["/events"],
             });
             await cms.SaveChangesAsync(ct);
             var userAuth = scope.ServiceProvider.GetRequiredService<UserAuthDbContext>();
-            userAuth.Roles.Add(new UserRole { Id = Guid.NewGuid(), TenantId = ws.DevId, Key = "sales", Name = "Sales", Permissions = ["crm:read"] });
+            userAuth.Roles.Add(new UserRole { Id = Guid.NewGuid(), TenantId = ws.ProdId, Key = "sales", Name = "Sales", Permissions = ["crm:read"] });
             await userAuth.SaveChangesAsync(ct);
         }
         var migration = await CutAsync(client, ws, "Events feed and sales role", ct);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         using (var scope = fixture.Factory.Services.CreateScope())
         using (RlsScope.Tenant(ws.ProdId))
         {
-            var connection = await scope.ServiceProvider.GetRequiredService<CmsDbContext>().ApiConnections.IgnoreQueryFilters()
+            var connection = await scope.ServiceProvider.GetRequiredService<CmsDbContext>().ApiConnections.IgnoreTenantFilter()
                 .SingleAsync(c => c.TenantId == ws.ProdId && c.Slug == "events", ct);
             connection.BaseUrl.Should().Be("https://api.example.test");
             connection.SecretCiphertext.Should().BeNull("a key is each environment's own");
-            var role = await scope.ServiceProvider.GetRequiredService<UserAuthDbContext>().Roles.IgnoreQueryFilters()
+            var role = await scope.ServiceProvider.GetRequiredService<UserAuthDbContext>().Roles.IgnoreTenantFilter()
                 .SingleAsync(r => r.TenantId == ws.ProdId && r.Key == "sales", ct);
             role.Permissions.Should().Equal("crm:read");
         }
@@ -320,7 +330,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { name = "Marketing", renderMode = "StaticPrerender" }), ct), ct);
         var devSite = created.GetProperty("id").GetGuid();
         var first = await CutAsync(client, ws, "Marketing site", ct);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         async Task<List<(string Name, Guid Id)>> ProdSites() =>
             (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/sites", ws.Owner, ws.Prod), ct), ct))
@@ -331,14 +341,14 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
 
         // A rename later finds the same site, not a second one.
         using (var scope = fixture.Factory.Services.CreateScope())
-        using (RlsScope.Tenant(ws.DevId))
+        using (RlsScope.Environment(ws.ProdId, ws.DevId))
         {
             var sites = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Sites.SitesDbContext>();
-            (await sites.Sites.IgnoreQueryFilters().SingleAsync(x => x.Id == devSite, ct)).Name = "Marketing 2026";
+            (await sites.Sites.IgnoreTenantFilter().SingleAsync(x => x.Id == devSite, ct)).Name = "Marketing 2026";
             await sites.SaveChangesAsync(ct);
         }
         var second = await CutAsync(client, ws, "Rename", ct);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await ProdSites()).Should().Equal(("Marketing 2026", prodSites[0].Id));
     }
 
@@ -370,7 +380,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             .ToDictionary(c => c.GetProperty("key").GetString()!, c => c.GetProperty("outcome").GetString())
             .Should().Contain("Reviewers", "local").And.Contain("Editors", "apply");
 
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read");
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Reviewers", ct)).Should().BeEquivalentTo(["media:read"], "production keeps its own");
 

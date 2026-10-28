@@ -2,7 +2,7 @@ import { test, expect } from '../fixtures/test';
 import { TENANT } from '../fixtures/data';
 
 /**
- * Deployments (ADR 0026): this environment's unpublished changes cut into a migration; a pending
+ * Deployments (ADR 0026, 0028): this environment's unpublished changes cut into a migration; a pending
  * deployment reviewed change by change, a conflict decided before Deploy is possible; and the
  * latest migration rolled back from the history.
  */
@@ -12,8 +12,8 @@ const ENVIRONMENTS = {
   enabled: true,
   workspaceId: TENANT.tenantId,
   environments: [
-    { tenantId: DEV, slug: 'acme-development', name: 'development', order: -1, isRoot: false, promotesFrom: [], status: 'Active', isMember: true },
-    { tenantId: TENANT.tenantId, slug: TENANT.slug, name: 'production', order: 0, isRoot: true, promotesFrom: [DEV], status: 'Active', isMember: true },
+    { id: DEV, name: 'development', order: -1, purpose: 'stage', isProduction: false, promotesFrom: [], isMember: true },
+    { id: TENANT.tenantId, name: 'production', order: 0, purpose: 'stage', isProduction: true, promotesFrom: [DEV], isMember: true },
   ],
 };
 const change = (id: string, outcome: string | null, before: unknown, after: unknown, current?: unknown) => ({

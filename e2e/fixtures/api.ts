@@ -219,7 +219,6 @@ export function adminApi(
     .on('GET', '/api/admin/usage', data.USAGE)
     .on('POST', '/api/admin/usage/recalculate', { ...data.USAGE, measuredAt: new Date().toISOString() })
     .on('GET', '/api/admin/environments', data.ENVIRONMENTS_OFF)
-    .on('POST', '/api/admin/environments/enable', {})
     .on('GET', '/api/admin/environments/changes', [])
     .on('GET', '/api/admin/environments/migrations', [])
     .on('GET', '/api/admin/environments/:id/policies', [])

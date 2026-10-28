@@ -1,6 +1,7 @@
 using Dcms.AdminApi.Environments;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Jobs;
 using Dcms.Shared.Kernel.Abstractions;
@@ -12,180 +13,117 @@ using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
-/// A workspace's environments (ADR 0026). Each environment is a whole tenant; the root tenant is
-/// the production environment, and <see cref="Tenant.WorkspaceId"/> is all that groups them.
+/// A workspace's environments (ADR 0028): rows of <c>tenancy.environments</c>, one of them
+/// production, whose id is the tenant's. A tenant with production alone has environments "off".
 ///
 /// <para>Managing them is the workspace's business, so <c>environments:manage</c> is checked in
-/// the root whichever environment the caller is in -- a role that can manage environments in
+/// production whichever environment the caller is in -- a role that can manage environments in
 /// development must not be able to add or delete them from there.</para>
 /// </summary>
 public static class EnvironmentEndpoints
 {
     public static IEndpointRouteBuilder MapEnvironmentEndpoints(this IEndpointRouteBuilder app)
     {
-        // Any member of any environment sees the whole workspace's list: it is how they switch.
+        // Any member sees the whole list: it is how they switch. Which ones they can open is
+        // isMember -- a role there, once there is more than production. Exempt from the role gate
+        // of the environment the request is in, because a member with no role there needs this
+        // to find one they have: the workspace membership is checked here instead.
         app.MapGet("/api/admin/environments", async (
-            ITenantContext tenant, TenancyDbContext db, CurrentUser me, CancellationToken ct) =>
+            ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CurrentUser me, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current is null) return Results.BadRequest(new { error = "Select a workspace first." });
-            var all = await WorkspaceAsync(db, current, ct);
-            var userId = me.UserId;
-            // rls: platform -- the caller's memberships across the workspace's tenants.
-            using var rls = Dcms.Shared.Data.Rls.RlsScope.Platform();
-            var ids = all.Select(t => t.TenantId).ToList();
-            var memberOf = await db.Memberships.IgnoreTenantFilter()
-                .Where(m => m.UserId == userId && ids.Contains(m.TenantId) && m.Roles.Any())
-                .Select(m => m.TenantId)
-                .ToListAsync(ct);
+            if (tenant.TenantId is not { } tenantId) return Results.BadRequest(new { error = "Select a workspace first." });
+            if (!me.IsSuperAdmin)
+            {
+                var userId = me.RequireUserId();
+                // rls: request tenant -- memberships are the workspace's, named by tenant and user.
+                if (!await db.Memberships.IgnoreTenantFilter().AsNoTracking().AnyAsync(m => m.TenantId == tenantId && m.UserId == userId, ct))
+                {
+                    return Results.Forbid();
+                }
+            }
+            var all = await environments.ListAsync(tenantId, ct);
+            var opens = me.IsSuperAdmin || all.Count == 1
+                ? all.Select(e => e.Id).ToHashSet()
+                : await OpenedByAsync(db, tenantId, me.RequireUserId(), ct);
             return Results.Ok(new
             {
-                enabled = current.WorkspaceId is not null,
-                workspaceId = current.RootId,
-                environments = all.Select(t => View(t, me.IsSuperAdmin || memberOf.Contains(t.TenantId))),
+                enabled = all.Count > 1,
+                workspaceId = tenantId,
+                environments = all.Select(e => View(e, opens.Contains(e.Id))),
             });
-        }).RequireAuthorization();
-
-        app.MapPost("/api/admin/environments/enable", async (
-            ITenantContext tenant, TenancyDbContext db, TenantStore store, CurrentUser me,
-            IPermissionResolver permissions, IAuditRecorder audit, CancellationToken ct) =>
-        {
-            var root = await CurrentAsync(db, tenant, ct);
-            if (root is null) return Results.BadRequest(new { error = "Select a workspace first." });
-            if (!await CanManageAsync(root.RootId, me, permissions, ct)) return Results.Forbid();
-            if (root.WorkspaceId is not null)
-            {
-                audit.Discard(audit.Declared!);
-                return Results.NoContent();
-            }
-            root.WorkspaceId = root.TenantId;
-            root.EnvironmentName = Tenant.ProductionEnvironment;
-            root.EnvironmentOrder = 0;
-            audit.Declared?.For("tenant", root.TenantId, root.Identifier);
-            await db.SaveChangesAsync(ct);
-            store.Evict(root);
-            return Results.NoContent();
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentsEnabled, "tenant");
-
-        // Only once the root is the workspace's last environment: turning environments off must
-        // never orphan one.
-        app.MapPost("/api/admin/environments/disable", async (
-            ITenantContext tenant, TenancyDbContext db, TenantStore store, CurrentUser me,
-            IPermissionResolver permissions, IAuditRecorder audit, CancellationToken ct) =>
-        {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current is null) return Results.BadRequest(new { error = "Select a workspace first." });
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
-            var all = await WorkspaceAsync(db, current, ct);
-            if (all.Count > 1)
-            {
-                return Results.Conflict(new { error = "Delete the other environments first." });
-            }
-            var root = all[0];
-            if (root.WorkspaceId is null)
-            {
-                audit.Discard(audit.Declared!);
-                return Results.NoContent();
-            }
-            root.WorkspaceId = null;
-            root.EnvironmentName = null;
-            root.EnvironmentOrder = 0;
-            root.PromotesFrom.Clear();
-            audit.Declared?.For("tenant", root.TenantId, root.Identifier);
-            await db.SaveChangesAsync(ct);
-            store.Evict(root);
-            return Results.NoContent();
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentsDisabled, "tenant");
+        }).RequireAuthorization().AllowNonMemberTenant(
+            "A workspace member with no role in the environment named, or in production, lists the environments to find one they "
+            + "can open; the handler checks workspace membership itself.");
 
         // A new environment goes upstream of the current most-upstream one, which may then be
-        // promoted into from it: adding staging, test and development in that order builds
+        // deployed into from it: adding staging, test and development in that order builds
         // development -> test -> staging -> production with no further setup.
         app.MapPost("/api/admin/environments", async (
-            CreateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
-            IPermissionResolver permissions, TenantProvisioning provisioning, WorkspaceMembers members,
+            CreateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, EnvironmentStore environments,
+            CurrentUser me, IPermissionResolver permissions, WorkspaceMembers members,
             IJobQueue jobs, IAuditRecorder audit, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current is null) return Results.BadRequest(new { error = "Select a workspace first." });
-            if (current.WorkspaceId is null) return Results.Conflict(new { error = "Enable environments first." });
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
+            if (tenant.TenantId is not { } tenantId) return Results.BadRequest(new { error = "Select a workspace first." });
+            if (!await CanManageAsync(tenantId, me, permissions, ct)) return Results.Forbid();
 
             var name = body.Name?.Trim().ToLowerInvariant() ?? "";
             if (!IsEnvironmentName(name))
             {
                 return Results.BadRequest(new { error = "The name must be 1-32 lowercase letters, digits or dashes." });
             }
-            var all = await WorkspaceAsync(db, current, ct);
+            var all = await environments.ListAsync(tenantId, ct);
             if (all.Count >= MaxEnvironments)
             {
                 return Results.Conflict(new { error = $"A workspace can have at most {MaxEnvironments} environments." });
             }
-            if (all.Any(t => t.EnvironmentName == name))
+            if (all.Any(e => e.Name == name))
             {
                 return Results.Conflict(new { error = "The workspace already has an environment of that name." });
             }
-            var root = all.Single(t => t.TenantId == current.RootId);
-            var slug = $"{root.Identifier}-{name}";
-            if (slug.Length > 64)
-            {
-                return Results.BadRequest(new { error = "The workspace address and environment name are too long together." });
-            }
-            if (await db.Tenants.AnyAsync(t => t.Identifier == slug, ct))
-            {
-                return Results.Conflict(new { error = $"The address {slug} is already taken." });
-            }
+            var source = body.From is { } from ? all.FirstOrDefault(e => e.Id == from) : all.Single(e => e.IsProduction);
+            if (source is null) return Results.BadRequest(new { error = "There is no environment to copy from of that id." });
 
-            var upstream = all.MinBy(t => t.EnvironmentOrder)!;
-            // Before the provisioning save, which is what writes the record (stamped with the new
-            // tenant, see TenantProvisioning).
-            audit.Declared?.With("environment", name).With("workspace", root.Identifier);
-            // Owned by the workspace's owner, not the caller. environments:manage can be delegated,
-            // and a delegate who became Owner of every environment they created would hold there
-            // what they were never given in the root. Everyone, the caller included, then gets the
-            // roles they hold in the root (SeedAsync).
-            var owner = await RootOwnerAsync(db, root.TenantId, ct);
-            if (owner is null && !me.IsSuperAdmin)
+            var upstream = all.MinBy(e => e.Order)!;
+            var created = new TenantEnvironment
             {
-                return Results.Conflict(new { error = "The workspace has no owner to own the new environment." });
+                Id = Guid.NewGuid(), TenantId = tenantId, Name = name, Order = upstream.Order - 1,
+            };
+            audit.Declared?.For("environment", created.Id, name);
+            using (RlsScope.Tenant(tenantId))
+            {
+                db.Environments.Add(created);
+                var tracked = await db.Environments.IgnoreTenantFilter().FirstAsync(e => e.TenantId == tenantId && e.Id == upstream.Id, ct);
+                tracked.PromotesFrom = [.. tracked.PromotesFrom, created.Id];
+                await db.SaveChangesAsync(ct);
             }
-            var created = await provisioning.CreateTenantAsync(
-                slug, root.Name, owner?.UserId ?? me.RequireUserId(), owner?.Email ?? me.Email ?? "unknown", ct,
-                t =>
-                {
-                    t.WorkspaceId = root.TenantId;
-                    t.EnvironmentName = name;
-                    t.EnvironmentOrder = upstream.EnvironmentOrder - 1;
-                });
-            upstream.PromotesFrom.Add(created.TenantId);
-            await db.SaveChangesAsync(ct);
-            await members.SeedAsync(created.TenantId, root.TenantId, ct);
-            // Its configuration follows as a job (a site's repository is pushed; plugins are set up):
-            // the environment exists now and fills in over the next moments.
+            environments.Evict(tenantId);
+            // Its roles and who holds them come from the source, so everyone keeps the access they
+            // had there; its configuration follows as a job (a site's repository is pushed;
+            // plugins are set up): the environment exists now and fills in over the next moments.
+            await members.SeedAsync(created, source, ct);
             if (body.Empty != true)
             {
                 await jobs.EnqueueAsync(new JobSpec(
-                    EnvironmentCopyJob.Kind, created.TenantId, new EnvironmentCopyPayload(root.TenantId),
+                    EnvironmentCopyJob.Kind, tenantId, new EnvironmentCopyPayload(source.Id),
                     "jobs.kinds.environmentCopy.title", new { environment = name },
                     RequiredPermission: PlatformPermissions.EnvironmentsManage, MaxAttempts: 1,
-                    LinkPath: "/deployments"), ct);
+                    LinkPath: "/deployments") { EnvironmentId = created.Id }, ct);
             }
 
-            return Results.Created($"/api/admin/environments/{created.TenantId}", View(created, true));
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentCreated, "tenant");
+            return Results.Created($"/api/admin/environments/{created.Id}", View(created, true));
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentCreated, "environment");
 
         app.MapPatch("/api/admin/environments/{id:guid}", async (
-            Guid id, UpdateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, TenantStore store,
+            Guid id, UpdateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, EnvironmentStore environments,
             CurrentUser me, IPermissionResolver permissions, IAuditRecorder audit, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null) return Results.NotFound();
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
-            var all = await WorkspaceAsync(db, current, ct);
-            var target = all.FirstOrDefault(t => t.TenantId == id);
+            if (tenant.TenantId is not { } tenantId) return Results.NotFound();
+            if (!await CanManageAsync(tenantId, me, permissions, ct)) return Results.Forbid();
+            using var rls = RlsScope.Tenant(tenantId);
+            var all = await db.Environments.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ToListAsync(ct);
+            var target = all.FirstOrDefault(e => e.Id == id);
             if (target is null) return Results.NotFound();
 
-            // Renaming changes the label, never the slug: the slug names the Forgejo org and every
-            // address and stored header, and is fixed for the environment's lifetime.
             if (body.Name is not null)
             {
                 var name = body.Name.Trim().ToLowerInvariant();
@@ -193,60 +131,59 @@ public static class EnvironmentEndpoints
                 {
                     return Results.BadRequest(new { error = "The name must be 1-32 lowercase letters, digits or dashes." });
                 }
-                if (all.Any(t => t.TenantId != id && t.EnvironmentName == name))
+                // Production is what a request naming no environment gets; its name is fixed.
+                if (target.IsProduction && name != target.Name)
+                {
+                    return Results.Conflict(new { error = "The production environment keeps its name." });
+                }
+                if (all.Any(e => e.Id != id && e.Name == name))
                 {
                     return Results.Conflict(new { error = "The workspace already has an environment of that name." });
                 }
-                target.EnvironmentName = name;
+                target.Name = name;
             }
-            if (body.Order is { } order) target.EnvironmentOrder = order;
+            if (body.Order is { } order) target.Order = order;
             if (body.PromotesFrom is { } sources)
             {
-                var ids = all.Select(t => t.TenantId).ToHashSet();
+                var ids = all.Select(e => e.Id).ToHashSet();
                 if (sources.Any(s => s == id || !ids.Contains(s)))
                 {
-                    return Results.BadRequest(new { error = "An environment can only be promoted into from another environment of this workspace." });
+                    return Results.BadRequest(new { error = "An environment can only be deployed into from another environment of this workspace." });
                 }
                 target.PromotesFrom = sources.Distinct().ToList();
             }
-            audit.Declared?.For("tenant", target.TenantId, target.Identifier)
-                .With("name", target.EnvironmentName)
-                .With("order", target.EnvironmentOrder)
+            audit.Declared?.For("environment", target.Id, target.Name)
+                .With("name", target.Name)
+                .With("order", target.Order)
                 .With("promotes_from", target.PromotesFrom);
             await db.SaveChangesAsync(ct);
-            store.Evict(target);
+            environments.Evict(tenantId);
             return Results.Ok(View(target, true));
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentUpdated, "tenant");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentUpdated, "environment");
 
         app.MapDelete("/api/admin/environments/{id:guid}", async (
-            Guid id, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
-            IPermissionResolver permissions, TenantDeleter deleter, IAuditRecorder audit, CancellationToken ct) =>
+            Guid id, ITenantContext tenant, CurrentUser me,
+            IPermissionResolver permissions, TenantDeleter deleter, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null) return Results.NotFound();
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
-            if (id == current.RootId)
+            if (tenant.TenantId is not { } tenantId) return Results.NotFound();
+            if (!await CanManageAsync(tenantId, me, permissions, ct)) return Results.Forbid();
+            if (id == tenantId)
             {
                 return Results.Conflict(new { error = "The production environment is the workspace; delete the workspace instead." });
             }
-            var target = await db.Tenants.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Id == id.ToString() && t.WorkspaceId == current.RootId, ct);
-            if (target is null) return Results.NotFound();
-
-            audit.Declared?.For("tenant", id, target.Identifier).With("environment", target.EnvironmentName);
-            var result = await deleter.DeleteAsync(id, ct);
+            var result = await deleter.DeleteEnvironmentAsync(tenantId, id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentDeleted, "tenant");
+        }).RequireAuthorization().PermissionExempt(ProductionGate)
+          .AuditExempt("TenantDeleter.DeleteEnvironmentAsync records environment.deleted itself, with the manifest of what went.");
 
         // Who owns each kind of configuration in an environment, or one item of it (ADR 0026).
         app.MapGet("/api/admin/environments/{id:guid}/policies", async (
-            Guid id, ITenantContext tenant, TenancyDbContext db, CancellationToken ct) =>
+            Guid id, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
-            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            if (await TargetAsync(environments, tenant, id, ct) is not { } target) return Results.NotFound();
+            using var rls = target.Scope();
             var policies = await db.EnvironmentPolicies.IgnoreTenantFilter().AsNoTracking()
-                .Where(p => p.TenantId == id)
+                .Where(p => p.TenantId == target.TenantId && p.EnvironmentId == target.Id)
                 .Select(p => new { kind = p.Kind, itemKey = p.ItemKey, mode = p.Mode.ToString() })
                 .ToListAsync(ct);
             return Results.Ok(policies);
@@ -254,13 +191,12 @@ public static class EnvironmentEndpoints
 
         // Replaces the environment's policies with the given set; anything left out is Mixed.
         app.MapPut("/api/admin/environments/{id:guid}/policies", async (
-            Guid id, List<PolicyRequest> body, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
+            Guid id, List<PolicyRequest> body, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CurrentUser me,
             IPermissionResolver permissions, Dcms.AdminApi.Sites.Git.SiteGitService git, Dcms.Shared.Data.Sites.SitesDbContext sites,
             IAuditRecorder audit, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
+            if (await TargetAsync(environments, tenant, id, ct) is not { } target) return Results.NotFound();
+            if (!await CanManageAsync(target.TenantId, me, permissions, ct)) return Results.Forbid();
             var wanted = new List<EnvironmentPolicy>();
             foreach (var p in body)
             {
@@ -271,15 +207,19 @@ public static class EnvironmentEndpoints
                 }
                 if (mode != EnvironmentOwnership.Mixed && wanted.All(w => w.Kind != p.Kind || w.ItemKey != p.ItemKey))
                 {
-                    wanted.Add(new EnvironmentPolicy { Id = Guid.NewGuid(), TenantId = id, Kind = p.Kind, ItemKey = p.ItemKey, Mode = mode });
+                    wanted.Add(new EnvironmentPolicy
+                    {
+                        Id = Guid.NewGuid(), TenantId = target.TenantId, EnvironmentId = target.Id, Kind = p.Kind, ItemKey = p.ItemKey, Mode = mode,
+                    });
                 }
             }
 
-            using (Dcms.Shared.Data.Rls.RlsScope.Tenant(id))
+            using (target.Scope())
             {
-                db.EnvironmentPolicies.RemoveRange(await db.EnvironmentPolicies.IgnoreTenantFilter().Where(p => p.TenantId == id).ToListAsync(ct));
+                db.EnvironmentPolicies.RemoveRange(await db.EnvironmentPolicies.IgnoreTenantFilter()
+                    .Where(p => p.TenantId == target.TenantId && p.EnvironmentId == target.Id).ToListAsync(ct));
                 db.EnvironmentPolicies.AddRange(wanted);
-                audit.Declared?.For("tenant", id, null).With("policies", wanted.Select(w => $"{w.Kind}/{w.ItemKey ?? "*"}={w.Mode}"));
+                audit.Declared?.For("environment", target.Id, target.Name).With("policies", wanted.Select(w => $"{w.Kind}/{w.ItemKey ?? "*"}={w.Mode}"));
                 await db.SaveChangesAsync(ct);
 
                 // A site left to deployments takes code from them only, at the git server too.
@@ -287,7 +227,7 @@ public static class EnvironmentEndpoints
                 if (git.Enabled)
                 {
                     var repos = await sites.Sites.IgnoreTenantFilter().AsNoTracking()
-                        .Where(s => s.TenantId == id && s.GitRepoFullName != null).ToListAsync(ct);
+                        .Where(s => s.TenantId == target.TenantId && s.GitRepoFullName != null).ToListAsync(ct);
                     foreach (var site in repos)
                     {
                         var locked = EnvironmentPolicies.Ownership(wanted, "sites", site.KeyAcrossEnvironments) == EnvironmentOwnership.Managed;
@@ -313,31 +253,29 @@ public static class EnvironmentEndpoints
                 }
             }
             return Results.NoContent();
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "tenant");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "environment");
 
         // Links (ADR 0026): this environment using another's resource, within the workspace.
         app.MapGet("/api/admin/environments/{id:guid}/links", async (
-            Guid id, ITenantContext tenant, TenancyDbContext db, CancellationToken ct) =>
+            Guid id, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
-            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            if (await TargetAsync(environments, tenant, id, ct) is not { } target) return Results.NotFound();
+            using var rls = target.Scope();
             return Results.Ok(await db.EnvironmentLinks.IgnoreTenantFilter().AsNoTracking()
-                .Where(l => l.TenantId == id)
-                .Select(l => new { id = l.Id, kind = l.Kind, targetTenantId = l.TargetTenantId, targetKey = l.TargetKey, access = l.Access.ToString() })
+                .Where(l => l.TenantId == target.TenantId && l.EnvironmentId == target.Id)
+                .Select(l => new { id = l.Id, kind = l.Kind, targetEnvironmentId = l.TargetEnvironmentId, targetKey = l.TargetKey, access = l.Access.ToString() })
                 .ToListAsync(ct));
         }).RequireAuthorization();
 
         app.MapPost("/api/admin/environments/{id:guid}/links", async (
-            Guid id, LinkRequest body, ITenantContext tenant, TenancyDbContext db, Dcms.Shared.Data.Cms.CmsDbContext cms,
-            CurrentUser me, IPermissionResolver permissions, Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
+            Guid id, LinkRequest body, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db,
+            Dcms.Shared.Data.Cms.CmsDbContext cms, CurrentUser me, IPermissionResolver permissions,
+            Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null) return Results.NotFound();
-            var all = await WorkspaceAsync(db, current, ct);
-            if (!all.Any(t => t.TenantId == id)) return Results.NotFound();
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
-            if (body.TargetTenantId == id || !all.Any(t => t.TenantId == body.TargetTenantId))
+            if (await TargetAsync(environments, tenant, id, ct) is not { } consumer) return Results.NotFound();
+            var tenantId = consumer.TenantId;
+            if (!await CanManageAsync(tenantId, me, permissions, ct)) return Results.Forbid();
+            if (body.TargetEnvironmentId == id || await environments.GetAsync(tenantId, body.TargetEnvironmentId, ct) is not { } provider)
             {
                 return Results.BadRequest(new { error = "A link names another environment of this workspace." });
             }
@@ -347,9 +285,10 @@ public static class EnvironmentEndpoints
                 // Sign-in through the target's realm. One realm per environment, and never a
                 // chain: the target signs its own people in, and nobody signs in through this one.
                 access = EnvironmentLinkAccess.Read;
-                using var platform = Dcms.Shared.Data.Rls.RlsScope.Platform();
-                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.Kind == EnvironmentLinkKinds.Users
-                        && (l.TenantId == id || l.TenantId == body.TargetTenantId || l.TargetTenantId == id), ct))
+                // rls: platform -- the workspace's users links, every environment's, named by tenant.
+                using var platform = RlsScope.Platform();
+                if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.Users
+                        && (l.EnvironmentId == id || l.EnvironmentId == provider.Id || l.TargetEnvironmentId == id), ct))
                 {
                     return Results.Conflict(new { error = "An environment takes its users from one other environment, which keeps its own." });
                 }
@@ -362,111 +301,108 @@ public static class EnvironmentEndpoints
                     return Results.BadRequest(new { error = "An app link names the app's address and read or readWrite access." });
                 }
                 // Only an app the target has: anything else under /api is the platform's own routes.
-                using (Dcms.Shared.Data.Rls.RlsScope.Tenant(body.TargetTenantId))
+                using (provider.Scope())
                 {
-                    if (!await cms.PluginInstances.IgnoreTenantFilter().AnyAsync(p => p.TenantId == body.TargetTenantId && p.Slug == body.TargetKey, ct))
+                    if (!await cms.PluginInstances.IgnoreTenantFilter().AnyAsync(p => p.TenantId == tenantId && p.Slug == body.TargetKey, ct))
                     {
                         return Results.BadRequest(new { error = "That environment has no app at this address." });
                     }
                 }
-                using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.TenantId == id && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
+                using var rls = consumer.Scope();
+                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.TenantId == tenantId && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
                 {
                     return Results.Conflict(new { error = "This app is already linked." });
                 }
             }
-            using var scope = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            using var scope = consumer.Scope();
             var link = new EnvironmentLink
             {
-                Id = Guid.NewGuid(), TenantId = id, TargetTenantId = body.TargetTenantId, Kind = body.Kind,
+                Id = Guid.NewGuid(), TenantId = tenantId, EnvironmentId = consumer.Id, TargetEnvironmentId = provider.Id, Kind = body.Kind,
                 TargetKey = body.Kind == EnvironmentLinkKinds.Users ? null : body.TargetKey!.Trim(), Access = access,
             };
             db.EnvironmentLinks.Add(link);
-            audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("target", link.TargetTenantId).With("access", access.ToString());
+            audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("environment", consumer.Name)
+                .With("target", provider.Name).With("access", access.ToString());
             await db.SaveChangesAsync(ct);
-            await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(id), ct);
+            await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
             return Results.Created($"/api/admin/environments/{id}/links/{link.Id}", new { id = link.Id });
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
 
         app.MapDelete("/api/admin/environments/{id:guid}/links/{linkId:guid}", async (
-            Guid id, Guid linkId, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
+            Guid id, Guid linkId, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CurrentUser me,
             IPermissionResolver permissions, Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
         {
-            var current = await CurrentAsync(db, tenant, ct);
-            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
-            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
-            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-            var link = await db.EnvironmentLinks.IgnoreTenantFilter().FirstOrDefaultAsync(l => l.TenantId == id && l.Id == linkId, ct);
+            if (await TargetAsync(environments, tenant, id, ct) is not { } consumer) return Results.NotFound();
+            if (!await CanManageAsync(consumer.TenantId, me, permissions, ct)) return Results.Forbid();
+            using var rls = consumer.Scope();
+            var link = await db.EnvironmentLinks.IgnoreTenantFilter()
+                .FirstOrDefaultAsync(l => l.TenantId == consumer.TenantId && l.EnvironmentId == consumer.Id && l.Id == linkId, ct);
             if (link is null) return Results.NotFound();
             db.EnvironmentLinks.Remove(link);
-            audit.Declared?.For("environment_link", link.Id, link.TargetKey);
+            audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("environment", consumer.Name);
             await db.SaveChangesAsync(ct);
-            await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(id), ct);
+            await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
             return Results.NoContent();
-        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
 
         return app;
     }
 
-    private static object View(Tenant t, bool isMember) => new
+    private static object View(TenantEnvironment e, bool isMember) => new
     {
-        tenantId = t.TenantId,
-        slug = t.Identifier,
-        name = t.EnvironmentName ?? Tenant.ProductionEnvironment,
-        order = t.EnvironmentOrder,
-        isRoot = t.IsEnvironmentRoot,
-        promotesFrom = t.PromotesFrom,
-        status = t.Status.ToString(),
+        id = e.Id,
+        name = e.Name,
+        order = e.Order,
+        purpose = e.Purpose.ToString().ToLowerInvariant(),
+        isProduction = e.IsProduction,
+        promotesFrom = e.PromotesFrom,
         isMember,
     };
 
-    // tenancy.tenants is not tenant-scoped and carries no policy, so these read it directly.
-    private static async Task<Tenant?> CurrentAsync(TenancyDbContext db, ITenantContext tenant, CancellationToken ct) =>
-        tenant.TenantId is { } id
-            ? await db.Tenants.FirstOrDefaultAsync(t => t.Id == id.ToString(), ct)
-            : null;
+    private static async Task<TenantEnvironment?> TargetAsync(EnvironmentStore environments, ITenantContext tenant, Guid id, CancellationToken ct) =>
+        tenant.TenantId is { } tenantId ? await environments.GetAsync(tenantId, id, ct) : null;
 
-    /// <summary>The workspace's environments, most upstream first; just the tenant while they are off.</summary>
-    private static async Task<List<Tenant>> WorkspaceAsync(TenancyDbContext db, Tenant current, CancellationToken ct)
+    /// <summary>The environments the user holds a role in.</summary>
+    private static async Task<HashSet<Guid>> OpenedByAsync(TenancyDbContext db, Guid tenantId, Guid userId, CancellationToken ct)
     {
-        if (current.WorkspaceId is not { } workspaceId) return [current];
-        return await db.Tenants
-            .Where(t => t.WorkspaceId == workspaceId)
-            .OrderBy(t => t.EnvironmentOrder)
-            .ToListAsync(ct);
+        // rls: platform -- the caller's own role assignments in every environment of this tenant,
+        // named by tenant and user.
+        using var rls = RlsScope.Platform();
+        return (await db.MemberRoles.IgnoreQueryFilters()
+                .Where(r => r.TenantId == tenantId
+                            && db.Memberships.IgnoreQueryFilters().Any(m => m.Id == r.MembershipId && m.TenantId == tenantId && m.UserId == userId))
+                .Select(r => r.EnvironmentId)
+                .Distinct()
+                .ToListAsync(ct))
+            .ToHashSet();
     }
 
+    /// <summary>environments:manage, held in production.</summary>
     private static async Task<bool> CanManageAsync(
-        Guid rootId, CurrentUser me, IPermissionResolver permissions, CancellationToken ct) =>
-        me.IsSuperAdmin
-        || (me.UserId is { } userId
-            && (await permissions.GetPermissionsAsync(rootId, userId, ct)).Contains(PlatformPermissions.EnvironmentsManage));
+        Guid tenantId, CurrentUser me, IPermissionResolver permissions, CancellationToken ct)
+    {
+        if (me.IsSuperAdmin) return true;
+        if (me.UserId is not { } userId) return false;
+        using var production = RlsScope.Environment(tenantId, tenantId);
+        return (await permissions.GetPermissionsAsync(tenantId, userId, ct)).Contains(PlatformPermissions.EnvironmentsManage);
+    }
 
-    // The gate the endpoint table cannot see: environments:manage held in the workspace's root,
-    // not in the environment the request names.
-    private const string RootGate = "environments:manage on the workspace root, checked in the handler (CanManageAsync).";
+    // The gate the endpoint table cannot see: environments:manage held in production, not in the
+    // environment the request names.
+    private const string ProductionGate = "environments:manage in the production environment, checked in the handler (CanManageAsync).";
 
     // ponytail: a fixed cap; per-plan limits if environments are ever sold by the count.
     private const int MaxEnvironments = 10;
-
-    private static async Task<TenantMembership?> RootOwnerAsync(TenancyDbContext db, Guid rootId, CancellationToken ct)
-    {
-        using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(rootId);
-        return await db.Memberships.IgnoreTenantFilter().AsNoTracking()
-            .Where(m => m.TenantId == rootId
-                        && m.Roles.Any(r => r.Role!.IsSystem && r.Role.Name == TenantProvisioning.OwnerRole))
-            .OrderBy(m => m.CreatedAt)
-            .FirstOrDefaultAsync(ct);
-    }
 
     private static bool IsEnvironmentName(string value) =>
         value.Length is > 0 and <= 32
         && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
         && !value.StartsWith('-') && !value.EndsWith('-');
 
-    /// <param name="Empty">True for an environment without the root's configuration.</param>
-    private sealed record CreateEnvironmentRequest(string? Name, bool? Empty);
+    /// <param name="Empty">True for an environment without the source's configuration.</param>
+    /// <param name="From">The environment whose roles and configuration it starts with; production when absent.</param>
+    private sealed record CreateEnvironmentRequest(string? Name, bool? Empty, Guid? From);
     private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
     private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
-    private sealed record LinkRequest(string Kind, Guid TargetTenantId, string? TargetKey, string? Access);
+    private sealed record LinkRequest(string Kind, Guid TargetEnvironmentId, string? TargetKey, string? Access);
 }

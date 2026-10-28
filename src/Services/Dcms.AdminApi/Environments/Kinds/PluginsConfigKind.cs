@@ -19,8 +19,8 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// where content types live. Secrets stay in each environment; the data an instance holds is
 /// content, and never moves.
 /// </summary>
-// rls: EnvironmentMigrator calls every kind inside RlsScope.Tenant(tenantId), the tenant each
-// query names; IgnoreQueryFilters only drops the request's own, which is another environment.
+// rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
+// on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
 public sealed class PluginsConfigKind(
     CmsDbContext db, TenancyDbContext tenancy, IPluginCatalog catalog,
     IEventPublisher events, ICacheService cache, DcmsMetrics metrics) : IEnvironmentConfigKind

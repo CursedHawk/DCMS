@@ -149,8 +149,8 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
 
     /// <summary>The realm to change: only this environment's own. Another's people are managed there.</summary>
     private async Task<Guid> OwnRealmAsync(CancellationToken ct) =>
-        await RealmAsync(ct) == context.TenantId
-            ? context.TenantId
+        await RealmAsync(ct) == context.EnvironmentId
+            ? context.EnvironmentId
             : throw new ContractValidationException("This environment's users are another environment's; manage them there.");
 
     private static DirectoryUser ToUser(RealmUserInfo u) =>

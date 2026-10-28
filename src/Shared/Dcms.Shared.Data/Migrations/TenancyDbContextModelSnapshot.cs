@@ -155,19 +155,20 @@ namespace Dcms.Shared.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<Guid>("TargetEnvironmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("TargetTenantId");
+
                     b.Property<string>("TargetKey")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
-
-                    b.Property<Guid>("TargetTenantId")
-                        .HasColumnType("uuid");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TargetTenantId");
+                    b.HasIndex("TargetEnvironmentId");
 
                     b.HasIndex("TenantId", "EnvironmentId", "Kind", "TargetKey")
                         .IsUnique();
@@ -221,8 +222,9 @@ namespace Dcms.Shared.Data.Migrations
                     b.Property<long>("Order")
                         .HasColumnType("bigint");
 
-                    b.Property<Guid>("OriginTenantId")
-                        .HasColumnType("uuid");
+                    b.Property<Guid>("OriginEnvironmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("OriginTenantId");
 
                     b.Property<string>("ResolutionsJson")
                         .IsRequired()
@@ -470,13 +472,6 @@ namespace Dcms.Shared.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("EnvironmentName")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<int>("EnvironmentOrder")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Identifier")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -486,10 +481,6 @@ namespace Dcms.Shared.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
-                    b.PrimitiveCollection<List<Guid>>("PromotesFrom")
-                        .IsRequired()
-                        .HasColumnType("uuid[]");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -498,15 +489,10 @@ namespace Dcms.Shared.Data.Migrations
                     b.Property<long>("StorageQuotaBytes")
                         .HasColumnType("bigint");
 
-                    b.Property<Guid?>("WorkspaceId")
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
 
                     b.HasIndex("Identifier")
                         .IsUnique();
-
-                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("tenants", "tenancy");
                 });

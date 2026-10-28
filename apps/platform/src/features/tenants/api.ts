@@ -23,7 +23,7 @@ export interface TenantRow {
   quotaBytes: number;
   /** Everything the tenant stores, from its latest usage snapshot; 0 before the first one. */
   usageBytes: number;
-  /** The workspace this tenant is an environment of (ADR 0026); null while environments are off. */
+  /** The tenant's own id (ADR 0028), and `environment` its environments besides production, comma-separated; null with production alone. */
   workspaceId: string | null;
   environment: string | null;
 }

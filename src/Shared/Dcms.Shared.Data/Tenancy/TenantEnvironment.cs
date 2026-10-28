@@ -35,6 +35,9 @@ public sealed class TenantEnvironment : TenantEntity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public bool IsProduction => Id == TenantId;
+
+    /// <summary>Act as this environment until disposed (<see cref="Rls.RlsScope.Environment"/>).</summary>
+    public IDisposable Scope() => Rls.RlsScope.Environment(TenantId, Id);
 }
 
 public enum EnvironmentPurpose

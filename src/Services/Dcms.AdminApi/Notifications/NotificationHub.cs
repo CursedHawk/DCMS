@@ -75,8 +75,8 @@ public sealed class NotificationHub(IServiceProvider services, ILogger<Notificat
         // that claim -- as that tenant, so the database checks it too (ADR 0015).
         using var rls = RlsScope.Tenant(tenantId);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        // Notifications are the workspace's, not an environment's (ADR 0028): any member.
         var isMember = await tenancy.Memberships.IgnoreTenantFilter()
-            .ThatOpen(tenant.WorkspaceId is not null)
             .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId);
         if (!isMember)
         {

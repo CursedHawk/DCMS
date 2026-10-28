@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Dcms.IntegrationTests.DynamicApps;
 
 /// <summary>
-/// An application's configuration deploys between environments (ADR 0026) as a published
+/// An application's configuration deploys between environments (ADR 0026, 0028) as a published
 /// revision in the receiving one, its records untouched.
 /// </summary>
 [Collection(ContentFlowCollection.Name)]
@@ -32,10 +32,9 @@ public sealed class EnvironmentDeploymentTests(ContentFlowFixture fixture)
             return res.Content.Headers.ContentLength == 0 ? default : await res.Content.ReadFromJsonAsync<JsonElement>(ct);
         }
 
-        await As(HttpMethod.Post, "/api/admin/environments/enable", app.Tenant);
-        var dev = (await As(HttpMethod.Post, "/api/admin/environments", app.Tenant, new { name = "development" })).GetProperty("tenantId").GetGuid();
+        var dev = (await As(HttpMethod.Post, "/api/admin/environments", app.Tenant, new { name = "development" })).GetProperty("id").GetGuid();
         var prod = (await As(HttpMethod.Get, "/api/admin/environments", app.Tenant)).GetProperty("workspaceId").GetGuid();
-        var devSlug = $"{app.Tenant}-development";
+        var devSlug = $"{app.Tenant}/development";
         // This fixture runs job lanes: the copy job queued with the environment sets it up.
         for (var i = 0; i < 100; i++)
         {
@@ -62,7 +61,8 @@ public sealed class EnvironmentDeploymentTests(ContentFlowFixture fixture)
         using (var scope = fixture.Admin.Services.CreateScope())
         {
             await scope.ServiceProvider.GetRequiredService<EnvironmentMigrator>().ApplyAsync(
-                prod, dev, migration, new Dictionary<string, string>(), new EnvironmentApplier(app.Owner, false), ct);
+                await Environments.EnvironmentTarget.LoadAsync(fixture.Admin.Services, prod, prod),
+                await Environments.EnvironmentTarget.LoadAsync(fixture.Admin.Services, prod, dev), migration, new Dictionary<string, string>(), new EnvironmentApplier(app.Owner, false), ct);
         }
 
         var published = await As(HttpMethod.Get, "/api/admin/plugins/crm/_model/published", app.Tenant);

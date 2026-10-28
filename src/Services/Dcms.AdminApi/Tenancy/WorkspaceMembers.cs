@@ -1,4 +1,3 @@
-using Dcms.AdminApi.Sites.Git;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Rls;
@@ -10,109 +9,109 @@ using Dcms.Shared.Data;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
-/// One member list per workspace, one set of roles per environment (ADR 0026).
+/// One member list per tenant, one set of roles per environment (ADR 0028).
 ///
-/// <para>The root holds the members: invitations, removals and departures happen there. Every
-/// other environment mirrors each root membership as a bare one, and the roles granted in that
-/// environment are what let the member in -- <see cref="TenantMembershipMiddleware"/> refuses a
-/// role-less membership in a workspace with environments. Owner is the one role that is not the
-/// environment's own: an environment's owners are exactly the root's.</para>
+/// <para>Memberships are the tenant's and every environment shares them; roles and who holds them
+/// are each environment's, and a role there is what lets a member in once the tenant has more than
+/// production (<see cref="TenantMembershipMiddleware"/>). Owner is the one role that is not an
+/// environment's own: an environment's owners are exactly production's, mirrored here.</para>
 ///
 /// <para>Driven by <c>membership.changed</c> (<see cref="MembershipChangedConsumer"/>), which every
-/// membership write already publishes, so no path that changes a membership can forget this. Each
-/// pass is idempotent and publishes only for environments it actually changed, which is what ends
-/// the echo of its own events.</para>
+/// membership write already publishes, so no path that changes one can forget this. Each pass is
+/// idempotent and publishes only for what it actually changed, which ends the echo of its own events.</para>
 /// </summary>
 public sealed class WorkspaceMembers(
     TenancyDbContext db,
     TenancyPermissionResolver permissions,
-    IEventPublisher events,
-    RepoAccessReconciler repoAccess)
+    IEventPublisher events)
 {
     public const string OwnerIsTheWorkspaces =
         "An environment's owners are the workspace's: grant or revoke Owner in the production environment.";
 
-    /// <summary>The Owner role of an environment other than the root, which only the mirror may grant.</summary>
+    /// <summary>The Owner role of an environment other than production, which only the mirror may grant.</summary>
     public static async Task<bool> IsMirroredOwnerRoleAsync(
-        TenancyDbContext db, Dcms.Shared.Kernel.Abstractions.ITenantContext tenant, Guid roleId, CancellationToken ct)
-    {
-        if (!tenant.HasEnvironments || tenant.TenantId is not { } tenantId) return false;
-        var isRoot = await db.Tenants.AsNoTracking()
-            .AnyAsync(t => t.Id == tenantId.ToString() && t.WorkspaceId == tenantId, ct);
-        return !isRoot && await db.TenantRoles.AnyAsync(
-            r => r.Id == roleId && r.IsSystem && r.Name == TenantProvisioning.OwnerRole, ct);
-    }
+        TenancyDbContext db, Dcms.Shared.Kernel.Abstractions.ITenantContext tenant, Guid roleId, CancellationToken ct) =>
+        tenant.TenantId is { } tenantId && tenant.EnvironmentId is { } environmentId && environmentId != tenantId
+        && await db.TenantRoles.AnyAsync(r => r.Id == roleId && r.IsSystem && r.Name == TenantProvisioning.OwnerRole, ct);
 
-    public async Task SyncUserAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    /// <summary>Gives every other environment of the tenant the user's Owner in production, or takes it away.</summary>
+    public async Task SyncOwnerAsync(Guid tenantId, Guid userId, CancellationToken ct)
     {
-        // tenancy.tenants carries no policy.
-        var workspaceId = await db.Tenants.AsNoTracking()
-            .Where(t => t.Id == tenantId.ToString())
-            .Select(t => t.WorkspaceId)
-            .FirstOrDefaultAsync(ct);
-        if (workspaceId is not { } rootId) return;
-        var environments = await db.Tenants.AsNoTracking()
-            .Where(t => t.WorkspaceId == rootId && t.Id != rootId.ToString())
-            .Select(t => t.Id)
-            .ToListAsync(ct);
+        var environments = (await TenancyPermissionResolver.EnvironmentIdsAsync(db, tenantId, ct)).Skip(1).ToList();
         if (environments.Count == 0) return;
 
-        TenantMembership? source;
+        TenantMembership? membership;
         bool isOwner;
-        using (RlsScope.Tenant(rootId))
+        using (RlsScope.Environment(tenantId, tenantId))
         {
-            source = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
-                .FirstOrDefaultAsync(m => m.TenantId == rootId && m.UserId == userId, ct);
-            isOwner = source is not null && await db.MemberRoles.IgnoreTenantFilter().AnyAsync(
-                r => r.TenantId == rootId && r.MembershipId == source.Id
+            membership = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
+                .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);
+            isOwner = membership is not null && await db.MemberRoles.IgnoreTenantFilter().AnyAsync(
+                r => r.TenantId == tenantId && r.MembershipId == membership.Id
                      && r.Role!.IsSystem && r.Role.Name == TenantProvisioning.OwnerRole, ct);
         }
+        // A departed member's roles went with the membership.
+        if (membership is null) return;
 
-        foreach (var environment in environments.Select(Guid.Parse))
+        var changed = false;
+        foreach (var environment in environments)
         {
-            var email = await SyncIntoAsync(environment, userId, source, isOwner, ct);
-            if (email is null) continue;
-            await permissions.InvalidateAsync(environment, userId, ct);
-            await events.PublishAsync(Subjects.MembershipChanged,
-                new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, environment, userId), ct);
-            await repoAccess.ReconcileUserAsync(environment, userId, email, ct);
+            using var rls = RlsScope.Environment(tenantId, environment);
+            var ownerRoleId = await db.TenantRoles.IgnoreTenantFilter()
+                .Where(r => r.TenantId == tenantId && r.IsSystem && r.Name == TenantProvisioning.OwnerRole)
+                .Select(r => (Guid?)r.Id)
+                .FirstOrDefaultAsync(ct);
+            if (ownerRoleId is not { } roleId) continue;
+            var held = await db.MemberRoles.IgnoreTenantFilter()
+                .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.MembershipId == membership.Id && r.TenantRoleId == roleId, ct);
+            if (isOwner && held is null)
+            {
+                db.MemberRoles.Add(new MemberRole { Id = Guid.NewGuid(), TenantId = tenantId, MembershipId = membership.Id, TenantRoleId = roleId });
+            }
+            else if (!isOwner && held is not null)
+            {
+                db.MemberRoles.Remove(held);
+            }
+            else continue;
+            await db.SaveChangesAsync(ct);
+            changed = true;
         }
+        if (changed) await permissions.InvalidateAsync(tenantId, userId, ct);
     }
 
     /// <summary>
-    /// A new environment's members: everyone in the workspace, holding the roles they hold in
-    /// <paramref name="sourceId"/> where the environment has a role of that name. Custom roles are
-    /// copied first so there is one to hold; per-site repository grants are not, because they name
-    /// the source's sites.
+    /// A new environment's roles and who holds them: <paramref name="source"/>'s, role by role,
+    /// where the environment has none of that name yet. Per-site repository grants are not
+    /// copied, because they name the source's sites.
     /// </summary>
-    public async Task SeedAsync(Guid environmentId, Guid sourceId, CancellationToken ct)
+    public async Task SeedAsync(TenantEnvironment environment, TenantEnvironment source, CancellationToken ct)
     {
+        var tenantId = environment.TenantId;
         List<TenantRole> roles;
-        List<TenantMembership> members;
-        using (RlsScope.Tenant(sourceId))
+        List<MemberRole> held;
+        using (source.Scope())
         {
             roles = await db.TenantRoles.IgnoreTenantFilter().AsNoTracking()
-                .Where(r => r.TenantId == sourceId)
+                .Where(r => r.TenantId == tenantId)
                 .Include(r => r.Permissions)
                 .ToListAsync(ct);
-            members = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
-                .Where(m => m.TenantId == sourceId)
-                .Include(m => m.Roles)
+            held = await db.MemberRoles.IgnoreTenantFilter().AsNoTracking()
+                .Where(r => r.TenantId == tenantId)
                 .ToListAsync(ct);
         }
 
-        using var rls = RlsScope.Tenant(environmentId);
+        using var rls = environment.Scope();
         var targetRoles = await db.TenantRoles.IgnoreTenantFilter()
-            .Where(r => r.TenantId == environmentId)
+            .Where(r => r.TenantId == tenantId)
             .ToListAsync(ct);
         foreach (var role in roles.Where(r => targetRoles.All(t => t.Name != r.Name)))
         {
-            var copy = new TenantRole { Id = Guid.NewGuid(), TenantId = environmentId, Name = role.Name, IsSystem = role.IsSystem };
+            var copy = new TenantRole { Id = Guid.NewGuid(), TenantId = tenantId, Name = role.Name, IsSystem = role.IsSystem };
             foreach (var permission in role.Permissions.Where(p => !p.Permission.StartsWith(Dcms.Shared.Security.PlatformPermissions.RepoPrefix, StringComparison.Ordinal)))
             {
                 copy.Permissions.Add(new TenantRolePermission
                 {
-                    Id = Guid.NewGuid(), TenantId = environmentId, TenantRoleId = copy.Id, Permission = permission.Permission,
+                    Id = Guid.NewGuid(), TenantId = tenantId, TenantRoleId = copy.Id, Permission = permission.Permission,
                 });
             }
             db.TenantRoles.Add(copy);
@@ -121,112 +120,49 @@ public sealed class WorkspaceMembers(
         var roleByName = targetRoles.ToDictionary(r => r.Name, r => r.Id, StringComparer.Ordinal);
         var nameById = roles.ToDictionary(r => r.Id, r => r.Name);
 
-        var existing = await db.Memberships.IgnoreTenantFilter()
-            .Where(m => m.TenantId == environmentId)
-            .Include(m => m.Roles)
+        var existing = await db.MemberRoles.IgnoreTenantFilter()
+            .Where(r => r.TenantId == tenantId)
+            .Select(r => new { r.MembershipId, r.TenantRoleId })
             .ToListAsync(ct);
-        foreach (var member in members)
+        foreach (var h in held)
         {
-            var target = existing.FirstOrDefault(m => m.UserId == member.UserId);
-            if (target is null)
-            {
-                target = new TenantMembership { Id = Guid.NewGuid(), TenantId = environmentId, UserId = member.UserId, Email = member.Email };
-                db.Memberships.Add(target);
-            }
-            foreach (var held in member.Roles)
-            {
-                if (!nameById.TryGetValue(held.TenantRoleId, out var name) || !roleByName.TryGetValue(name, out var roleId)) continue;
-                if (target.Roles.Any(r => r.TenantRoleId == roleId)) continue;
-                target.Roles.Add(new MemberRole { Id = Guid.NewGuid(), TenantId = environmentId, MembershipId = target.Id, TenantRoleId = roleId });
-            }
+            if (!nameById.TryGetValue(h.TenantRoleId, out var name) || !roleByName.TryGetValue(name, out var roleId)) continue;
+            if (existing.Any(e => e.MembershipId == h.MembershipId && e.TenantRoleId == roleId)) continue;
+            db.MemberRoles.Add(new MemberRole { Id = Guid.NewGuid(), TenantId = tenantId, MembershipId = h.MembershipId, TenantRoleId = roleId });
         }
         await db.SaveChangesAsync(ct);
 
-        foreach (var member in members)
+        var users = await db.Memberships.IgnoreTenantFilter().AsNoTracking()
+            .Where(m => m.TenantId == tenantId && held.Select(h => h.MembershipId).Contains(m.Id))
+            .Select(m => m.UserId)
+            .ToListAsync(ct);
+        foreach (var userId in users)
         {
-            await permissions.InvalidateAsync(environmentId, member.UserId, ct);
+            await permissions.InvalidateAsync(tenantId, userId, ct);
             await events.PublishAsync(Subjects.MembershipChanged,
-                new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, environmentId, member.UserId), ct);
+                new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, userId), ct);
         }
-    }
-
-    /// <summary>Brings one environment in line with the root; the member's email when it changed something.</summary>
-    private async Task<string?> SyncIntoAsync(
-        Guid environment, Guid userId, TenantMembership? source, bool isOwner, CancellationToken ct)
-    {
-        using var rls = RlsScope.Tenant(environment);
-        var existing = await db.Memberships.IgnoreTenantFilter()
-            .Include(m => m.Roles)
-            .FirstOrDefaultAsync(m => m.TenantId == environment && m.UserId == userId, ct);
-
-        if (source is null)
-        {
-            if (existing is null) return null;
-            db.MemberRoles.RemoveRange(existing.Roles);
-            db.Memberships.Remove(existing);
-            await db.SaveChangesAsync(ct);
-            return existing.Email;
-        }
-
-        var changed = false;
-        if (existing is null)
-        {
-            existing = new TenantMembership { Id = Guid.NewGuid(), TenantId = environment, UserId = userId, Email = source.Email };
-            db.Memberships.Add(existing);
-            changed = true;
-        }
-        // Owner mirrors the root exactly, both ways: a root owner who is demoted or transferred
-        // away stops owning every environment at the same moment. Owner cannot be granted or
-        // revoked inside an environment for the same reason (TenancyEndpoints).
-        var ownerRoleId = await db.TenantRoles.IgnoreTenantFilter()
-            .Where(r => r.TenantId == environment && r.IsSystem && r.Name == TenantProvisioning.OwnerRole)
-            .Select(r => (Guid?)r.Id)
-            .FirstOrDefaultAsync(ct);
-        if (ownerRoleId is { } roleId)
-        {
-            var held = existing.Roles.FirstOrDefault(r => r.TenantRoleId == roleId);
-            if (isOwner && held is null)
-            {
-                existing.Roles.Add(new MemberRole { Id = Guid.NewGuid(), TenantId = environment, MembershipId = existing.Id, TenantRoleId = roleId });
-                changed = true;
-            }
-            else if (!isOwner && held is not null)
-            {
-                db.MemberRoles.Remove(held);
-                changed = true;
-            }
-        }
-        if (!changed) return null;
-        await db.SaveChangesAsync(ct);
-        return existing.Email;
     }
 }
 
 public static class WorkspaceMembersEndpointExtensions
 {
     /// <summary>
-    /// Refuses the route in any environment but the workspace root: who belongs to the workspace
-    /// is decided there and mirrored everywhere else (ADR 0026). Roles stay per environment, so
-    /// only the routes that add or remove a member carry this.
+    /// Refuses the route in any environment but production: the member list is the whole
+    /// workspace's (ADR 0028), and someone who manages members only in development must not add
+    /// people to it or remove production's. Roles stay per environment, so only the routes that
+    /// add or remove a member carry this.
     /// </summary>
     public static RouteHandlerBuilder InWorkspaceRootOnly(this RouteHandlerBuilder builder) =>
         builder.AddEndpointFilter(async (context, next) =>
         {
             var tenant = context.HttpContext.RequestServices.GetRequiredService<Dcms.Shared.Kernel.Abstractions.ITenantContext>();
-            if (tenant is { HasEnvironments: true, TenantId: { } tenantId })
+            if (tenant.TenantId is { } tenantId && tenant.EnvironmentId is { } environmentId && environmentId != tenantId)
             {
-                var db = context.HttpContext.RequestServices.GetRequiredService<TenancyDbContext>();
-                var workspaceId = await db.Tenants.AsNoTracking()
-                    .Where(t => t.Id == tenantId.ToString())
-                    .Select(t => t.WorkspaceId)
-                    .FirstOrDefaultAsync(context.HttpContext.RequestAborted);
-                if (workspaceId != tenantId)
+                return Results.Conflict(new
                 {
-                    return Results.Conflict(new
-                    {
-                        error = "Members are added and removed in the workspace's production environment; set their roles here.",
-                    });
-                }
+                    error = "Members are added and removed in the workspace's production environment; set their roles here.",
+                });
             }
             return await next(context);
         });

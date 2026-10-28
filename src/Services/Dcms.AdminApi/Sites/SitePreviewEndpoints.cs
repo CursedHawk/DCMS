@@ -103,6 +103,12 @@ public static class SitePreviewEndpoints
             }
         }
         request.Headers.TryAddWithoutValidation("X-Dcms-Tenant", slug);
+        // The environment the site is in (ADR 0028): the request named it, and UseDcmsEnvironment
+        // has already checked the tenant has it.
+        if (http.Request.Headers[EnvironmentResolution.Header].ToString() is { Length: > 0 } environment)
+        {
+            request.Headers.TryAddWithoutValidation(EnvironmentResolution.Header, environment);
+        }
         request.Headers.TryAddWithoutValidation(PreviewRequest.Header, "1");
         // The site user the preview is signed in as (#269). Only the edge sets this header — it
         // strips any copy a browser sends — from the preview session it holds for this browser;

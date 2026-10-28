@@ -14,8 +14,8 @@ namespace Dcms.Plugins.UserAuth;
 /// group-gated site rules stay: they name the environment's own realm users and groups, which are
 /// separate people in every environment.
 /// </summary>
-// rls: EnvironmentMigrator calls every kind inside RlsScope.Tenant(tenantId), the tenant each
-// query names; IgnoreQueryFilters only drops the request's own, which is another environment.
+// rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
+// on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
 internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms) : IEnvironmentConfigKind
 {
     public string Kind => "user-auth";
