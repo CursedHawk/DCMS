@@ -12,10 +12,11 @@ namespace Dcms.AdminApi.Environments.Kinds;
 
 /// <summary>
 /// Sites whose source is in git, by their identity across environments (ADR 0026): name, kind,
-/// and the commit their <c>release</c> branch holds. Applying puts that commit on the receiving
-/// environment's repository — fetched from whichever environment of the tenant has it — or,
-/// where that environment's code has moved on since, lays just the change's commits onto it; the
-/// push builds and deploys it there as any push to release does. Domains, publishing
+/// and the commit their <c>release</c> branch holds. Applying puts that commit's files on the
+/// receiving environment's release as one commit — fetched from whichever environment of the
+/// tenant has it — or, where that environment's code has moved on since, lays just the change's
+/// commits onto it; never a force push, so a protected release takes it. The push builds and
+/// deploys it there as any push to release does. Domains, publishing
 /// branches, builds and uploaded (static-files) sites are each environment's own.
 /// </summary>
 // rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
@@ -109,7 +110,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             }
             return;
         }
-        if (!await git.TransplantAsync(sources, site.GitRepoFullName, sha, SiteGitService.ReleaseBranch, ct))
+        if (await git.PutTreeAsync(sources, site.GitRepoFullName, sha, SiteGitService.ReleaseBranch, $"Deploy {wanted.Name}: {Short(sha)}", ct) is null)
         {
             throw new EnvironmentConfigException($"no environment of this workspace has commit {Short(sha)} of site '{wanted.Name}' any more");
         }

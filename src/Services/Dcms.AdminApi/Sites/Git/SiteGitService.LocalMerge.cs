@@ -131,6 +131,45 @@ public sealed partial class SiteGitService
     }
 
     /// <summary>
+    /// Makes <paramref name="targetRepo"/>'s <paramref name="branch"/> hold exactly the files of
+    /// commit <paramref name="sha"/> (fetched from the first of <paramref name="sourceRepos"/> that
+    /// has it) as one commit on top of what the branch held: a fast-forward, so a release a locked
+    /// environment protects takes it (Forgejo refuses a protected branch every force push), and the
+    /// environment's release history is its deployments, never rewritten. Returns the branch's
+    /// head, or null when no source has the commit.
+    /// </summary>
+    public async Task<string?> PutTreeAsync(
+        IReadOnlyList<string> sourceRepos, string targetRepo, string sha, string branch, string message, CancellationToken ct)
+    {
+        if (!Enabled) return null;
+        var (org, repo) = Split(targetRepo);
+        var work = Path.Combine(Path.GetTempPath(), "dcms-tree-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        try
+        {
+            await RunGitAsync(work, null, ct, "clone", "--branch", branch, "--no-tags", "--quiet", CloneUrl(org, repo), ".");
+            var index = 0;
+            foreach (var (sourceOrg, sourceName) in sourceRepos.Select(Split))
+            {
+                if ((await RunGitRawAsync(work, null, ct, "cat-file", "-e", sha + "^{commit}")).ExitCode == 0) break;
+                await RunGitRawAsync(work, null, ct, "fetch", "--no-tags", "--quiet", CloneUrl(sourceOrg, sourceName), $"+refs/heads/*:refs/remotes/s{index++}/*");
+            }
+            if ((await RunGitRawAsync(work, null, ct, "cat-file", "-e", sha + "^{commit}")).ExitCode != 0) return null;
+            var head = (await RunGitAsync(work, null, ct, "rev-parse", "HEAD")).Trim();
+            var tree = (await RunGitAsync(work, null, ct, "rev-parse", sha + "^{tree}")).Trim();
+            if ((await RunGitAsync(work, null, ct, "rev-parse", "HEAD^{tree}")).Trim() == tree) return head;
+            var env = CommitEnv(_opts.CommitterName, _opts.CommitterEmail, _opts.CommitterName, _opts.CommitterEmail);
+            var commit = (await RunGitAsync(work, env, ct, "commit-tree", tree, "-p", head, "-m", message)).Trim();
+            await RunGitAsync(work, null, ct, "push", "--quiet", "origin", $"{commit}:refs/heads/{branch}");
+            return commit;
+        }
+        finally
+        {
+            TryDeleteDir(work);
+        }
+    }
+
+    /// <summary>
     /// Lays what changed between <paramref name="from"/> and <paramref name="to"/> onto
     /// <paramref name="targetRepo"/>'s <paramref name="branch"/> as one commit, a three-way merge:
     /// how a feature's code reaches an environment whose code has moved on since the feature
