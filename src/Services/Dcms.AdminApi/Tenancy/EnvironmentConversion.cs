@@ -156,7 +156,11 @@ public static class EnvironmentConversion
 
     private static NpgsqlCommand Command(TenancyDbContext db, NpgsqlTransaction? tx, string sql)
     {
-        var cmd = new NpgsqlCommand(sql, (NpgsqlConnection)db.Database.GetDbConnection(), tx);
+        var cmd = new NpgsqlCommand(sql, (NpgsqlConnection)db.Database.GetDbConnection(), tx)
+        {
+            // Re-keying a workspace touches every row it has, as a migration does.
+            CommandTimeout = (int)DcmsMigrationRunner.MigrationCommandTimeout.TotalSeconds,
+        };
         TenantGucInterceptor.Prepare(db, cmd);
         return cmd;
     }

@@ -68,37 +68,37 @@ public static class DcmsMigrationRunner
         ILogger logger,
         CancellationToken ct)
     {
-        await scoped.GetRequiredService<TenancyDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<CmsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<MediaDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<SitesDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<AiDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<SearchDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<AnalyticsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<VisitorsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<ChatDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<FormsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<SocialDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<NotificationsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<JobsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<AppsDbContext>().Database.MigrateAsync(ct);
-        await scoped.GetRequiredService<UserAuthDbContext>().Database.MigrateAsync(ct);
+        await MigrateAsync(scoped.GetRequiredService<TenancyDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<CmsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<MediaDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<SitesDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<AiDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<SearchDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<AnalyticsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<VisitorsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<ChatDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<FormsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<SocialDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<NotificationsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<JobsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<AppsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<UserAuthDbContext>(), ct);
 
         // The platform console's role -> permission grants. No tenant column, so it takes no
         // part in RLS; see PlatformDbContext for why that is correct rather than an omission.
-        await scoped.GetRequiredService<PlatformDbContext>().Database.MigrateAsync(ct);
+        await MigrateAsync(scoped.GetRequiredService<PlatformDbContext>(), ct);
 
         // The shared Data Protection key ring. admin-api does not use it — it is bearer-token
         // only — but it owns every schema on this database, and identity must not run DDL of
         // its own now that migrations are a job.
-        await scoped.GetRequiredService<DataProtectionDbContext>().Database.MigrateAsync(ct);
+        await MigrateAsync(scoped.GetRequiredService<DataProtectionDbContext>(), ct);
 
         // The edge's certificates, ACME account and route overlay. No tenant column on any of
         // them -- see EdgeCertificate for why that is deliberate -- so they take no part in RLS.
-        await scoped.GetRequiredService<EdgeDbContext>().Database.MigrateAsync(ct);
+        await MigrateAsync(scoped.GetRequiredService<EdgeDbContext>(), ct);
 
         var audit = scoped.GetRequiredService<AuditDbContext>();
-        await audit.Database.MigrateAsync(ct);
+        await MigrateAsync(audit, ct);
 
         // The partitioned table's DDL is hand-written in the migration; this adds what has to
         // be re-checked every startup rather than once: the month partitions ahead of now, and
@@ -149,6 +149,19 @@ public static class DcmsMigrationRunner
             logger,
             ct);
     }
+
+    /// <summary>
+    /// Migrates one context with no practical command timeout. A migration that backfills a
+    /// column touches every row of its table, and on a database with real data that is minutes,
+    /// not the 30 seconds an ordinary query gets (apps.records timed out on dev, 2026-10-28).
+    /// </summary>
+    private static Task MigrateAsync(DbContext context, CancellationToken ct)
+    {
+        context.Database.SetCommandTimeout(MigrationCommandTimeout);
+        return context.Database.MigrateAsync(ct);
+    }
+
+    internal static readonly TimeSpan MigrationCommandTimeout = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// Model-only check that the hand-maintained <c>RlsConfigurator.TenantTables</c> list
