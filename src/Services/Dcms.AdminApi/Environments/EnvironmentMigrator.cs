@@ -194,7 +194,9 @@ public sealed class EnvironmentMigrator(
     /// <summary>
     /// What <paramref name="source"/> has applied and <paramref name="target"/> has not, in the
     /// source's order, each change reviewed against the target as it will be by then: an earlier
-    /// pending change to the same item counts as applied.
+    /// pending change to the same item counts as applied. A source that merges its own changes
+    /// only (a feature environment) offers just the migrations it cut, so its target gains exactly
+    /// the feature and nothing it inherited.
     /// </summary>
     public async Task<List<PendingMigration>> PendingAsync(TenantEnvironment target, TenantEnvironment source, CancellationToken ct)
     {
@@ -202,7 +204,8 @@ public sealed class EnvironmentMigrator(
         using (source.Scope())
         {
             sourceHistory = await db.EnvironmentMigrations.IgnoreTenantFilter().AsNoTracking()
-                .Where(m => m.EnvironmentId == source.Id && m.RolledBackAt == null)
+                .Where(m => m.EnvironmentId == source.Id && m.RolledBackAt == null
+                            && (!source.MergesOwnChangesOnly || m.OriginEnvironmentId == source.Id))
                 .OrderBy(m => m.Order)
                 .ToListAsync(ct);
         }
@@ -294,7 +297,7 @@ public sealed class EnvironmentMigrator(
     /// target lets migrations own the item. The choices come back keyed by change id (and path),
     /// as the history records them.
     /// </summary>
-    private static (List<ChangeWrite> Writes, Dictionary<string, string> Chosen) Choose(
+    private (List<ChangeWrite> Writes, Dictionary<string, string> Chosen) Choose(
         Guid migrationId, IEnumerable<ReviewedChange> reviewed, IReadOnlyDictionary<string, string> resolutions,
         List<EnvironmentPolicy> policies)
     {
@@ -328,7 +331,8 @@ public sealed class EnvironmentMigrator(
                 paths[conflict.Path] = choice;
                 chosen[$"{r.Change.Id}#{conflict.Path}"] = choice;
             }
-            var value = MergedValue(r.Change, r.Current, path => paths.GetValueOrDefault(path));
+            var own = SelfMerged(r.Change.Kind);
+            var value = MergedValue(r.Change, r.Current, path => paths.GetValueOrDefault(path) ?? own(path));
             if (!Same(value, r.Current)) writes.Add(new ChangeWrite(r.Change, value));
         }
         return (writes, chosen);
@@ -342,6 +346,13 @@ public sealed class EnvironmentMigrator(
     }
 
     private static JsonNode? Node(JsonElement? element) => element is { } e ? JsonNode.Parse(e.GetRawText()) : null;
+
+    /// <summary>"theirs" for a top-level property the kind merges itself, else no say.</summary>
+    private Func<string, string?> SelfMerged(string kind)
+    {
+        var properties = _kinds.FirstOrDefault(k => k.Kind == kind)?.SelfMergedProperties ?? [];
+        return path => properties.Any(p => path == "/" + p) ? "theirs" : null;
+    }
 
     /// <summary>
     /// Refuses the whole deployment unless the applier could make every one of its writes by hand
@@ -394,7 +405,7 @@ public sealed class EnvironmentMigrator(
             using var rls = target.Scope();
             try
             {
-                await KindOf(w.Change.Kind).ApplyAsync(target.TenantId, w.Change.Key, w.Value, context, ct);
+                await KindOf(w.Change.Kind).ApplyAsync(target.TenantId, w.Change.Key, w.Value, context with { Before = w.Change.Before }, ct);
             }
             catch (EnvironmentConfigException ex)
             {
@@ -441,8 +452,19 @@ public sealed class EnvironmentMigrator(
         foreach (var r in reviewed.Where(r => r.Outcome == ChangeOutcome.Already || wrote.Contains(r.Change.Id)))
         {
             JsonElement? held = baseline.Items.TryGetValue(r.Change.Kind, out var items) && items.TryGetValue(r.Change.Key, out var b) ? b : null;
-            Set(baseline.Items, r.Change.Kind, r.Change.Key,
-                r.Change.Before is null || r.Change.After is null || held is null ? r.Change.After : MergedValue(r.Change, held, _ => "theirs"));
+            var value = r.Change.Before is null || r.Change.After is null || held is null ? r.Change.After : MergedValue(r.Change, held, _ => "theirs");
+            // What the kind merged itself is whatever the write left there (git's merge commit).
+            if (value is { ValueKind: JsonValueKind.Object } && current.TryGetValue(r.Change.Kind, out var now)
+                && now.TryGetValue(r.Change.Key, out var written) && written.Value.ValueKind == JsonValueKind.Object)
+            {
+                var node = JsonNode.Parse(value.Value.GetRawText())!.AsObject();
+                foreach (var property in KindOf(r.Change.Kind).SelfMergedProperties)
+                {
+                    node[property] = written.Value.TryGetProperty(property, out var p) ? JsonNode.Parse(p.GetRawText()) : null;
+                }
+                value = JsonSerializer.SerializeToElement(node);
+            }
+            Set(baseline.Items, r.Change.Kind, r.Change.Key, value);
         }
         baseline.Row.ItemsJson = Serialize(baseline.Items);
         baseline.Row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -476,7 +498,7 @@ public sealed class EnvironmentMigrator(
         await db.SaveChangesAsync(ct);
     }
 
-    private static List<ReviewedChange> Review(
+    private List<ReviewedChange> Review(
         IEnumerable<ConfigChange> changes,
         Dictionary<string, Dictionary<string, EnvironmentConfigItem>> current,
         List<EnvironmentPolicy> policies,
@@ -508,7 +530,9 @@ public sealed class EnvironmentMigrator(
             }
             else
             {
-                var (_, conflicts) = JsonMerge.ThreeWay(Node(change.Before), Node(now), Node(change.After));
+                // What the kind merges itself (a site's code, by git) is the migration's to bring.
+                var own = SelfMerged(change.Kind);
+                var (_, conflicts) = JsonMerge.ThreeWay(Node(change.Before), Node(now), Node(change.After), own);
                 reviewed.Add(new ReviewedChange(change, conflicts.Count == 0 ? ChangeOutcome.Merge : ChangeOutcome.Conflict,
                     now, MergedValue(change, now, _ => "theirs"), conflicts));
             }

@@ -166,6 +166,34 @@ public class EnvironmentMembersTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_branch_takes_its_people_from_where_it_came_from_and_needs_a_way_in_there()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (slug, owner) = await WorkspaceAsync(client, ct);
+        var role = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", owner, slug,
+            new { name = "Env admin", permissions = new[] { "environments:manage" } }), ct);
+        var manager = await JoinAsync(client, slug, owner, (await JsonAsync(role, ct)).GetProperty("id").GetGuid(), ct);
+        var staging = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, slug,
+            new { name = "staging", empty = true }), ct), ct);
+        var stagingId = staging.GetProperty("id").GetGuid();
+
+        // Staging shuts the manager out; branching it would hand them a copy of what they cannot open.
+        var membership = await MembershipIdAsync(client, owner, $"{slug}/staging", manager, ct);
+        var envAdmin = await RoleIdAsync(client, owner, $"{slug}/staging", "Env admin", ct);
+        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/members/{membership}/roles/{envAdmin}", owner, $"{slug}/staging"), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", manager, slug,
+            new { name = "staging-hotfix", from = stagingId, feature = true }), ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // The owner may; the branch's people hold what they hold in staging, so the manager has no way in.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, slug,
+            new { name = "staging-hotfix", from = stagingId, feature = true }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", manager, $"{slug}/staging-hotfix"), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [DockerFact]
     public async Task A_delegated_environment_manager_does_not_become_owner_of_what_they_create()
     {
         var ct = TestContext.Current.CancellationToken;

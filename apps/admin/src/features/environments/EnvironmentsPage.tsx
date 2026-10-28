@@ -56,6 +56,8 @@ export function EnvironmentsPage() {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [copy, setCopy] = useState<string[]>([]);
+  const [feature, setFeature] = useState(false);
+  const [deleteWhenMerged, setDeleteWhenMerged] = useState(true);
   const scopes = useCopyScopes();
   const data = environments.data;
   const list = data?.environments ?? [];
@@ -63,7 +65,12 @@ export function EnvironmentsPage() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     add.mutate(
-      { name: name.trim(), from: from || undefined, copy: copy.length > 0 ? copy : undefined },
+      {
+        name: name.trim(),
+        from: from || undefined,
+        copy: copy.length > 0 ? copy : undefined,
+        ...(feature ? { feature: true, deleteWhenMerged } : {}),
+      },
       {
         onSuccess: () => {
           setName('');
@@ -127,6 +134,19 @@ export function EnvironmentsPage() {
                 <Plus className="h-4 w-4" /> {t('environments.add')}
               </Button>
             </div>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={feature} onCheckedChange={(on) => setFeature(on === true)} />
+                {t('environments.featureBranch')}
+              </label>
+              {feature ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={deleteWhenMerged} onCheckedChange={(on) => setDeleteWhenMerged(on === true)} />
+                  {t('environments.deleteWhenMerged')}
+                </label>
+              ) : null}
+            </div>
+            {feature ? <p className="text-xs text-muted-foreground">{t('environments.featureHint')}</p> : null}
             {scopes.data && scopes.data.length > 0 ? (
               <fieldset className="flex flex-col gap-1.5">
                 <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.copyData')}</legend>
@@ -218,6 +238,11 @@ function EnvironmentCard({
             <>
               <h2 className="min-w-0 truncate text-base font-semibold">{env.name}</h2>
               {env.isProduction ? <Badge tone="destructive">{t('environments.root')}</Badge> : null}
+              {env.forkedFrom ? (
+                <Badge tone="outline">
+                  {t('environments.featureOf', { name: all.find((e) => e.id === env.forkedFrom)?.name ?? '?' })}
+                </Badge>
+              ) : null}
             </>
           )}
           <div className="ml-auto flex gap-1">

@@ -2270,6 +2270,10 @@
       "form-submissions": "Form submissions",
       "chat": "Chat conversations"
     },
+    "featureBranch": "Feature environment",
+    "deleteWhenMerged": "Delete once merged",
+    "featureHint": "A branch of the environment it copies from: it sits beside it, merges back into it, and deploys only the migrations made in it.",
+    "featureOf": "Feature of {{name}}",
     "addLabel": "New environment",
     "add": "Add environment",
     "addHint": "Lowercase letters, digits and dashes. A new environment starts before the first one, gets the workspace members with their current roles, and deploys into the stage after it.",

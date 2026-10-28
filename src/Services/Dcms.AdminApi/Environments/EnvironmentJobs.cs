@@ -43,7 +43,9 @@ public sealed class EnvironmentCopyJob(
 /// Applies a reviewed deployment into the job's environment (ADR 0026). One at a time per environment:
 /// two applies racing would each read the target as the other had not changed it.
 /// </summary>
-public sealed class EnvironmentApplyJob(EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments, IAuditRecorder audit)
+public sealed class EnvironmentApplyJob(
+    EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments, IAuditRecorder audit,
+    Tenancy.TenantDeleter deleter, ILogger<EnvironmentApplyJob> logger)
     : IJobHandler<EnvironmentApplyPayload>
 {
     public const string Kind = "environments.apply";
@@ -62,7 +64,33 @@ public sealed class EnvironmentApplyJob(EnvironmentMigrator migrator, TenancyDbC
             .With("migrations", applied)
             .With("resolutions", payload.Resolutions);
         await audit.FlushAsync(context.Cancellation);
-        return new { applied };
+        var deleted = await DeleteMergedFeatureAsync(target, source, context.Cancellation);
+        return new { applied, deleted };
+    }
+
+    /// <summary>
+    /// A feature environment set to go once merged, when nothing it cut is left to deploy here.
+    /// After the deployment is recorded: a deletion that fails leaves the feature, not the merge, undone.
+    /// </summary>
+    private async Task<bool> DeleteMergedFeatureAsync(TenantEnvironment target, TenantEnvironment source, CancellationToken ct)
+    {
+        if (source is not { ForkedFrom: { } forkedFrom, DeleteWhenMerged: true } || forkedFrom != target.Id
+            || (await migrator.PendingAsync(target, source, ct)).Count > 0)
+        {
+            return false;
+        }
+        try
+        {
+            await deleter.DeleteEnvironmentAsync(source.TenantId, source.Id, ct);
+            environments.Evict(source.TenantId);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Merged feature environment {Source} could not be deleted; it stays.", source.Id);
+            return false;
+        }
+
     }
 }
 

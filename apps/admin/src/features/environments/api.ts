@@ -12,6 +12,12 @@ export interface Environment {
   isProduction: boolean;
   /** The environments allowed to deploy configuration into this one. */
   promotesFrom: string[];
+  /** What a feature environment branched from, and merges back into. */
+  forkedFrom: string | null;
+  /** Deploying from it offers only the migrations cut in it. */
+  mergesOwnChangesOnly: boolean;
+  /** Deleted once everything it cut is deployed into what it branched from. */
+  deleteWhenMerged: boolean;
   /** Whether the caller holds a role there, and so can open it. */
   isMember: boolean;
 }
@@ -53,7 +59,7 @@ function useEnvironmentMutation<TInput>(fn: (input: TInput) => Promise<unknown>)
 
 /** A new environment: a copy of `from`'s configuration (production when absent), and of the `copy` data scopes too. */
 export const useAddEnvironment = () =>
-  useEnvironmentMutation((body: { name: string; from?: string; copy?: string[] }) =>
+  useEnvironmentMutation((body: { name: string; from?: string; copy?: string[]; feature?: boolean; deleteWhenMerged?: boolean }) =>
     api.post<Environment>('/admin/environments', body),
   );
 

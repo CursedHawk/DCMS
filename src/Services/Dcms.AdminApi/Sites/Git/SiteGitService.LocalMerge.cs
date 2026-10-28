@@ -130,6 +130,63 @@ public sealed partial class SiteGitService
         }
     }
 
+    /// <summary>
+    /// Lays what changed between <paramref name="from"/> and <paramref name="to"/> onto
+    /// <paramref name="targetRepo"/>'s <paramref name="branch"/> as one commit, a three-way apply:
+    /// how a feature's code reaches an environment whose code has moved on since the feature
+    /// branched (ADR 0026) — only the feature's changes, none of what came before it. Both commits
+    /// are fetched from <paramref name="sourceRepos"/>. Never forced: the result descends from what
+    /// the branch held. Files both sides changed in the same places are returned, and nothing is pushed.
+    /// </summary>
+    public async Task<GitRangeResult> ApplyRangeAsync(
+        IReadOnlyList<string> sourceRepos, string targetRepo, string from, string to, string branch, string message, CancellationToken ct)
+    {
+        if (!Enabled) return new GitRangeResult(Found: false, Sha: null, Conflicts: []);
+        var (org, repo) = Split(targetRepo);
+        var work = Path.Combine(Path.GetTempPath(), "dcms-range-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        var patchFile = work + ".patch";
+        try
+        {
+            await RunGitAsync(work, null, ct, "clone", "--branch", branch, "--no-tags", "--quiet", CloneUrl(org, repo), ".");
+            var index = 0;
+            foreach (var (sourceOrg, sourceName) in sourceRepos.Select(Split))
+            {
+                await RunGitRawAsync(work, null, ct, "fetch", "--no-tags", "--quiet", CloneUrl(sourceOrg, sourceName), $"+refs/heads/*:refs/remotes/s{index++}/*");
+            }
+            foreach (var sha in new[] { from, to })
+            {
+                if ((await RunGitRawAsync(work, null, ct, "cat-file", "-e", sha + "^{commit}")).ExitCode != 0)
+                {
+                    return new GitRangeResult(Found: false, Sha: null, Conflicts: []);
+                }
+            }
+            var patch = await RunGitAsync(work, null, ct, "diff", "--binary", "--full-index", from, to);
+            if (patch.Length == 0)
+            {
+                return new GitRangeResult(Found: true, Sha: (await RunGitAsync(work, null, ct, "rev-parse", "HEAD")).Trim(), Conflicts: []);
+            }
+            await File.WriteAllTextAsync(patchFile, patch, ct);
+            var applied = await RunGitRawAsync(work, null, ct, "apply", "--3way", "--index", patchFile);
+            if (applied.ExitCode != 0)
+            {
+                var unmerged = (await RunGitAsync(work, null, ct, "diff", "--name-only", "--diff-filter=U"))
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                return new GitRangeResult(Found: true, Sha: null,
+                    Conflicts: unmerged.Length > 0 ? unmerged : [Redact(applied.Stderr).Trim()]);
+            }
+            var env = CommitEnv(_opts.CommitterName, _opts.CommitterEmail, _opts.CommitterName, _opts.CommitterEmail);
+            await RunGitAsync(work, env, ct, "commit", "--quiet", "-m", message);
+            await RunGitAsync(work, null, ct, "push", "--quiet", "origin", "HEAD:" + branch);
+            return new GitRangeResult(Found: true, Sha: (await RunGitAsync(work, null, ct, "rev-parse", "HEAD")).Trim(), Conflicts: []);
+        }
+        finally
+        {
+            TryDeleteDir(work);
+            try { File.Delete(patchFile); } catch (IOException) { }
+        }
+    }
+
     /// <summary>Content of a conflicted file at a merge stage (1=base, 2=ours, 3=theirs),
     /// or null if the file is absent at that stage (add/add, delete/modify, …).</summary>
     private async Task<string?> ShowStageAsync(string workDir, int stage, string path, CancellationToken ct)
@@ -288,3 +345,8 @@ public sealed partial class SiteGitService
         }
     }
 }
+
+/// <param name="Found">Whether both commits were found in the given repositories.</param>
+/// <param name="Sha">The branch's new head; null when nothing was pushed.</param>
+/// <param name="Conflicts">Files both sides changed in the same places.</param>
+public sealed record GitRangeResult(bool Found, string? Sha, IReadOnlyList<string> Conflicts);

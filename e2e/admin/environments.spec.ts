@@ -78,3 +78,18 @@ test('a duplicate copies the data ticked, and warns about personal data', async 
   await expect.poll(() => api.requestsTo('POST', '/api/admin/environments').map((c) => c.body))
     .toEqual([{ name: 'staging', copy: ['dynamic-apps-records', 'form-submissions'] }]);
 });
+
+test('a feature environment branches from the one chosen and can go once merged', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('POST', '/api/admin/environments', ({ body }) => ({ ...ENABLED.environments[0], name: (body as { name: string }).name }));
+  await page.goto('/settings/environments');
+
+  await page.getByLabel('New environment').fill('development-feature1');
+  await page.getByLabel('Copy from').click();
+  await page.getByRole('option', { name: 'development' }).click();
+  await page.getByRole('checkbox', { name: 'Feature environment' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Delete once merged' })).toBeChecked();
+  await page.getByRole('button', { name: 'Add environment' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/environments').map((c) => c.body))
+    .toEqual([{ name: 'development-feature1', from: DEV, feature: true, deleteWhenMerged: true }]);
+});

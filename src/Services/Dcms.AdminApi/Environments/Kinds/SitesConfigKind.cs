@@ -13,8 +13,9 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// <summary>
 /// Sites whose source is in git, by their identity across environments (ADR 0026): name, kind,
 /// and the commit their <c>release</c> branch holds. Applying puts that commit on the receiving
-/// environment's repository — fetched from whichever environment of the tenant has it — and
-/// the push builds and deploys it there as any push to release does. Domains, publishing
+/// environment's repository — fetched from whichever environment of the tenant has it — or,
+/// where that environment's code has moved on since, lays just the change's commits onto it; the
+/// push builds and deploys it there as any push to release does. Domains, publishing
 /// branches, builds and uploaded (static-files) sites are each environment's own.
 /// </summary>
 // rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
@@ -27,6 +28,9 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
     public string? Permission => PlatformPermissions.SitePublish;
 
     public int Order => 40;
+
+    /// <summary>The release commit is merged by git, never chosen between by the reviewer.</summary>
+    public IReadOnlyCollection<string> SelfMergedProperties => ["Release"];
 
     private sealed record Value(string Name, string RenderMode, string? Release);
 
@@ -82,12 +86,32 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
                 await git.LockReleaseAsync(site.GitRepoFullName, locked: true, ct);
             }
         }
-        if (await git.HeadShaAsync(site.GitRepoFullName, SiteGitService.ReleaseBranch, ct) == sha) return;
+        var head = await git.HeadShaAsync(site.GitRepoFullName, SiteGitService.ReleaseBranch, ct);
+        if (head == sha) return;
 
         var sources = await SourcesAsync(tenantId, key, ct);
+        var from = context.Before?.Deserialize<Value>()?.Release;
+        if (!created && head is not null && from is not null && head != from)
+        {
+            // This environment's code moved on since the change was made: lay only the change's
+            // commits onto it, as a feature merge does, instead of replacing what is here.
+            var result = await git.ApplyRangeAsync(sources, site.GitRepoFullName, from, sha, SiteGitService.ReleaseBranch,
+                $"Deploy {wanted.Name}: {Short(from)}..{Short(sha)}", ct);
+            if (!result.Found)
+            {
+                throw new EnvironmentConfigException($"no environment of this workspace has commits {Short(from)}..{Short(sha)} of site '{wanted.Name}' any more");
+            }
+            if (result.Conflicts.Count > 0)
+            {
+                throw new EnvironmentConfigException(
+                    $"site '{wanted.Name}' changed here in the same places ({string.Join(", ", result.Conflicts.Take(10))}); " +
+                    "bring this environment's code into the one deploying, then deploy again");
+            }
+            return;
+        }
         if (!await git.TransplantAsync(sources, site.GitRepoFullName, sha, SiteGitService.ReleaseBranch, ct))
         {
-            throw new EnvironmentConfigException($"no environment of this workspace has commit {sha[..Math.Min(sha.Length, 12)]} of site '{wanted.Name}' any more");
+            throw new EnvironmentConfigException($"no environment of this workspace has commit {Short(sha)} of site '{wanted.Name}' any more");
         }
         // A site that arrived here gets its code on the branch its editor opens as well.
         if (created)
@@ -95,6 +119,8 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             await git.TransplantAsync(sources, site.GitRepoFullName, sha, site.GitDefaultBranch ?? SiteGitService.DefaultBranch, ct);
         }
     }
+
+    private static string Short(string sha) => sha[..Math.Min(sha.Length, 12)];
 
     private Task<Site?> FindAsync(Guid tenantId, string key, CancellationToken ct)
     {

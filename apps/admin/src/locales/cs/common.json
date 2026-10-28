@@ -2316,6 +2316,10 @@
       "form-submissions": "Odeslané formuláře",
       "chat": "Konverzace v chatu"
     },
+    "featureBranch": "Prostředí pro funkci",
+    "deleteWhenMerged": "Po sloučení smazat",
+    "featureHint": "Větev prostředí, ze kterého se kopíruje: stojí vedle něj, slučuje se zpět do něj a nasazuje jen migrace vytvořené v něm.",
+    "featureOf": "Funkce z {{name}}",
     "addLabel": "Nové prostředí",
     "add": "Přidat prostředí",
     "addHint": "Malá písmena, číslice a pomlčky. Nové prostředí začíná před prvním, dostane členy pracovního prostoru s jejich současnými rolemi a nasazuje do fáze za sebou.",

@@ -285,6 +285,62 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_feature_environment_merges_only_its_own_changes_and_goes_once_merged()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        // Work in development that production has not taken.
+        await Role(client, ws.Owner, ws.Dev, "Unreleased", ["content:read"]);
+        await CutAsync(client, ws, "Development work", ct);
+
+        var feature = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "development-feature1", from = ws.DevId, feature = true, deleteWhenMerged = true }), ct), ct);
+        var featureId = feature.GetProperty("id").GetGuid();
+        feature.GetProperty("forkedFrom").GetGuid().Should().Be(ws.DevId);
+        feature.GetProperty("purpose").GetString().Should().Be("feature");
+        feature.GetProperty("mergesOwnChangesOnly").GetBoolean().Should().BeTrue("a feature merges only what it cut");
+        var featureEnv = await EnvironmentTarget.LoadAsync(fixture.Factory.Services, ws.ProdId, featureId);
+        await Engine(m => m.CopyAsync(featureEnv, ws.DevEnv, ct));
+        var featureTarget = $"{ws.Prod}/development-feature1";
+        await Role(client, ws.Owner, featureTarget, "Feature", ["media:read"]);
+        var featureCut = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, featureTarget,
+            new { name = "Feature 1" }), ct), ct)).GetProperty("migrationId").GetGuid();
+
+        // Production takes deployments from the feature too.
+        await JsonAsync(await client.SendAsync(Req(HttpMethod.Patch, $"/api/admin/environments/{ws.ProdId}", ws.Owner, ws.Prod,
+            new { promotesFrom = new[] { ws.DevId, featureId } }), ct), ct);
+        var pending = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/environments/pending?from={featureId}", ws.Owner, ws.Prod), ct), ct);
+        pending.EnumerateArray().Select(p => p.GetProperty("migration").GetProperty("name").GetString())
+            .Should().Equal(["Feature 1"], "development's unreleased work came with the branch, but is not the feature's to merge");
+
+        // Merged into what it branched from (development), it goes.
+        var devPending = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/environments/pending?from={featureId}", ws.Owner, ws.Dev), ct), ct);
+        devPending.EnumerateArray().Should().ContainSingle();
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var job = ActivatorUtilities.CreateInstance<EnvironmentApplyJob>(scope.ServiceProvider);
+            using var rls = RlsScope.Environment(ws.ProdId, ws.DevId);
+            await job.RunAsync(new EnvironmentApplyPayload(featureId, featureCut, [], ws.Owner), new JobRun(ws.ProdId, ws.DevId, ct));
+        }
+        (await RolePermissionsAsync(client, ws.Owner, ws.Dev, "Feature", ct)).Should().Equal("media:read");
+        var environments = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", ws.Owner, ws.Prod), ct), ct);
+        environments.GetProperty("environments").EnumerateArray().Select(e => e.GetProperty("name").GetString())
+            .Should().NotContain("development-feature1", "merged, and set to go once it was");
+    }
+
+    private sealed class JobRun(Guid tenantId, Guid environmentId, CancellationToken ct) : Dcms.Shared.Jobs.IJobContext
+    {
+        public Guid JobId { get; } = Guid.NewGuid();
+        public Guid? TenantId => tenantId;
+        public Guid? EnvironmentId => environmentId;
+        public Guid? ParentId => null;
+        public int Attempt => 1;
+        public CancellationToken Cancellation => ct;
+        public ValueTask ReportAsync(long done, long? total = null, string? stageKey = null) => ValueTask.CompletedTask;
+    }
+
+    [DockerFact]
     public async Task A_deployment_cannot_grant_what_its_deployer_could_not()
     {
         var ct = TestContext.Current.CancellationToken;

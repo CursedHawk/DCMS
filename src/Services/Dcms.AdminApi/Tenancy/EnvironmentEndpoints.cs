@@ -96,11 +96,29 @@ public static class EnvironmentEndpoints
             {
                 return Results.BadRequest(new { error = "An empty environment copies no data." });
             }
+            // A feature environment (development-feature1) is a branch of its source: it starts as
+            // a copy of it, sits beside it and merges back into it. Branching needs a way into the
+            // source, as reading it would.
+            var feature = body.Feature == true;
+            if (feature && body.Empty == true)
+            {
+                return Results.BadRequest(new { error = "A feature environment starts as a copy of what it branches from." });
+            }
+            if (feature && !me.IsSuperAdmin
+                && !(await OpenedByAsync(db, tenantId, me.RequireUserId(), ct)).Contains(source.Id))
+            {
+                return Results.Forbid();
+            }
 
-            var upstream = all.MinBy(e => e.Order)!;
+            // A stage goes in front of the pipeline; a feature beside what it branched from.
+            var upstream = feature ? source : all.MinBy(e => e.Order)!;
             var created = new TenantEnvironment
             {
                 Id = Guid.NewGuid(), TenantId = tenantId, Name = name, Order = upstream.Order - 1,
+                Purpose = feature ? EnvironmentPurpose.Feature : EnvironmentPurpose.Stage,
+                ForkedFrom = feature ? source.Id : null,
+                MergesOwnChangesOnly = body.MergesOwnChangesOnly ?? feature,
+                DeleteWhenMerged = feature && body.DeleteWhenMerged == true,
             };
             audit.Declared?.For("environment", created.Id, name).With("from", source.Name).With("copy", scopes);
             using (RlsScope.Tenant(tenantId))
@@ -157,6 +175,8 @@ public static class EnvironmentEndpoints
                 target.Name = name;
             }
             if (body.Order is { } order) target.Order = order;
+            if (body.MergesOwnChangesOnly is { } own) target.MergesOwnChangesOnly = own;
+            if (body.DeleteWhenMerged is { } delete) target.DeleteWhenMerged = delete && target.ForkedFrom is not null;
             if (body.PromotesFrom is { } sources)
             {
                 var ids = all.Select(e => e.Id).ToHashSet();
@@ -169,7 +189,9 @@ public static class EnvironmentEndpoints
             audit.Declared?.For("environment", target.Id, target.Name)
                 .With("name", target.Name)
                 .With("order", target.Order)
-                .With("promotes_from", target.PromotesFrom);
+                .With("promotes_from", target.PromotesFrom)
+                .With("merges_own_changes_only", target.MergesOwnChangesOnly)
+                .With("delete_when_merged", target.DeleteWhenMerged);
             await db.SaveChangesAsync(ct);
             environments.Evict(tenantId);
             return Results.Ok(View(target, true));
@@ -370,6 +392,9 @@ public static class EnvironmentEndpoints
         purpose = e.Purpose.ToString().ToLowerInvariant(),
         isProduction = e.IsProduction,
         promotesFrom = e.PromotesFrom,
+        forkedFrom = e.ForkedFrom,
+        mergesOwnChangesOnly = e.MergesOwnChangesOnly,
+        deleteWhenMerged = e.DeleteWhenMerged,
         isMember,
     };
 
@@ -416,8 +441,13 @@ public static class EnvironmentEndpoints
     /// <param name="Empty">True for an environment without the source's configuration.</param>
     /// <param name="From">The environment whose roles and configuration it starts with; production when absent.</param>
     /// <param name="Copy">Data scopes to copy from it too (records, submissions, …): a duplicate rather than a fresh copy.</param>
-    private sealed record CreateEnvironmentRequest(string? Name, bool? Empty, Guid? From, List<string>? Copy);
-    private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
+    /// <param name="Feature">A feature environment: a branch of <paramref name="From"/>, merging back into it.</param>
+    /// <param name="MergesOwnChangesOnly">Deploying from it offers only the migrations cut in it; a feature's default.</param>
+    /// <param name="DeleteWhenMerged">A feature deleted once everything it cut is deployed into what it branched from.</param>
+    private sealed record CreateEnvironmentRequest(
+        string? Name, bool? Empty, Guid? From, List<string>? Copy, bool? Feature, bool? MergesOwnChangesOnly, bool? DeleteWhenMerged);
+    private sealed record UpdateEnvironmentRequest(
+        string? Name, int? Order, List<Guid>? PromotesFrom, bool? MergesOwnChangesOnly, bool? DeleteWhenMerged);
     private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
     private sealed record LinkRequest(string Kind, Guid TargetEnvironmentId, string? TargetKey, string? Access);
 }

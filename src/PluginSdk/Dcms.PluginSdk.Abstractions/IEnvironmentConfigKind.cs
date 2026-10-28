@@ -45,6 +45,14 @@ public interface IEnvironmentConfigKind
     Task<IReadOnlyCollection<string>> PermissionsForAsync(Guid tenantId, string key, JsonElement value, CancellationToken ct) =>
         Task.FromResult<IReadOnlyCollection<string>>([]);
 
+    /// <summary>
+    /// Top-level properties of a value this kind merges itself in <see cref="ApplyAsync"/> — a
+    /// site's release commit, merged by git — so a change both sides made there is not a conflict
+    /// for the reviewer. The engine passes the change's before (<see cref="EnvironmentApplyContext.Before"/>)
+    /// and records what the property holds after the write.
+    /// </summary>
+    IReadOnlyCollection<string> SelfMergedProperties => [];
+
     /// <summary>Every item of this kind the tenant has.</summary>
     Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct);
 
@@ -63,7 +71,11 @@ public interface IEnvironmentConfigKind
 /// What an item vouches for must come from here, never be worked out afresh at write time: an
 /// earlier write in the same deployment can change what that would say.
 /// </param>
-public sealed record EnvironmentApplyContext(IReadOnlySet<string>? Held);
+public sealed record EnvironmentApplyContext(IReadOnlySet<string>? Held)
+{
+    /// <summary>The value the change was made from, in the environment it was cut in; null for an add.</summary>
+    public JsonElement? Before { get; init; }
+}
 
 /// <param name="Key">The natural key, the same in every environment.</param>
 /// <param name="Value">What moves between environments.</param>
