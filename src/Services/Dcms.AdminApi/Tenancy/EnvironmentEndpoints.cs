@@ -323,90 +323,28 @@ public static class EnvironmentEndpoints
             if (await TargetAsync(environments, tenant, id, ct) is not { } consumer) return Results.NotFound();
             var tenantId = consumer.TenantId;
             if (!await CanManageAsync(tenantId, me, permissions, ct)) return Results.Forbid();
-            if (body.TargetEnvironmentId == id || await environments.GetAsync(tenantId, body.TargetEnvironmentId, ct) is not { } provider)
+            if (await environments.GetAsync(tenantId, body.TargetEnvironmentId, ct) is not { } provider)
             {
                 return Results.BadRequest(new { error = "A link names another environment of this workspace." });
             }
-            EnvironmentLinkAccess access;
-            if (body.Kind == EnvironmentLinkKinds.Users)
+            var (link, refused) = await EnvironmentLinkRules.CheckAsync(db, cms, consumer, provider,
+                body.Kind, body.TargetKey, body.Access, body.Grants, existing: null, ct);
+            if (refused is not null)
             {
-                // Sign-in through the target's realm. One realm per environment, and never a
-                // chain: the target signs its own people in, and nobody signs in through this one.
-                access = EnvironmentLinkAccess.Read;
-                // rls: platform -- the workspace's users links, every environment's, named by tenant.
-                using var platform = RlsScope.Platform();
-                if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.Users
-                        && (l.EnvironmentId == id || l.EnvironmentId == provider.Id || l.TargetEnvironmentId == id), ct))
-                {
-                    return Results.Conflict(new { error = "An environment takes its users from one other environment, which keeps its own." });
-                }
-            }
-            else if (body.Kind is EnvironmentLinkKinds.Contracts or EnvironmentLinkKinds.Tables)
-            {
-                // A plugin here calls an instance there (ADR 0028): what it may call is listed, not implied.
-                access = EnvironmentLinkAccess.ReadWrite;
-                if (string.IsNullOrWhiteSpace(body.TargetKey) || body.Grants is not { Count: > 0 and <= 100 } grants
-                    || grants.Any(g => !LinkGrant(body.Kind, g)))
-                {
-                    return Results.BadRequest(new
-                    {
-                        error = body.Kind == EnvironmentLinkKinds.Tables
-                            ? "A tables link names a Dynamic Apps instance there and grants table:read, table:create, table:update or table:delete."
-                            : "A contracts link names an instance there and grants contract/Operation.",
-                    });
-                }
-                using (provider.Scope())
-                {
-                    var instance = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
-                        .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == body.TargetKey, ct);
-                    if (instance is null || (body.Kind == EnvironmentLinkKinds.Tables && instance.PluginId != DynamicAppsPluginId))
-                    {
-                        return Results.BadRequest(new { error = "That environment has no such instance to link to." });
-                    }
-                }
-                using var rls = consumer.Scope();
-                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.TenantId == tenantId && l.Kind == body.Kind
-                        && l.TargetEnvironmentId == provider.Id && l.TargetKey == body.TargetKey, ct))
-                {
-                    return Results.Conflict(new { error = "This instance is already linked." });
-                }
-            }
-            else
-            {
-                if (body.Kind != EnvironmentLinkKinds.App || string.IsNullOrWhiteSpace(body.TargetKey)
-                    || !Enum.TryParse(body.Access, ignoreCase: true, out access))
-                {
-                    return Results.BadRequest(new { error = "An app link names the app's address and read or readWrite access." });
-                }
-                // Only an app the target has: anything else under /api is the platform's own routes.
-                using (provider.Scope())
-                {
-                    if (!await cms.PluginInstances.IgnoreTenantFilter().AnyAsync(p => p.TenantId == tenantId && p.Slug == body.TargetKey, ct))
-                    {
-                        return Results.BadRequest(new { error = "That environment has no app at this address." });
-                    }
-                }
-                using var rls = consumer.Scope();
-                if (await db.EnvironmentLinks.IgnoreTenantFilter().AnyAsync(l => l.TenantId == tenantId && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
-                {
-                    return Results.Conflict(new { error = "This app is already linked." });
-                }
+                return refused.Conflict ? Results.Conflict(new { error = refused.Error }) : Results.BadRequest(new { error = refused.Error });
             }
             using var scope = consumer.Scope();
-            var link = new EnvironmentLink
+            var row = new EnvironmentLink
             {
-                Id = Guid.NewGuid(), TenantId = tenantId, EnvironmentId = consumer.Id, TargetEnvironmentId = provider.Id, Kind = body.Kind,
-                TargetKey = body.Kind == EnvironmentLinkKinds.Users ? null : body.TargetKey!.Trim(), Access = access,
-                Grants = body.Kind is EnvironmentLinkKinds.Contracts or EnvironmentLinkKinds.Tables
-                    ? body.Grants!.Select(g => g.Trim()).Distinct(StringComparer.Ordinal).ToList()
-                    : [],
+                Id = Guid.NewGuid(), TenantId = tenantId, EnvironmentId = consumer.Id, TargetEnvironmentId = provider.Id, Kind = link!.Kind,
+                TargetKey = link.TargetKey, Access = link.Access, Grants = link.Grants,
             };
-            db.EnvironmentLinks.Add(link);
-            audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("environment", consumer.Name)
-                .With("target", provider.Name).With("access", access.ToString());
+            db.EnvironmentLinks.Add(row);
+            audit.Declared?.For("environment_link", row.Id, row.TargetKey).With("environment", consumer.Name)
+                .With("target", provider.Name).With("access", row.Access.ToString()).With("grants", row.Grants);
             await db.SaveChangesAsync(ct);
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
-            return Results.Created($"/api/admin/environments/{id}/links/{link.Id}", new { id = link.Id });
+            return Results.Created($"/api/admin/environments/{id}/links/{row.Id}", new { id = row.Id });
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
 
         app.MapDelete("/api/admin/environments/{id:guid}/links/{linkId:guid}", async (
@@ -499,21 +437,4 @@ public static class EnvironmentEndpoints
     /// <param name="Grants">What a contracts link may call (<c>contract/Operation</c>) or a tables link may do (<c>table:verb</c>).</param>
     private sealed record LinkRequest(string Kind, Guid TargetEnvironmentId, string? TargetKey, string? Access, List<string>? Grants);
 
-    private const string DynamicAppsPluginId = "dynamic-apps";
-
-    private static readonly string[] TableVerbs = ["read", "create", "update", "delete"];
-
-    /// <summary>A grant of the link's kind: <c>contract/Operation</c>, or <c>table:verb</c>.</summary>
-    internal static bool LinkGrant(string kind, string grant)
-    {
-        var g = grant.Trim();
-        if (g.Length is 0 or > 200) return false;
-        if (kind == EnvironmentLinkKinds.Tables)
-        {
-            var colon = g.LastIndexOf(':');
-            return colon > 0 && TableVerbs.Contains(g[(colon + 1)..]);
-        }
-        var slash = g.IndexOf('/');
-        return slash > 0 && slash < g.Length - 1 && g.IndexOf('/', slash + 1) < 0;
-    }
 }

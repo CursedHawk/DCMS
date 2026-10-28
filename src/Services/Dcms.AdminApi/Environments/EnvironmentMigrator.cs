@@ -395,7 +395,7 @@ public sealed class EnvironmentMigrator(
             }
             SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Value);
         }
-        return new EnvironmentApplyContext(held);
+        return new EnvironmentApplyContext(held) { UserId = applier.UserId };
     }
 
     private async Task WriteAsync(TenantEnvironment target, IEnumerable<ChangeWrite> writes, EnvironmentApplyContext context, CancellationToken ct)

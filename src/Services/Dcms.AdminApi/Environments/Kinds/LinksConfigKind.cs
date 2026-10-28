@@ -17,7 +17,9 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// </summary>
 // rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
 // on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
-public sealed class LinksConfigKind(TenancyDbContext db, EnvironmentStore environments, ICacheService cache) : IEnvironmentConfigKind
+public sealed class LinksConfigKind(
+    TenancyDbContext db, Dcms.Shared.Data.Cms.CmsDbContext cms, EnvironmentStore environments, ICacheService cache,
+    Dcms.Shared.Security.Authorization.IPermissionResolver permissions) : IEnvironmentConfigKind
 {
     public string Kind => "links";
 
@@ -54,6 +56,16 @@ public sealed class LinksConfigKind(TenancyDbContext db, EnvironmentStore enviro
                      ?? throw new EnvironmentConfigException($"there is no environment '{environment}' here to link to");
         if (target.Id == here) return;
 
+        // Who may link anything is decided in production, whichever environment the link lands in,
+        // as on the links screen; a deployment is not a way round it.
+        if (context.UserId is { } userId)
+        {
+            using var production = RlsScope.Environment(tenantId, tenantId);
+            if (!(await permissions.GetPermissionsAsync(tenantId, userId, ct)).Contains(PlatformPermissions.EnvironmentsManage))
+            {
+                throw new EnvironmentConfigException("links are set up by whoever holds environments:manage in production");
+            }
+        }
         var link = await db.EnvironmentLinks.IgnoreTenantFilter()
             .FirstOrDefaultAsync(l => l.TenantId == tenantId && l.EnvironmentId == here && l.Kind == kind
                                       && l.TargetEnvironmentId == target.Id && l.TargetKey == targetKey, ct);
@@ -64,20 +76,21 @@ public sealed class LinksConfigKind(TenancyDbContext db, EnvironmentStore enviro
         else
         {
             var wanted = value.Value.Deserialize<Value>()!;
-            if (!Enum.TryParse<EnvironmentLinkAccess>(wanted.Access, out var access)
-                || wanted.Grants.Any(g => !Tenancy.EnvironmentEndpoints.LinkGrant(kind, g)))
-            {
-                throw new EnvironmentConfigException($"link '{key}' is not a valid link");
-            }
+            var consumer = await environments.GetAsync(tenantId, here, ct)
+                           ?? throw new EnvironmentConfigException("this environment is gone");
+            var (rules, refused) = await Tenancy.EnvironmentLinkRules.CheckAsync(db, cms, consumer, target,
+                kind, targetKey, wanted.Access, wanted.Grants, link?.Id, ct);
+            if (refused is not null) throw new EnvironmentConfigException($"link '{key}': {refused.Error}");
             if (link is null)
             {
                 link = new EnvironmentLink
                 {
-                    Id = Guid.NewGuid(), TenantId = tenantId, EnvironmentId = here, Kind = kind, TargetEnvironmentId = target.Id, TargetKey = targetKey,
+                    Id = Guid.NewGuid(), TenantId = tenantId, EnvironmentId = here, Kind = rules!.Kind, TargetEnvironmentId = target.Id,
+                    TargetKey = rules.TargetKey,
                 };
                 db.EnvironmentLinks.Add(link);
             }
-            (link.Access, link.Grants) = (access, wanted.Grants);
+            (link.Access, link.Grants) = (rules!.Access, rules.Grants);
         }
         await db.SaveChangesAsync(ct);
         await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(here), ct);

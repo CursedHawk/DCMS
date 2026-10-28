@@ -7,6 +7,7 @@ using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Shared.Data.Rls;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -83,5 +84,11 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
         page.Items.Select(r => r["name"]!.GetValue<string>()).Should().Equal("Acme");
         await FluentActions.Awaiting(() => records.CreateRecordAsync(new RecordCreate("companies", new JsonObject { ["name"] = "Globex" }), ct))
             .Should().ThrowAsync<ContractAccessDeniedException>("the link grants reading only");
+        // Nor another table through a lookup: an expansion, or a filter on lookup.field.
+        await FluentActions.Awaiting(() => records.QueryRecordsAsync(new TableQuery("companies", new RecordQuery { Expand = ["owner"] }), ct))
+            .Should().ThrowAsync<ContractAccessDeniedException>();
+        await FluentActions.Awaiting(() => records.QueryRecordsAsync(new TableQuery("companies",
+                new RecordQuery { Filter = new RecordFilter { Field = "owner.name", Op = "eq", Value = "x" } }), ct))
+            .Should().ThrowAsync<ContractAccessDeniedException>();
     }
 }

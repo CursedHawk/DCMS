@@ -75,6 +75,9 @@ public sealed record EnvironmentApplyContext(IReadOnlySet<string>? Held)
 {
     /// <summary>The value the change was made from, in the environment it was cut in; null for an add.</summary>
     public JsonElement? Before { get; init; }
+
+    /// <summary>The deployer, when a person is behind the write (<see cref="Held"/> is not null).</summary>
+    public Guid? UserId { get; init; }
 }
 
 /// <param name="Key">The natural key, the same in every environment.</param>

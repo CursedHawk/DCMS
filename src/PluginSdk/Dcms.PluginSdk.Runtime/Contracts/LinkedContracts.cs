@@ -130,19 +130,39 @@ public class LinkedContractProxy : DispatchProxy
 
     /// <summary>
     /// What the call needs granted: <c>{contract}/{operation}</c> through a contracts link, or
-    /// <c>{table}:{verb}</c> through a tables link; null when a tables call names no table.
+    /// <c>{table}:{verb}</c> through a tables link; null when a tables call cannot be granted at
+    /// all -- it names no table, is not a single-table operation, or would reach another table
+    /// through a lookup (an expansion, a filter or sort on <c>lookup.field</c>).
     /// </summary>
     private string? Grant(string operation, object?[]? args)
     {
         if (_link.Kind != EnvironmentLinkKinds.Tables) return $"{_descriptor.Name}/{operation}";
-        var table = args?.FirstOrDefault()?.GetType().GetProperty("Table")?.GetValue(args[0]) as string;
         var verb = operation switch
         {
             "QueryRecords" or "GetRecord" => "read",
-            "CreateRecord" or "ImportRecords" or "ValidateImport" => "create",
-            "DeleteRecord" or "BulkDeleteRecords" => "delete",
-            _ => "update",
+            "CreateRecord" => "create",
+            "UpdateRecord" => "update",
+            "DeleteRecord" => "delete",
+            _ => null,
         };
-        return table is null ? null : $"{table}:{verb}";
+        var input = args?.FirstOrDefault() is { } first ? System.Text.Json.JsonSerializer.SerializeToNode(first, Json) : null;
+        var table = input?["table"]?.GetValue<string>();
+        if (verb is null || table is null || ReachesAnotherTable(input)) return null;
+        return $"{table}:{verb}";
     }
+
+    private static readonly System.Text.Json.JsonSerializerOptions Json = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    /// <summary>An expansion, or a field path through a lookup, anywhere in the input.</summary>
+    private static bool ReachesAnotherTable(System.Text.Json.Nodes.JsonNode? node) => node switch
+    {
+        System.Text.Json.Nodes.JsonObject o => o.Any(p =>
+            (p.Key == "expand" && p.Value is System.Text.Json.Nodes.JsonArray { Count: > 0 })
+            || (p.Key == "select" && p.Value is System.Text.Json.Nodes.JsonArray select
+                && select.Any(x => x is System.Text.Json.Nodes.JsonValue sv && sv.TryGetValue<string>(out var sf) && sf.Contains('.')))
+            || (p.Key == "field" && p.Value is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var f) && f.Contains('.'))
+            || (p.Key != "values" && ReachesAnotherTable(p.Value))),
+        System.Text.Json.Nodes.JsonArray a => a.Any(ReachesAnotherTable),
+        _ => false,
+    };
 }
