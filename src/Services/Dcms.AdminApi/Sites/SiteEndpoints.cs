@@ -752,22 +752,19 @@ public static class SiteEndpoints
             if (draft is null) return Results.BadRequest(new { error = "Nothing to commit — open the branch first." });
 
             // Resolve the target branch (create it off the source branch if requested).
-            string target;
+            var target = !string.IsNullOrWhiteSpace(body.NewBranch) ? body.NewBranch!.Trim()
+                : string.IsNullOrWhiteSpace(body.TargetBranch) ? sourceBranch : body.TargetBranch!.Trim();
+            // The release of a site this environment leaves to deployments moves by a deployment
+            // only; the platform commits as a git admin, past the branch's protection. Checked
+            // whichever way the request names it: "creating" release reuses the branch there.
+            if (target == Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch
+                && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "sites", site.KeyAcrossEnvironments, ct) is { } refused)
+            {
+                return refused;
+            }
             if (!string.IsNullOrWhiteSpace(body.NewBranch))
             {
-                target = body.NewBranch!.Trim();
                 await git.CreateBranchAsync(site.GitRepoFullName, target, sourceBranch, ct);
-            }
-            else
-            {
-                target = string.IsNullOrWhiteSpace(body.TargetBranch) ? sourceBranch : body.TargetBranch!.Trim();
-                // The release of a site this environment leaves to deployments moves by a
-                // deployment only; the platform commits as a git admin, past the branch's protection.
-                if (target == Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch
-                    && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "sites", site.KeyAcrossEnvironments, ct) is { } refused)
-                {
-                    return refused;
-                }
             }
 
             var draftFiles = SiteFileMap.Parse(draft.DefinitionJson);
@@ -1079,7 +1076,8 @@ public static class SiteEndpoints
                     .FirstOrDefaultAsync(s => s.GitRepoFullName == repoFull, ct);
             }
             if (site is null) return Results.Ok(new { ignored = "unknown repo" });
-            using var rls = RlsScope.Tenant(site.TenantId);
+            // The site's own environment (ADR 0028): its build rows are that environment's.
+            using var rls = RlsScope.Environment(site.TenantId, site.EnvironmentId);
 
             // Pushes to release build+deploy, and so do pushes to the site's publishing branches
             // (#277), each onto its own domains. Every other branch is work in progress.
@@ -1302,14 +1300,21 @@ public static class SiteEndpoints
     internal static async Task ContinueIfReleaseMovedAsync(
         IServiceProvider scope, Guid tenantId, Guid siteId, Guid completedBuildId, CancellationToken ct)
     {
-        // Runs from a build's terminal event, with no ambient tenant; the event names it (ADR 0015).
-        using var rls = RlsScope.Tenant(tenantId);
         try
         {
             var git = scope.GetRequiredService<Dcms.AdminApi.Sites.Git.SiteGitService>();
             if (!git.Enabled) return;
 
+            // Runs from a build's terminal event, with no ambient tenant; the event names it (ADR
+            // 0015), and the site its environment (ADR 0028), whose builds and release these are.
             var db = scope.GetRequiredService<SitesDbContext>();
+            Guid environmentId;
+            using (RlsScope.Platform())
+            {
+                environmentId = await db.Sites.IgnoreQueryFilters().AsNoTracking()
+                    .Where(s => s.Id == siteId && s.TenantId == tenantId).Select(s => s.EnvironmentId).FirstOrDefaultAsync(ct);
+            }
+            using var rls = RlsScope.Environment(tenantId, environmentId == Guid.Empty ? tenantId : environmentId);
             var site = await db.Sites.IgnoreTenantFilter()
                 .FirstOrDefaultAsync(s => s.Id == siteId && s.TenantId == tenantId, ct);
             if (site is null || !site.RenderMode.IsGitBacked() || site.GitRepoFullName is null) return;

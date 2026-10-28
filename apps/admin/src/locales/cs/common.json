@@ -2440,6 +2440,7 @@
     "ours": "Tohoto prostředí",
     "theirs": "Nasazované",
     "resolve": "Co s tímto konfliktem",
+    "skipHere": "Tuto změnu zde vynechat",
     "resolutions": {
       "overwrite": "Přepsat nasazovanou verzí",
       "skip": "Ponechat verzi tohoto prostředí",

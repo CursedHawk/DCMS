@@ -83,7 +83,8 @@ public sealed class SiteCacheInvalidator(
         {
             return;
         }
-        using var rls = RlsScope.Tenant(evt.TenantId); // ADR 0015: the event's tenant.
+        // ADR 0015: the event's tenant, in the site's environment (ADR 0028), whose domains these are.
+        using var rls = RlsScope.Environment(evt.TenantId, evt.EnvironmentId ?? evt.TenantId);
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         var hosts = await tenancy.Domains.IgnoreTenantFilter().AsNoTracking()

@@ -379,6 +379,17 @@ function ChangeRow({
         {merges ? <Json label={t('deployments.current')} value={change.current} /> : null}
         {merges && change.merged !== undefined ? <Json label={t('deployments.merged')} value={change.merged} /> : null}
       </div>
+      {change.outcome === 'merge' && onResolve && migrationId ? (
+        // A merge can still clash where git lays a site's code on; leaving it out here is a choice.
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={resolutions?.[wholeKey] === 'skip'}
+            onChange={(e) => onResolve(wholeKey, (e.target.checked ? 'skip' : undefined) as Resolutions[string])}
+          />
+          {t('deployments.skipHere')}
+        </label>
+      ) : null}
       {conflict && onResolve && migrationId ? (
         <div className="mt-2 flex flex-col gap-2 text-sm">
           <Choices

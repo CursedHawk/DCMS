@@ -2,6 +2,7 @@ using Dcms.AdminApi.Sites;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Notifications;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
@@ -29,6 +30,8 @@ public sealed class SitePublishedNotificationConsumer(
     protected override async Task<NotificationRequest?> MapAsync(
         SitePublished evt, IServiceProvider scope, CancellationToken ct)
     {
+        // The site's environment (ADR 0028): its site, builds and release are that environment's.
+        using var environment = RlsScope.Environment(evt.TenantId, evt.EnvironmentId ?? evt.TenantId);
         var name = await SiteNameLookup.ResolveAsync(scope, evt.TenantId, evt.SiteId, ct);
 
         // Before the bell: the IDE's Deployments panel is watching this build right now, and a
@@ -76,6 +79,7 @@ public sealed class SiteBuildFailedNotificationConsumer(
     protected override async Task<NotificationRequest?> MapAsync(
         SiteBuildFailed evt, IServiceProvider scope, CancellationToken ct)
     {
+        using var environment = RlsScope.Environment(evt.TenantId, evt.EnvironmentId ?? evt.TenantId);
         var name = await SiteNameLookup.ResolveAsync(scope, evt.TenantId, evt.SiteId, ct);
 
         await SiteBuildBroadcast.TerminalAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);

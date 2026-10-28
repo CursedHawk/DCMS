@@ -35,7 +35,7 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
         var table = (await app.JsonAsync(HttpMethod.Get, "/_model/published", ct)).GetProperty("config").GetProperty("tables")[0].GetProperty("id").GetString()!;
 
         // title 2 (+1 search: it is the primary field and nothing is searchable), amount 2, stage 1, closes 2; the boolean none.
-        await WaitAsync(async () => await IndexesAsync(table, ct) == 8, ct, "the worker makes the indexes");
+        await WaitAsync(async () => await UnrationedAsync(ct) && await IndexesAsync(table, ct) == 8, ct, "the worker makes the indexes");
 
         var rows = Enumerable.Range(1, 300).Select(i => new
         {
@@ -84,7 +84,7 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
             operations = AppHarness.Operations("""[ { "op": "delete", "type": "field", "target": "deals.amount" } ]"""),
         })).GetProperty("draft").GetProperty("hash").GetString();
         await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = draft });
-        await WaitAsync(async () => await IndexesAsync(table, ct) == 6, ct, "the worker drops the field's indexes");
+        await WaitAsync(async () => await UnrationedAsync(ct) && await IndexesAsync(table, ct) == 6, ct, "the worker drops the field's indexes");
     }
 
     [DockerFact]
@@ -119,6 +119,16 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
             SELECT coalesce(sum(s.idx_scan), 0) FROM pg_stat_user_indexes s JOIN pg_indexes i ON i.indexname = s.indexrelname
             WHERE i.schemaname = 'apps' AND i.indexname LIKE 'ix_da_%' AND i.indexdef LIKE '%{table}%'
             """, ct);
+
+    /// <summary>
+    /// The database rations index work for the whole platform (apps.sync_record_indexes), and in this
+    /// database the whole suite's apps draw on it: the ration is not what this test is about.
+    /// </summary>
+    private async Task<bool> UnrationedAsync(CancellationToken ct)
+    {
+        await ScalarAsync("UPDATE apps.record_index_sync SET spent_ms = 0, next_at = now() WHERE id = 1 RETURNING 0", ct);
+        return true;
+    }
 
     private async Task Analyze(CancellationToken ct) => await ScalarAsync("SELECT 0 FROM (SELECT 1) x; ANALYZE apps.records", ct);
 

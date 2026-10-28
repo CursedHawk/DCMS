@@ -2388,6 +2388,7 @@
     "ours": "This environment's",
     "theirs": "Deployed",
     "resolve": "What to do with this conflict",
+    "skipHere": "Skip this change here",
     "resolutions": {
       "overwrite": "Overwrite with the deployed version",
       "skip": "Keep this environment's version",

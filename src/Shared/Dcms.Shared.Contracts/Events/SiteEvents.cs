@@ -33,7 +33,8 @@ public sealed record SitePublished(
     Guid TenantId,
     Guid SiteId,
     Guid BuildId,
-    string ArtifactPrefix) : ITenantEvent
+    string ArtifactPrefix,
+    Guid? EnvironmentId = null) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -44,7 +45,8 @@ public sealed record SiteBuildFailed(
     Guid TenantId,
     Guid SiteId,
     Guid BuildId,
-    string Reason) : ITenantEvent
+    string Reason,
+    Guid? EnvironmentId = null) : ITenantEvent
 {
     public int Version => 1;
 }

@@ -265,6 +265,14 @@ public sealed class EnvironmentMigrator(
             foreach (var w in writes) SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Value);
             plans.Add((p.Migration, reviewed, writes, chosen));
         }
+        // An item a later migration of this deployment deletes needs none of the writes before it:
+        // a site deleted at its source took the commits its earlier changes name with it.
+        var deletedAt = plans.SelectMany((p, i) => p.Writes.Where(w => w.Value is null).Select(w => (w.Change.Id, i)))
+            .GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.Max(x => x.i), StringComparer.Ordinal);
+        for (var i = 0; i < plans.Count; i++)
+        {
+            plans[i].Writes.RemoveAll(w => deletedAt.TryGetValue(w.Change.Id, out var at) && at > i);
+        }
         var context = await AuthorizeAsync(target, applier, plans.SelectMany(p => p.Writes), ct);
 
         foreach (var (migration, reviewed, writes, chosen) in plans)
@@ -307,7 +315,10 @@ public sealed class EnvironmentMigrator(
         {
             if (r.Outcome is ChangeOutcome.Apply or ChangeOutcome.Merge)
             {
-                writes.Add(new ChangeWrite(r.Change, r.Value));
+                // Any change may be left out here by the reviewer: a site whose code clashes only
+                // shows when git lays it on, and need not hold back everything after it.
+                if (resolutions.GetValueOrDefault($"{migrationId}/{r.Change.Id}") == "skip") chosen[r.Change.Id] = "skip";
+                else writes.Add(new ChangeWrite(r.Change, r.Value));
                 continue;
             }
             if (r.Outcome != ChangeOutcome.Conflict) continue;

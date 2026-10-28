@@ -105,7 +105,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             {
                 throw new EnvironmentConfigException(
                     $"site '{wanted.Name}' changed here in the same places ({string.Join(", ", result.Conflicts.Take(10))}); " +
-                    "bring this environment's code into the one deploying, then deploy again");
+                    "bring this environment's code into the one deploying and deploy again, or skip this change here");
             }
             return;
         }

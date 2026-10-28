@@ -56,6 +56,21 @@ public sealed class ReleaseCatchUpTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_site_of_another_environment_is_caught_up_there()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var forgejo = new ForgejoStub { ReleaseHead = PushedSha };
+        await using var host = await StartAsync(forgejo, ct);
+        var environmentId = Guid.NewGuid();
+        var (tenantId, siteId, finishedBuild) = await SeedAsync(host, builtSha: BuiltSha, ct, environmentId);
+
+        await RunCatchUpAsync(host, tenantId, siteId, finishedBuild, ct);
+
+        (await QueuedBuildsAsync(host, siteId, ct)).Should().ContainSingle()
+            .Which.EnvironmentId.Should().Be(environmentId, "the build is the site's environment's");
+    }
+
+    [DockerFact]
     public async Task Nothing_is_queued_when_the_release_head_is_what_was_just_built()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -89,14 +104,14 @@ public sealed class ReleaseCatchUpTests(AdminApiFixture fixture)
     }
 
     private static async Task<(Guid TenantId, Guid SiteId, Guid FinishedBuild)> SeedAsync(
-        WebApplicationFactory<AdminApiApp::Program> host, string builtSha, CancellationToken ct)
+        WebApplicationFactory<AdminApiApp::Program> host, string builtSha, CancellationToken ct, Guid? environmentId = null)
     {
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
 
         var tenantId = Guid.NewGuid();
-        // The test is writing as that tenant; say so, or an enforcing run refuses the rows.
-        using var rls = RlsScope.Tenant(tenantId);
+        // The test is writing as that tenant (and environment); say so, or an enforcing run refuses the rows.
+        using var rls = RlsScope.Environment(tenantId, environmentId ?? tenantId);
         var site = new Site
         {
             Id = Guid.NewGuid(), TenantId = tenantId, Name = "catch-up",

@@ -286,7 +286,7 @@ public sealed class SitePublishConsumer(
         await db.SaveChangesAsync(ct);
 
         await events.PublishAsync(Subjects.SitePublished, new SitePublished(
-            Guid.NewGuid(), DateTimeOffset.UtcNow, build.TenantId, build.SiteId, build.Id, build.ArtifactPrefix), ct);
+            Guid.NewGuid(), DateTimeOffset.UtcNow, build.TenantId, build.SiteId, build.Id, build.ArtifactPrefix, build.EnvironmentId), ct);
         await Reporter.SucceededAsync(build.Id, build.TenantId, null, ct);
     }
 
@@ -461,7 +461,7 @@ public sealed class SitePublishConsumer(
                 await db.SaveChangesAsync(ct);
             }
             await events.PublishAsync(Subjects.SiteBuildFailed, new SiteBuildFailed(
-                Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, job.BuildId, error), ct);
+                Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, job.BuildId, error, build?.EnvironmentId), ct);
             await Reporter.FailedAsync(job.BuildId, job.TenantId, "jobs.error.buildFailed", error, ct);
         }
         catch (Exception ex)

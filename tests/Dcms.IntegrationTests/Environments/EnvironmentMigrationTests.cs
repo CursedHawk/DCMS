@@ -403,7 +403,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
-    public async Task A_skipped_conflict_is_not_counted_as_applied_when_a_later_change_is_authorised()
+    public async Task A_skipped_change_is_not_counted_as_applied_when_a_later_change_is_authorised()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.Factory.CreateClient();
@@ -416,7 +416,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
                 new { name = "Member", permissions }), ct)).IsSuccessStatusCode.Should().BeTrue();
         }
 
-        // Production narrows Member by hand, so every change to it from development conflicts.
+        // Production narrows Member by hand; development's changes merge into it.
         await SetMember(ws.Prod, "media:read");
         await SetMember(ws.Dev, "media:read", "analytics:read", "members:manage");
         var first = await CutAsync(client, ws, "Members manage members", ct);
@@ -431,15 +431,15 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { email = $"{deployer:N}@dcms.test", roleIds = new[] { role.GetProperty("id").GetString() } }), ct), ct);
         await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations/accept", deployer, body: new { token = invite.GetProperty("token").GetString() }), ct);
 
-        // Skipping the first and overwriting with the second would still put members:manage in.
-        var resolutions = new Dictionary<string, string>
-        {
-            [$"{first}/roles/Member"] = "skip",
-            [$"{second}/roles/Member"] = "overwrite",
-        };
-        var refused = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, resolutions, new EnvironmentApplier(deployer, false), ct));
+        // Both: the first's members:manage is not the deployer's to give.
+        var refused = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(deployer, false), ct));
         (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Detail.Should().Be("members:manage");
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Equal("media:read");
+
+        // The first left out: the second merges in only what it adds, which the deployer holds.
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string> { [$"{first}/roles/Member"] = "skip" },
+            new EnvironmentApplier(deployer, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Equal("content:read", "media:read");
     }
 
     [DockerFact]
@@ -585,6 +585,29 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         await Engine(m => m.RollbackAsync(ws.ProdEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await ApplyAsync()).Should().NotBe(first, "deploying again after a rollback is another deployment");
+    }
+
+    [DockerFact]
+    public async Task The_reviewer_may_leave_any_change_out_and_a_later_deletion_needs_nothing_before_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
+        await Role(client, ws.Owner, ws.Dev, "Temps", ["content:read"]);
+        var first = await CutAsync(client, ws, "Editors and temps", ct);
+        var temps = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, ws.Dev), ct), ct))
+            .EnumerateArray().Single(r => r.GetProperty("name").GetString() == "Temps").GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/roles/{temps}", ws.Owner, ws.Dev), ct)).IsSuccessStatusCode.Should().BeTrue();
+        var second = await CutAsync(client, ws, "No more temps", ct);
+
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second,
+            new Dictionary<string, string> { [$"{first}/roles/Editors"] = "skip" }, new EnvironmentApplier(ws.Owner, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().BeEmpty("left out by the reviewer");
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Temps", ct)).Should().BeEmpty("added and deleted within one deployment");
+        var history = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/migrations", ws.Owner, ws.Prod), ct), ct);
+        history.EnumerateArray().Single(m => m.GetProperty("name").GetString() == "Editors and temps")
+            .GetProperty("resolutions").GetProperty("roles/Editors").GetString().Should().Be("skip");
     }
 
     [DockerFact]

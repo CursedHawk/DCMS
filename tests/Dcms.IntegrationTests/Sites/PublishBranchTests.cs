@@ -100,6 +100,22 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
         (await PushAsync(client, repo, "dev", ct)).Should().Contain("not a publishing branch");
     }
 
+    [DockerFact]
+    public async Task A_push_builds_the_site_in_its_own_environment()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = await StartAsync(ct);
+        var client = host.CreateClient();
+        var (_, tenantId) = await CreateTenantAsync(client, ct);
+        var repo = $"tenant-x/site-{Guid.NewGuid():N}";
+        var environmentId = Guid.NewGuid();
+        var siteId = await SeedSiteAsync(host, tenantId, repo, ct, environmentId);
+
+        (await PushAsync(client, repo, "release", ct)).Should().Contain("buildId");
+        (await BuildsAsync(host, siteId, ct)).Should().ContainSingle()
+            .Which.EnvironmentId.Should().Be(environmentId, "the webhook names no environment; the site does");
+    }
+
     private async Task<WebApplicationFactory<AdminApiApp::Program>> StartAsync(CancellationToken ct)
     {
         var host = fixture.Factory.WithWebHostBuilder(builder =>
@@ -140,11 +156,11 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
     }
 
     private static async Task<Guid> SeedSiteAsync(
-        WebApplicationFactory<AdminApiApp::Program> host, Guid tenantId, string repo, CancellationToken ct)
+        WebApplicationFactory<AdminApiApp::Program> host, Guid tenantId, string repo, CancellationToken ct, Guid? environmentId = null)
     {
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
-        using var rls = RlsScope.Tenant(tenantId);
+        using var rls = RlsScope.Environment(tenantId, environmentId ?? tenantId);
         var site = new Site
         {
             Id = Guid.NewGuid(), TenantId = tenantId, Name = "branches",
