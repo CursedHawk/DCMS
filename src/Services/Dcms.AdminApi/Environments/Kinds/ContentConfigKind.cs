@@ -23,7 +23,7 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// </summary>
 // rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
 // on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
-public sealed class ContentConfigKind(CmsDbContext db) : IEnvironmentConfigKind
+public sealed class ContentConfigKind(CmsDbContext db, IPluginCatalog catalog) : IEnvironmentConfigKind
 {
     public const string RefPrefix = "@content:";
 
@@ -66,12 +66,18 @@ public sealed class ContentConfigKind(CmsDbContext db) : IEnvironmentConfigKind
         }
 
         item ??= await PlaceholderAsync(tenantId, key, ct);
-        var data = await ResolveAsync(tenantId, JsonNode.Parse(value.Value.GetRawText()), ct);
+        var resolved = await ResolveAsync(tenantId, JsonNode.Parse(value.Value.GetRawText()), ct);
+        // SEC-13, as on every other write: rich-text fields are injected into the published site,
+        // and what is sanitized is what this environment's plugin declares, not what the source did.
+        var pluginId = await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+            .Where(p => p.TenantId == tenantId && p.Id == item.PluginInstanceId).Select(p => p.PluginId).FirstAsync(ct);
+        var data = resolved is null ? null
+            : Cms.ContentEndpoints.SanitizeRichText(JsonSerializer.SerializeToElement(resolved), catalog, pluginId, item.ContentType);
         var next = (await db.ContentVersions.IgnoreTenantFilter()
             .Where(v => v.TenantId == tenantId && v.ItemId == item.Id).MaxAsync(v => (int?)v.VersionNo, ct) ?? 0) + 1;
         var version = new ContentVersion
         {
-            Id = Guid.NewGuid(), TenantId = tenantId, ItemId = item.Id, VersionNo = next, DataJson = data?.ToJsonString() ?? "{}",
+            Id = Guid.NewGuid(), TenantId = tenantId, ItemId = item.Id, VersionNo = next, DataJson = data?.GetRawText() ?? "{}",
         };
         db.ContentVersions.Add(version);
         item.CurrentDraftVersionId = version.Id;
@@ -151,6 +157,10 @@ public sealed class ContentConfigKind(CmsDbContext db) : IEnvironmentConfigKind
         var instance = await db.PluginInstances.IgnoreTenantFilter()
                            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == app, ct)
                        ?? throw new EnvironmentConfigException($"there is no app '{app}' here for '{key}'; deploy the app first");
+        if (!Cms.ContentEndpoints.PluginDeclaresType(catalog, instance.PluginId, type))
+        {
+            throw new EnvironmentConfigException($"app '{app}' here has no content type '{type}'");
+        }
         var item = new ContentItem
         {
             Id = Guid.NewGuid(), TenantId = tenantId, PluginInstanceId = instance.Id, ContentType = type, Slug = slug,

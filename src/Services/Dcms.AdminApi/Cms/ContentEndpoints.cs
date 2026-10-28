@@ -447,7 +447,7 @@ public static class ContentEndpoints
         item.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    private static bool PluginDeclaresType(IPluginCatalog catalog, string pluginId, string contentType)
+    internal static bool PluginDeclaresType(IPluginCatalog catalog, string pluginId, string contentType)
         => catalog.Find(pluginId)?.ContentTypes.Any(t => t.Name == contentType) ?? false;
 
     /// <summary>
@@ -473,7 +473,7 @@ public static class ContentEndpoints
     /// unknown, declares no rich-text field, or nothing needed changing — so an unchanged save
     /// still round-trips byte-for-byte.
     /// </summary>
-    private static JsonElement? SanitizeRichText(
+    internal static JsonElement? SanitizeRichText(
         JsonElement? data, IPluginCatalog catalog, string pluginId, string contentType)
     {
         if (data is not { ValueKind: JsonValueKind.Object } obj) return data;
