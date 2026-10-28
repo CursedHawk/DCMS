@@ -107,3 +107,44 @@ test('an environment uses a service environment’s tables for what is granted',
   await expect.poll(() => api.requestsTo('POST', `/api/admin/environments/${DEV}/links`).map((r) => r.body))
     .toEqual([{ kind: 'tables', targetEnvironmentId: TENANT.tenantId, targetKey: 'crm', grants: ['companies:read', 'deals:create'] }]);
 });
+
+test('the palette switches environment', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  await page.goto('/media');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  await page.keyboard.press('ControlOrMeta+k');
+  const palette = page.getByRole('dialog');
+  await palette.getByRole('combobox').fill('development');
+  // Only the others: production is where you are.
+  await expect(palette.getByRole('option', { name: 'Switch to production' })).toHaveCount(0);
+  await palette.getByRole('option', { name: 'Switch to development' }).click();
+  await expect.poll(() => page.evaluate((slug) => localStorage.getItem(`dcms.environment:${slug}`), TENANT.slug)).toBe('development');
+});
+
+test('one item is owned otherwise than its kind', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('GET', `/api/admin/environments/${TENANT.tenantId}/policies`, [{ kind: 'content', itemKey: 'news/post/old', mode: 'Local' }]);
+  await page.goto('/settings/environments');
+
+  // production is listed last.
+  await page.getByLabel('Kind of the exception').last().click();
+  await page.getByRole('option', { name: 'Published content' }).click();
+  await page.getByLabel('Item', { exact: true }).last().fill('news/post/legal');
+  await page.getByRole('button', { name: 'Add exception' }).last().click();
+  await expect.poll(() => api.requestsTo('PUT', `/api/admin/environments/${TENANT.tenantId}/policies`).map((r) => r.body)).toEqual([[
+    { kind: 'content', itemKey: 'news/post/old', mode: 'Local' },
+    { kind: 'content', itemKey: 'news/post/legal', mode: 'Local' },
+  ]]);
+
+  await page.getByRole('button', { name: 'Remove the exception for news/post/old' }).click();
+  await expect.poll(() => api.requestsTo('PUT', `/api/admin/environments/${TENANT.tenantId}/policies`).at(-1)?.body).toEqual([]);
+});
+
+test('a screen this environment leaves to deployments says where to change it', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('GET', `/api/admin/environments/${TENANT.tenantId}/policies`, [{ kind: 'roles', itemKey: null, mode: 'Managed' }]);
+  await page.goto('/settings/roles');
+  await expect(page.getByText('Managed by deployments')).toBeVisible();
+  await expect(page.getByText(/takes this from development/)).toBeVisible();
+});

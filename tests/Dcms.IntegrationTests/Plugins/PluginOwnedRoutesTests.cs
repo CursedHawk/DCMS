@@ -146,6 +146,55 @@ public sealed class PluginOwnedRoutesTests(ContentFlowFixture fixture)
     }
 
     [DockerFact]
+    public async Task Each_environment_sees_its_own_sites_traffic()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var owner = Guid.NewGuid();
+        var tenant = "envstats-" + Guid.NewGuid().ToString("N")[..8];
+        var admin = fixture.Admin.CreateClient();
+        var created = await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/tenants", SuperAdmin, "", "SuperAdmin",
+            new { slug = tenant, name = tenant, ownerUserId = owner, ownerEmail = $"{owner:N}@dcms.test" }), ct);
+        var tenantId = (await created.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("tenantId").GetGuid();
+        (await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, tenant,
+            body: new { pluginId = "analytics", slug = "stats", name = "Stats", config = "{}" }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        (await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, tenant, body: new { name = "development" }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        HttpRequestMessage Dev(HttpMethod method, string url, object? body = null)
+        {
+            var req = Req(method, url, owner, tenant, body: body);
+            req.Headers.Add("X-Dcms-Environment", "development");
+            return req;
+        }
+        var site = await admin.SendAsync(Dev(HttpMethod.Post, "/api/admin/sites", new { name = "Draft", renderMode = "StaticPrerender" }), ct);
+        site.StatusCode.Should().Be(HttpStatusCode.Created, await site.Content.ReadAsStringAsync(ct));
+        var devSite = (await site.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+
+        await fixture.Admin.Services.GetRequiredService<IEventPublisher>().PublishAsync(Subjects.AnalyticsEvents,
+            new AnalyticsEventBatch(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId,
+            [
+                new AnalyticsEvent(DateTimeOffset.UtcNow, "pageview", "/unclaimed", null, "s1", null, null),
+                new AnalyticsEvent(DateTimeOffset.UtcNow, "pageview", "/draft", null, "s2", null, null, SiteId: devSite),
+            ]), ct);
+
+        async Task<List<string>> PathsAsync(HttpRequestMessage req)
+        {
+            var res = await admin.SendAsync(req, ct);
+            res.StatusCode.Should().Be(HttpStatusCode.OK, await res.Content.ReadAsStringAsync(ct));
+            return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("topPaths").EnumerateArray()
+                .Select(p => p.GetProperty("path").GetString()!).ToList();
+        }
+        var production = new List<string>();
+        for (var deadline = DateTime.UtcNow.AddSeconds(30); DateTime.UtcNow < deadline && production.Count == 0; await Task.Delay(250, ct))
+        {
+            production = await PathsAsync(Req(HttpMethod.Get, "/api/admin/analytics?days=1", owner, tenant));
+        }
+        production.Should().Equal("/unclaimed");
+        (await PathsAsync(Dev(HttpMethod.Get, "/api/admin/analytics?days=1"))).Should().Equal("/draft");
+    }
+
+    [DockerFact]
     public async Task Branding_and_form_review_are_served_by_their_plugins()
     {
         var ct = TestContext.Current.CancellationToken;

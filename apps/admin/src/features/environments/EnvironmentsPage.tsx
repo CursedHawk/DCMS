@@ -316,7 +316,7 @@ function EnvironmentCard({
 
 /**
  * Who owns each kind of configuration here: edited here and deployed into (mixed), edited here
- * only (local), or deployments only (managed). Item-level exceptions set through the API are kept.
+ * only (local), or deployments only (managed). Item-level exceptions override the kind for one item.
  */
 function OwnershipGrid({ environmentId }: { environmentId: string }) {
   const { t } = useTranslation();
@@ -332,6 +332,17 @@ function OwnershipGrid({ environmentId }: { environmentId: string }) {
       ...list.filter((p) => p.itemKey != null),
       ...CONFIG_KINDS.map((kind): Policy => ({ kind, itemKey: null, mode: 'Managed' })),
     ]);
+  // One item of a kind owned otherwise than the kind: production's legal page kept Local while
+  // the rest of its content comes from deployments, one role left to the pipeline.
+  const exceptions = list.filter((p) => p.itemKey != null);
+  const [exceptionKind, setExceptionKind] = useState<string>(POLICY_KINDS[0]);
+  const [exceptionKey, setExceptionKey] = useState('');
+  const [exceptionMode, setExceptionMode] = useState<Ownership>('Local');
+  const addException = () => {
+    const key = exceptionKey.trim();
+    write([...list.filter((p) => !(p.kind === exceptionKind && p.itemKey === key)), { kind: exceptionKind, itemKey: key, mode: exceptionMode }]);
+    setExceptionKey('');
+  };
 
   if (policies.isError) return <LoadFailed onRetry={() => void policies.refetch()} />;
   return (
@@ -359,6 +370,58 @@ function OwnershipGrid({ environmentId }: { environmentId: string }) {
       <div>
         <Button variant="outline" size="sm" onClick={lockAll}>
           <Lock className="h-4 w-4" /> {t('environments.lockToPipeline')}
+        </Button>
+      </div>
+      <p className="mt-2 text-xs font-medium text-muted-foreground">{t('environments.exceptions')}</p>
+      {exceptions.map((p) => (
+        <div key={`${p.kind}/${p.itemKey}`} className="flex items-center gap-2 text-sm">
+          <Badge tone="outline">{t(`deployments.kinds.${p.kind}`, { defaultValue: p.kind })}</Badge>
+          <span className="min-w-0 truncate font-mono text-xs">{p.itemKey}</span>
+          <span className="text-muted-foreground">{t(`environments.modes.${p.mode}`)}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label={t('environments.removeException', { item: p.itemKey })}
+            onClick={() => write(list.filter((x) => !(x.kind === p.kind && x.itemKey === p.itemKey)))}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Select value={exceptionKind} onValueChange={setExceptionKind}>
+          <SelectTrigger className="sm:w-44" aria-label={t('environments.exceptionKind')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {POLICY_KINDS.map((kind) => (
+              <SelectItem key={kind} value={kind}>
+                {t(`deployments.kinds.${kind}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          aria-label={t('environments.exceptionKey')}
+          placeholder={t('environments.exceptionKeyHint')}
+          value={exceptionKey}
+          onChange={(e) => setExceptionKey(e.target.value)}
+        />
+        <Select value={exceptionMode} onValueChange={(m) => setExceptionMode(m as Ownership)}>
+          <SelectTrigger className="sm:w-40" aria-label={t('environments.exceptionMode')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(['Mixed', 'Local', 'Managed'] as const).map((mode) => (
+              <SelectItem key={mode} value={mode}>
+                {t(`environments.modes.${mode}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" disabled={!exceptionKey.trim()} onClick={addException}>
+          <Plus className="h-4 w-4" /> {t('environments.addException')}
         </Button>
       </div>
     </fieldset>

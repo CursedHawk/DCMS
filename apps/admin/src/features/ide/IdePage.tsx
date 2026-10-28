@@ -50,9 +50,12 @@ import { usePreview } from './preview/usePreview';
 import { StarterPicker } from './StarterPicker';
 import { useGeneratedApi } from './generated/useGeneratedApi';
 import { ensurePaletteTypes } from './types/palette';
+import { ManagedNotice } from '../environments/ManagedNotice';
 
 interface SiteData {
   name: string;
+  /** What environment policies name the site by (ADR 0028). */
+  environmentKey?: string;
 }
 
 // The code IDE surface for Mode B (ReactApp) sites. The file map is a per-user,
@@ -477,6 +480,11 @@ export function IdePage({ siteId }: { siteId: string }) {
           <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
         </Button>
       </EditorHeader>
+      {/* The release branch of a site deployments manage is theirs: the IDE edits and publishes
+          the working branch, and only a deployment moves the release. */}
+      <div className="px-3 pt-2 empty:hidden">
+        <ManagedNotice kind="sites" itemKey={site.data?.environmentKey} />
+      </div>
 
       {/* Publishing from a non-release branch: complete the merge into release. */}
       <MergeDialog

@@ -20,6 +20,7 @@ import {
 import { api } from '../../lib/api';
 import { usePluginCatalog, usePluginInstances } from './api';
 import { InstallPluginDialog } from './InstallPluginDialog';
+import { ManagedNotice } from '../environments/ManagedNotice';
 
 export function PluginsPage() {
   const { t } = useTranslation();
@@ -65,6 +66,7 @@ export function PluginsPage() {
   return (
     <Page>
       <PageHeader title={t('plugins.title')} description={t('plugins.subtitle')} actions={browse} />
+      <ManagedNotice kind="plugins" />
       {instances.isLoading ? (
         <CenteredSpinner />
       ) : instances.isError ? (

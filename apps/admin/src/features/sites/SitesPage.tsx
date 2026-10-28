@@ -30,6 +30,7 @@ import {
   LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { ManagedNotice } from '../environments/ManagedNotice';
 interface SiteSummary {
   id: string;
   name: string;
@@ -122,6 +123,7 @@ export function SitesPage() {
           </Dialog>
         }
       />
+      <ManagedNotice kind="sites" />
 
       {sites.isLoading ? (
         <CenteredSpinner />

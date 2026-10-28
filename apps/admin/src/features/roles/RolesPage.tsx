@@ -25,6 +25,7 @@ import {
 import { api } from '../../lib/api';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
 import { PermissionMatrix } from './PermissionMatrix';
+import { ManagedNotice } from '../environments/ManagedNotice';
 
 export function RolesPage() {
   const { t } = useTranslation();
@@ -170,6 +171,7 @@ export function RolesPage() {
           </Button>
         }
       />
+      <ManagedNotice kind="roles" />
 
       <DataTable
         rows={roles.data}

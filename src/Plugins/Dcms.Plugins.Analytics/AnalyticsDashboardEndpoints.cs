@@ -34,10 +34,13 @@ internal static class AnalyticsDashboardEndpoints
     {
         app.MapGet("/api/admin/analytics", async (
             int? days, DateTimeOffset? from, DateTimeOffset? to, string? type, string? path,
-            string? country, string? device, string? site, string? host, AnalyticsDbContext db,
+            string? country, string? device, string? site, string? host, AnalyticsDbContext db, SitesDbContext sitesDb,
             ITenantContext tenant, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
+            // Events are the workspace's and name their site; "all sites" is this environment's
+            // sites (ADR 0028), and hits no site claims count in production only.
+            var scope = tenant.HasEnvironments ? await EnvironmentSitesAsync(sitesDb, tenant, ct) : null;
             var (start, end) = ResolveRange(days, from, to);
 
             // `site` is a site id, or "none" for hits no site claims (externally hosted sites
@@ -65,6 +68,11 @@ internal static class AnalyticsDashboardEndpoints
                 .Where(e => e.TenantId == tenantId && e.OccurredAt >= start && e.OccurredAt < end);
             if (siteId == Guid.Empty) events = events.Where(e => e.SiteId == null);
             else if (siteId is { } only) events = events.Where(e => e.SiteId == only);
+            if (scope is not null)
+            {
+                var noSite = scope.Contains(Guid.Empty);
+                events = events.Where(e => e.SiteId == null ? noSite : scope.Contains(e.SiteId.Value));
+            }
             if (!string.IsNullOrWhiteSpace(host)) events = events.Where(e => e.Hostname == host);
             if (!string.IsNullOrWhiteSpace(type)) events = events.Where(e => e.Type == type);
             if (!string.IsNullOrWhiteSpace(country)) events = events.Where(e => e.Country == country);
@@ -97,7 +105,7 @@ internal static class AnalyticsDashboardEndpoints
                         new DateOnly(x.Year, x.Month, x.Day).ToString("yyyy-MM-dd"), x.Events, x.Visitors))
                     .OrderBy(x => x.Day)
                     .ToList()
-                : await UnfilteredSeriesAsync(db, tenantId, siteId, startDay, endDay, events, ct);
+                : await UnfilteredSeriesAsync(db, tenantId, siteId, scope, startDay, endDay, events, ct);
 
             var topPaths = await events
                 .GroupBy(e => e.Path)
@@ -240,18 +248,29 @@ internal static class AnalyticsDashboardEndpoints
 
     private sealed record DayPoint(string Day, long Events, long Visitors);
 
+    /// <summary>The sites of the request's environment, and Guid.Empty ("no site") in production.</summary>
+    private static async Task<List<Guid>> EnvironmentSitesAsync(SitesDbContext sitesDb, ITenantContext tenant, CancellationToken ct)
+    {
+        // rls: request tenant and environment -- the environment filter keeps it to this one's sites.
+        var ids = await sitesDb.Sites.AsNoTracking().Where(s => s.TenantId == tenant.TenantId).Select(s => s.Id).ToListAsync(ct);
+        if (tenant.EnvironmentId == tenant.TenantId) ids.Add(Guid.Empty);
+        return ids;
+    }
+
     /// <summary>
     /// The unfiltered time series: event counts from the rollups (cheap), unique
     /// visitors per day from the raw events (the rollups cannot carry them).
     /// </summary>
     private static async Task<List<DayPoint>> UnfilteredSeriesAsync(
-        AnalyticsDbContext db, Guid tenantId, Guid? siteId, DateOnly startDay, DateOnly endDay,
+        AnalyticsDbContext db, Guid tenantId, Guid? siteId, IReadOnlyCollection<Guid>? scope, DateOnly startDay, DateOnly endDay,
         IQueryable<Shared.Data.Analytics.AnalyticsEvent> events, CancellationToken ct)
     {
-        // Rollups store "no site" as Guid.Empty, which is also how the caller spells it.
+        // Rollups store "no site" as Guid.Empty, which is also how the caller spells it, and how
+        // the environment's scope names it.
         var counts = await db.DailyRollups.AsNoTracking()
             .Where(r => r.TenantId == tenantId && r.Day >= startDay && r.Day <= endDay)
             .Where(r => siteId == null || r.SiteId == siteId)
+            .Where(r => scope == null || scope.Contains(r.SiteId))
             .GroupBy(r => r.Day)
             .Select(g => new { Day = g.Key, Count = g.Sum(r => r.Count) })
             .ToListAsync(ct);

@@ -91,6 +91,8 @@ public static class SiteEndpoints
                 id = site.Id,
                 name = site.Name,
                 renderMode = site.RenderMode.ToString(),
+                // What environment policies name the site by: the same in every environment (ADR 0026).
+                environmentKey = site.KeyAcrossEnvironments,
                 activeBuildId = site.ActiveBuildId,
                 // Optimistic-concurrency baseline for the IDE: the version bumps on
                 // every save, and each file's hash lets a granular save detect that

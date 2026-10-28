@@ -33,6 +33,7 @@ import { api } from '../../lib/api';
 import { SlugField } from '../../components/SlugField';
 import { useAutoSlug } from '../../lib/slug';
 import { CONNECTIONS_KEY, type ApiConnection } from './api';
+import { ManagedNotice } from '../environments/ManagedNotice';
 
 /**
  * External API connections (Mode D backlog #124). DCMS calls the API with the key, on a
@@ -75,6 +76,7 @@ export function ConnectionsPage() {
           </Button>
         }
       />
+      <ManagedNotice kind="api-connections" />
       {connections.isLoading ? (
         <CenteredSpinner />
       ) : connections.isError ? (

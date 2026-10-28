@@ -2,13 +2,14 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bell, Loader, PanelsTopLeft, Plug, Settings, UserCog, type LucideIcon } from 'lucide-react';
+import { Bell, Layers, Loader, PanelsTopLeft, Plug, Settings, UserCog, type LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, usePermissions } from '@dcms/ui';
 import { api } from '../lib/api';
 import { Perm, can, type MyPermissions } from '../lib/permissions';
 import { usePluginInstances } from '../features/plugins/api';
-import { getCurrentTenantSlug } from '../tenants';
+import { getCurrentEnvironment, getCurrentTenantSlug, switchEnvironment } from '../tenants';
+import { useEnvironments } from '../features/environments/api';
 import { NAV, navGroup } from './nav';
 import { iconByName, navLabel, useNavigation, type NavResponseItem } from './navApi';
 import { SETTINGS_SECTIONS } from './routeGuards';
@@ -145,6 +146,12 @@ export function CommandPalette({
     queryFn: () => api.get<{ id: string; name: string }[]>('/admin/sites'),
   });
   const instances = usePluginInstances(open && can(me, Perm.PluginsManage));
+  // The workspace's other environments the member can open: switching is a full load (ADR 0028).
+  const environments = useEnvironments();
+  const currentEnvironment = getCurrentEnvironment() ?? 'production';
+  const switchable = open && environments.data?.enabled
+    ? environments.data.environments.filter((e) => e.name !== currentEnvironment && (e.isMember || me?.isSuperAdmin))
+    : [];
 
   const items = paletteItems(me, nav.data?.items, t, i18n.language, {
     sites: sites.data,
@@ -226,6 +233,25 @@ export function CommandPalette({
             {search.trim() === '' && recent.length > 0 ? (
               <Command.Group heading={t('palette.recent')} className={heading}>
                 {recent.map((item) => row(item, 'recent:'))}
+              </Command.Group>
+            ) : null}
+            {switchable.length > 0 ? (
+              <Command.Group heading={t('environments.title')} className={heading}>
+                {switchable.map((e) => (
+                  <Command.Item
+                    key={`environment:${e.id}`}
+                    value={`environment:${e.id}`}
+                    keywords={[t('environments.switchTo', { name: e.name }), e.name]}
+                    onSelect={() => {
+                      onOpenChange(false);
+                      switchEnvironment(e.name);
+                    }}
+                    className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
+                  >
+                    <Layers className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="min-w-0 truncate">{t('environments.switchTo', { name: e.name })}</span>
+                  </Command.Item>
+                ))}
               </Command.Group>
             ) : null}
             {groups.map((g) => {

@@ -196,9 +196,10 @@ export const CONFIG_KINDS = ['roles', 'plugins', 'api-connections', 'sites', 'us
 /** Every kind a policy can name: configuration, and published content (ADR 0028), which a deployment carries only when ticked. */
 export const POLICY_KINDS = [...CONFIG_KINDS, 'links', 'content'] as const;
 
-export const usePolicies = (environmentId: string) =>
+export const usePolicies = (environmentId: string | undefined) =>
   useQuery({
     queryKey: ['environments', 'policies', environmentId],
+    enabled: !!environmentId,
     queryFn: () => api.get<Policy[]>(`/admin/environments/${environmentId}/policies`),
   });
 
