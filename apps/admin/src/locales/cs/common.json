@@ -2349,6 +2349,7 @@
     "nothingChanged": "Od poslední migrace se nic nezměnilo.",
     "migrationName": "Název migrace",
     "migrationDescription": "Co dělá (nepovinné)",
+    "include": "Zahrnout {{name}} do migrace",
     "createMigration_one": "Vytvořit migraci z {{count}} změny",
     "createMigration_few": "Vytvořit migraci z {{count}} změn",
     "createMigration_many": "Vytvořit migraci z {{count}} změn",
@@ -2378,10 +2379,16 @@
     "before": "Před",
     "after": "Po",
     "current": "Teď v tomto prostředí",
+    "merged": "Výsledek zde",
+    "orPerPath": "Nebo rozhodněte tam, kde obě strany změnily totéž:",
+    "ours": "Tohoto prostředí",
+    "theirs": "Nasazované",
     "resolve": "Co s tímto konfliktem",
     "resolutions": {
       "overwrite": "Přepsat nasazovanou verzí",
-      "skip": "Ponechat verzi tohoto prostředí"
+      "skip": "Ponechat verzi tohoto prostředí",
+      "ours": "Ponechat z tohoto prostředí",
+      "theirs": "Převzít nasazované"
     },
     "ops": {
       "add": "přidáno",
@@ -2391,6 +2398,7 @@
     "outcomes": {
       "apply": "Použije se",
       "already": "Už je zde",
+      "merge": "Sloučí se",
       "conflict": "Konflikt",
       "local": "Ponecháno místně"
     },

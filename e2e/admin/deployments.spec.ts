@@ -43,6 +43,21 @@ test('unpublished changes become a named migration', async ({ page, api }) => {
     .toEqual([{ name: 'Add editors' }]);
 });
 
+test('a change left unticked stays out of the migration', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments/changes', [
+    change('roles/Editors', null, null, { System: false, Permissions: ['content:read'] }),
+    change('roles/Reviewers', null, null, { System: false, Permissions: ['content:read'] }),
+  ]);
+  api.on('POST', '/api/admin/environments/migrations', migration('m1', 'Editors', []));
+  await page.goto('/deployments');
+
+  await page.getByRole('checkbox', { name: 'Include Reviewers in the migration' }).click();
+  await page.getByLabel('Migration name').fill('Editors');
+  await page.getByRole('button', { name: 'Create migration of 1 change' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/environments/migrations').map((r) => r.body))
+    .toEqual([{ name: 'Editors', changes: ['roles/Editors'] }]);
+});
+
 test('a conflict must be decided before the deployment can run', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments/pending', [{
     migration: migration('m2', 'Editors publish', []),
@@ -61,6 +76,28 @@ test('a conflict must be decided before the deployment can run', async ({ page, 
   await deploy.click();
   await expect.poll(() => api.requestsTo('POST', '/api/admin/environments/pending/apply').map((r) => r.body))
     .toEqual([{ from: DEV, upTo: 'm2', resolutions: { 'm2/roles/Editors': 'overwrite' } }]);
+});
+
+test('a conflict can be decided path by path, keeping what merged cleanly', async ({ page, api }) => {
+  const app = (label: string, color: string) => ({ tables: [{ id: 't1', label, color }] });
+  api.on('GET', '/api/admin/environments/pending', [{
+    migration: migration('m3', 'Deal colours', []),
+    changes: [{
+      ...change('dynamic-apps/crm', 'conflict', app('Deals', 'red'), app('Their deals', 'blue'), app('Our deals', 'red')),
+      merged: app('Their deals', 'blue'),
+      conflicts: [{ path: '/tables/t1/label', ours: 'Our deals', theirs: 'Their deals' }],
+    }],
+  }]);
+  api.on('POST', '/api/admin/environments/pending/apply', { jobId: 'j3' });
+  await page.goto('/deployments');
+
+  const deploy = page.getByRole('button', { name: 'Deploy', exact: true });
+  await expect(deploy).toBeDisabled();
+  await expect(page.getByText('/tables/t1/label').first()).toBeVisible();
+  await page.getByLabel("Keep this environment's", { exact: true }).check();
+  await deploy.click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/environments/pending/apply').map((r) => r.body))
+    .toEqual([{ from: DEV, upTo: 'm3', resolutions: { 'm3/dynamic-apps/crm#/tables/t1/label': 'ours' } }]);
 });
 
 test('the latest migration rolls back after its plan is shown', async ({ page, api }) => {

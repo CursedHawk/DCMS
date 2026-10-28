@@ -2303,6 +2303,7 @@
     "nothingChanged": "Nothing has changed since the last migration.",
     "migrationName": "Migration name",
     "migrationDescription": "What it does (optional)",
+    "include": "Include {{name}} in the migration",
     "createMigration_one": "Create migration of {{count}} change",
     "createMigration_other": "Create migration of {{count}} changes",
     "cut": "Migration created. Environments that deploy from here will see it as pending.",
@@ -2326,10 +2327,16 @@
     "before": "Before",
     "after": "After",
     "current": "In this environment now",
+    "merged": "Result here",
+    "orPerPath": "Or decide where both changed the same thing:",
+    "ours": "This environment's",
+    "theirs": "Deployed",
     "resolve": "What to do with this conflict",
     "resolutions": {
       "overwrite": "Overwrite with the deployed version",
-      "skip": "Keep this environment's version"
+      "skip": "Keep this environment's version",
+      "ours": "Keep this environment's",
+      "theirs": "Take the deployed one"
     },
     "ops": {
       "add": "added",
@@ -2339,6 +2346,7 @@
     "outcomes": {
       "apply": "Applies",
       "already": "Already here",
+      "merge": "Merges",
       "conflict": "Conflict",
       "local": "Kept locally"
     },

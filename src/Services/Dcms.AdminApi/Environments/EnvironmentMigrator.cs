@@ -22,13 +22,28 @@ public enum ChangeOutcome
     Apply,
     /// <summary>The target already holds the change's after: nothing to do.</summary>
     Already,
-    /// <summary>The target holds something else: the reviewer chooses overwrite or skip.</summary>
+    /// <summary>
+    /// The target changed the item too, elsewhere: the change merges into it field by field
+    /// (<see cref="JsonMerge"/>), keeping what the target did.
+    /// </summary>
+    Merge,
+    /// <summary>
+    /// Both changed the same field differently (<see cref="ReviewedChange.Conflicts"/>), or one
+    /// side added or deleted the item: the reviewer chooses, per path or for the whole change.
+    /// </summary>
     Conflict,
     /// <summary>The target owns this item itself (<see cref="EnvironmentOwnership.Local"/>): skipped.</summary>
     Local,
 }
 
-public sealed record ReviewedChange(ConfigChange Change, ChangeOutcome Outcome, JsonElement? Current);
+/// <param name="Value">
+/// What applying writes: the change's after, or the merge of it into <paramref name="Current"/>
+/// — for a conflict, with the migration's side taken wherever both changed.
+/// </param>
+public sealed record ReviewedChange(ConfigChange Change, ChangeOutcome Outcome, JsonElement? Current, JsonElement? Value, IReadOnlyList<MergeConflict> Conflicts);
+
+/// <summary>A change as it will be written, after the reviewer's choices.</summary>
+public sealed record ChangeWrite(ConfigChange Change, JsonElement? Value);
 
 /// <summary>Who a deployment runs for, captured when it was asked for; checked again when it runs.</summary>
 public sealed record EnvironmentApplier(Guid? UserId, bool IsSuperAdmin);
@@ -76,14 +91,20 @@ public sealed class EnvironmentMigrator(
     }
 
     /// <summary>Records the unpublished changes as a migration and moves the baseline past them; null when there are none.</summary>
+    /// <param name="only">
+    /// The changes to cut, by id (<c>kind/key</c>); null for all of them. The rest stay
+    /// unpublished, for a later migration -- one feature's changes, not everything done since.
+    /// </param>
     public async Task<EnvironmentMigration?> CutAsync(
-        TenantEnvironment environment, string name, string? description, Guid? userId, string? email, CancellationToken ct)
+        TenantEnvironment environment, string name, string? description, Guid? userId, string? email, CancellationToken ct,
+        IReadOnlyCollection<string>? only = null)
     {
         var current = await ExportAsync(environment, ct);
         var baseline = await BaselineAsync(environment, current, ct);
         var policies = await PoliciesAsync(environment, ct);
         var changes = Diff(baseline.Items, current)
             .Where(c => Ownership(policies, c.Kind, c.Key) != EnvironmentOwnership.Local)
+            .Where(c => only is null || only.Contains(c.Id))
             .ToList();
         if (changes.Count == 0) return null;
 
@@ -202,9 +223,9 @@ public sealed class EnvironmentMigrator(
             var reviewed = Review(Changes(migration), current, policies, forward: true);
             pending.Add(new PendingMigration(migration, reviewed));
             // Later migrations are reviewed against the target as this one will leave it.
-            foreach (var r in reviewed.Where(r => r.Outcome is ChangeOutcome.Apply or ChangeOutcome.Conflict))
+            foreach (var r in reviewed.Where(r => r.Outcome is ChangeOutcome.Apply or ChangeOutcome.Merge or ChangeOutcome.Conflict))
             {
-                SetItem(current, r.Change.Kind, r.Change.Key, r.Change.Label, r.Change.After);
+                SetItem(current, r.Change.Kind, r.Change.Key, r.Change.Label, r.Value);
             }
         }
         return pending;
@@ -214,8 +235,9 @@ public sealed class EnvironmentMigrator(
     /// Applies the pending migrations from <paramref name="source"/> up to and including
     /// <paramref name="upTo"/>, in order, each recorded in the target's history once all of its
     /// changes are in. A conflict needs a resolution in <paramref name="resolutions"/>
-    /// (<c>overwrite</c> or <c>skip</c>, keyed <c>{migrationId}/{changeId}</c>), except in an item the target lets
-    /// migrations own, where overwrite is the rule. Every write is authorised for
+    /// (<c>overwrite</c> or <c>skip</c> keyed <c>{migrationId}/{changeId}</c>, or <c>ours</c> or
+    /// <c>theirs</c> per conflicting path keyed <c>{migrationId}/{changeId}#{path}</c>), except in an
+    /// item the target lets migrations own, where overwrite is the rule. Every write is authorised for
     /// <paramref name="applier"/> before the first one is made.
     /// </summary>
     /// <returns>How many migrations were applied.</returns>
@@ -232,20 +254,20 @@ public sealed class EnvironmentMigrator(
         // was for every later change — to the outcome of those changes and to what they add.
         var policies = await PoliciesAsync(target, ct);
         var state = await ExportAsync(target, ct);
-        var plans = new List<(EnvironmentMigration Migration, List<ReviewedChange> Changes, Dictionary<string, string> Chosen)>();
+        var plans = new List<(EnvironmentMigration Migration, List<ReviewedChange> Changes, List<ChangeWrite> Writes, Dictionary<string, string> Chosen)>();
         foreach (var p in pending.Take(last + 1))
         {
             var reviewed = Review(Changes(p.Migration), state, policies, forward: true);
-            var chosen = Choose(p.Migration.MigrationId, reviewed, resolutions, policies);
-            foreach (var w in Writes(reviewed, chosen)) SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
-            plans.Add((p.Migration, reviewed, chosen));
+            var (writes, chosen) = Choose(p.Migration.MigrationId, reviewed, resolutions, policies);
+            foreach (var w in writes) SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Value);
+            plans.Add((p.Migration, reviewed, writes, chosen));
         }
-        var context = await AuthorizeAsync(target, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
+        var context = await AuthorizeAsync(target, applier, plans.SelectMany(p => p.Writes), ct);
 
-        foreach (var (migration, reviewed, chosen) in plans)
+        foreach (var (migration, reviewed, writes, chosen) in plans)
         {
-            await WriteAsync(target, Writes(reviewed, chosen), context, ct);
-            await RecordAsync(target, migration, reviewed, chosen, applier.UserId, forward: true, ct);
+            await WriteAsync(target, writes, context, ct);
+            await RecordAsync(target, migration, reviewed, writes, chosen, applier.UserId, forward: true, ct);
         }
         return plans.Count;
     }
@@ -257,44 +279,76 @@ public sealed class EnvironmentMigrator(
     {
         var (row, reviewed) = await RollbackPlanAsync(target, migrationId, ct);
         // A rollback restores what the migration replaced; no item is the target's to keep here.
-        var chosen = Choose(row.MigrationId, reviewed, resolutions, []);
-        var context = await AuthorizeAsync(target, applier, Writes(reviewed, chosen), ct);
-        await WriteAsync(target, Writes(reviewed, chosen), context, ct);
-        await RecordAsync(target, row, reviewed, chosen, applier.UserId, forward: false, ct);
+        var (writes, chosen) = Choose(row.MigrationId, reviewed, resolutions, []);
+        var context = await AuthorizeAsync(target, applier, writes, ct);
+        await WriteAsync(target, writes, context, ct);
+        await RecordAsync(target, row, reviewed, writes, chosen, applier.UserId, forward: false, ct);
         return row;
     }
 
     /// <summary>
-    /// The reviewer's choice for every conflict, keyed <c>{migrationId}/{changeId}</c> — one item can
-    /// change in several pending migrations, and each is decided on its own; overwrite where the
-    /// target lets migrations own the item. Returned keyed by change id, as the history records it.
+    /// What each change writes once the reviewer's choices are in: a whole-change choice keyed
+    /// <c>{migrationId}/{changeId}</c> (<c>overwrite</c> or <c>skip</c>), or one per conflicting path
+    /// keyed <c>{migrationId}/{changeId}#{path}</c> (<c>ours</c> or <c>theirs</c>) — one item can
+    /// change in several pending migrations, and each is decided on its own. Overwrite where the
+    /// target lets migrations own the item. The choices come back keyed by change id (and path),
+    /// as the history records them.
     /// </summary>
-    private static Dictionary<string, string> Choose(
+    private static (List<ChangeWrite> Writes, Dictionary<string, string> Chosen) Choose(
         Guid migrationId, IEnumerable<ReviewedChange> reviewed, IReadOnlyDictionary<string, string> resolutions,
         List<EnvironmentPolicy> policies)
     {
+        var writes = new List<ChangeWrite>();
         var chosen = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var r in reviewed.Where(r => r.Outcome == ChangeOutcome.Conflict))
+        foreach (var r in reviewed)
         {
-            var choice = resolutions.GetValueOrDefault($"{migrationId}/{r.Change.Id}")
-                ?? (Ownership(policies, r.Change.Kind, r.Change.Key) == EnvironmentOwnership.Managed ? "overwrite" : null)
-                ?? throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
-            if (choice is not ("overwrite" or "skip")) throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
-            chosen[r.Change.Id] = choice;
+            if (r.Outcome is ChangeOutcome.Apply or ChangeOutcome.Merge)
+            {
+                writes.Add(new ChangeWrite(r.Change, r.Value));
+                continue;
+            }
+            if (r.Outcome != ChangeOutcome.Conflict) continue;
+
+            var whole = resolutions.GetValueOrDefault($"{migrationId}/{r.Change.Id}")
+                ?? (Ownership(policies, r.Change.Kind, r.Change.Key) == EnvironmentOwnership.Managed ? "overwrite" : null);
+            if (whole is not null)
+            {
+                if (whole is not ("overwrite" or "skip")) throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
+                chosen[r.Change.Id] = whole;
+                if (whole == "overwrite") writes.Add(new ChangeWrite(r.Change, r.Value));
+                continue;
+            }
+            // The item as a whole (added on both sides, deleted on one) has no paths to choose between.
+            if (r.Conflicts.Any(c => c.Path.Length == 0)) throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
+            var paths = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var conflict in r.Conflicts)
+            {
+                var choice = resolutions.GetValueOrDefault($"{migrationId}/{r.Change.Id}#{conflict.Path}");
+                if (choice is not ("ours" or "theirs")) throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", $"{r.Change.Id}#{conflict.Path}");
+                paths[conflict.Path] = choice;
+                chosen[$"{r.Change.Id}#{conflict.Path}"] = choice;
+            }
+            var value = MergedValue(r.Change, r.Current, path => paths.GetValueOrDefault(path));
+            if (!Same(value, r.Current)) writes.Add(new ChangeWrite(r.Change, value));
         }
-        return chosen;
+        return (writes, chosen);
     }
 
-    private static IEnumerable<ReviewedChange> Writes(IEnumerable<ReviewedChange> reviewed, Dictionary<string, string> chosen) =>
-        reviewed.Where(r => r.Outcome == ChangeOutcome.Apply
-                            || (r.Outcome == ChangeOutcome.Conflict && chosen.GetValueOrDefault(r.Change.Id) == "overwrite"));
+    /// <summary>The change merged into <paramref name="current"/>, conflicts settled by <paramref name="choose"/>.</summary>
+    private static JsonElement? MergedValue(ConfigChange change, JsonElement? current, Func<string, string?> choose)
+    {
+        var (merged, _) = JsonMerge.ThreeWay(Node(change.Before), Node(current), Node(change.After), choose);
+        return merged is null ? null : JsonSerializer.SerializeToElement(merged);
+    }
+
+    private static JsonNode? Node(JsonElement? element) => element is { } e ? JsonNode.Parse(e.GetRawText()) : null;
 
     /// <summary>
     /// Refuses the whole deployment unless the applier could make every one of its writes by hand
     /// in the target: each kind's own permission, and for roles every permission a change adds —
     /// the rule that stops a role editor from minting a role beyond their own (SEC-06).
     /// </summary>
-    private async Task<EnvironmentApplyContext> AuthorizeAsync(TenantEnvironment target, EnvironmentApplier applier, IEnumerable<ReviewedChange> writes, CancellationToken ct)
+    private async Task<EnvironmentApplyContext> AuthorizeAsync(TenantEnvironment target, EnvironmentApplier applier, IEnumerable<ChangeWrite> writes, CancellationToken ct)
     {
         if (applier.IsSuperAdmin) return new EnvironmentApplyContext(null);
         IReadOnlySet<string> held = new HashSet<string>();
@@ -312,7 +366,7 @@ public sealed class EnvironmentMigrator(
             {
                 throw new EnvironmentMigrationException("environments.errors.notAllowed", needed);
             }
-            if (w.Change.After is { } after)
+            if (w.Value is { } after)
             {
                 using var rls = target.Scope();
                 if ((await kind.PermissionsForAsync(target.TenantId, w.Change.Key, after, ct)).FirstOrDefault(p => !held.Contains(p)) is { } lacking)
@@ -323,24 +377,24 @@ public sealed class EnvironmentMigrator(
             if (w.Change.Kind == "roles")
             {
                 JsonElement? now = state.TryGetValue("roles", out var roles) && roles.TryGetValue(w.Change.Key, out var role) ? role.Value : null;
-                if (Kinds.RolesConfigKind.Added(now, w.Change.After).FirstOrDefault(p => !held.Contains(p)) is { } beyond)
+                if (Kinds.RolesConfigKind.Added(now, w.Value).FirstOrDefault(p => !held.Contains(p)) is { } beyond)
                 {
                     throw new EnvironmentMigrationException("environments.errors.notAllowed", beyond);
                 }
             }
-            SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
+            SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Value);
         }
         return new EnvironmentApplyContext(held);
     }
 
-    private async Task WriteAsync(TenantEnvironment target, IEnumerable<ReviewedChange> writes, EnvironmentApplyContext context, CancellationToken ct)
+    private async Task WriteAsync(TenantEnvironment target, IEnumerable<ChangeWrite> writes, EnvironmentApplyContext context, CancellationToken ct)
     {
         foreach (var w in writes)
         {
             using var rls = target.Scope();
             try
             {
-                await KindOf(w.Change.Kind).ApplyAsync(target.TenantId, w.Change.Key, w.Change.After, context, ct);
+                await KindOf(w.Change.Kind).ApplyAsync(target.TenantId, w.Change.Key, w.Value, context, ct);
             }
             catch (EnvironmentConfigException ex)
             {
@@ -374,20 +428,21 @@ public sealed class EnvironmentMigrator(
     }
 
     private async Task RecordAsync(
-        TenantEnvironment target, EnvironmentMigration migration, IReadOnlyList<ReviewedChange> reviewed,
+        TenantEnvironment target, EnvironmentMigration migration, IReadOnlyList<ReviewedChange> reviewed, IReadOnlyList<ChangeWrite> writes,
         Dictionary<string, string> chosen, Guid? userId, bool forward, CancellationToken ct)
     {
         using var rls = target.Scope();
         var current = await ExportAsync(target, ct);
         var baseline = await BaselineAsync(target, current, ct);
-        // The baseline follows what the migration wrote, so it is not mistaken for a local edit
-        // and cut again here; what was skipped stays a difference, which it is.
-        foreach (var r in reviewed)
+        // The baseline takes what the migration changed, so that is not mistaken for a local edit
+        // and cut again here. Only the migration's own change, merged into the baseline: the
+        // target's edits not yet cut stay a difference, as does whatever was skipped or kept.
+        var wrote = writes.Select(w => w.Change.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var r in reviewed.Where(r => r.Outcome == ChangeOutcome.Already || wrote.Contains(r.Change.Id)))
         {
-            var wrote = r.Outcome == ChangeOutcome.Apply
-                        || (r.Outcome == ChangeOutcome.Conflict && chosen.GetValueOrDefault(r.Change.Id) == "overwrite")
-                        || r.Outcome == ChangeOutcome.Already;
-            if (wrote) Set(baseline.Items, r.Change.Kind, r.Change.Key, r.Change.After);
+            JsonElement? held = baseline.Items.TryGetValue(r.Change.Kind, out var items) && items.TryGetValue(r.Change.Key, out var b) ? b : null;
+            Set(baseline.Items, r.Change.Kind, r.Change.Key,
+                r.Change.Before is null || r.Change.After is null || held is null ? r.Change.After : MergedValue(r.Change, held, _ => "theirs"));
         }
         baseline.Row.ItemsJson = Serialize(baseline.Items);
         baseline.Row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -433,12 +488,30 @@ public sealed class EnvironmentMigrator(
             JsonElement? now = current.TryGetValue(change.Kind, out var items) && items.TryGetValue(change.Key, out var item)
                 ? item.Value
                 : null;
-            var outcome = forward && Ownership(policies, change.Kind, change.Key) == EnvironmentOwnership.Local
-                ? ChangeOutcome.Local
-                : Same(now, change.After) ? ChangeOutcome.Already
-                : Same(now, change.Before) ? ChangeOutcome.Apply
-                : ChangeOutcome.Conflict;
-            reviewed.Add(new ReviewedChange(change, outcome, now));
+            if (forward && Ownership(policies, change.Kind, change.Key) == EnvironmentOwnership.Local)
+            {
+                reviewed.Add(new ReviewedChange(change, ChangeOutcome.Local, now, now, []));
+            }
+            else if (Same(now, change.After))
+            {
+                reviewed.Add(new ReviewedChange(change, ChangeOutcome.Already, now, now, []));
+            }
+            else if (Same(now, change.Before))
+            {
+                reviewed.Add(new ReviewedChange(change, ChangeOutcome.Apply, now, change.After, []));
+            }
+            else if (now is null || change.Before is null || change.After is null)
+            {
+                // Added on both sides, or deleted on one side and changed on the other: the whole item.
+                reviewed.Add(new ReviewedChange(change, ChangeOutcome.Conflict, now, change.After,
+                    [new MergeConflict("", Node(now), Node(change.After))]));
+            }
+            else
+            {
+                var (_, conflicts) = JsonMerge.ThreeWay(Node(change.Before), Node(now), Node(change.After));
+                reviewed.Add(new ReviewedChange(change, conflicts.Count == 0 ? ChangeOutcome.Merge : ChangeOutcome.Conflict,
+                    now, MergedValue(change, now, _ => "theirs"), conflicts));
+            }
         }
         return reviewed;
     }

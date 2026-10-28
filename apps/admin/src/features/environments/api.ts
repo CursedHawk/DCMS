@@ -71,7 +71,17 @@ export interface ConfigChange {
   before: unknown;
   after: unknown;
   current?: unknown;
-  outcome?: 'apply' | 'already' | 'conflict' | 'local' | null;
+  outcome?: 'apply' | 'already' | 'merge' | 'conflict' | 'local' | null;
+  /** What applying writes when the change merges into what this environment changed itself. */
+  merged?: unknown;
+  /** Where both sides changed the same thing differently; an empty path is the whole item. */
+  conflicts?: MergeConflict[] | null;
+}
+
+export interface MergeConflict {
+  path: string;
+  ours: unknown;
+  theirs: unknown;
 }
 
 export interface Migration {
@@ -93,8 +103,23 @@ export interface Reviewed {
   changes: ConfigChange[];
 }
 
-/** Keyed `{migrationId}/{changeId}`: one item can change in several pending migrations. */
-export type Resolutions = Record<string, 'overwrite' | 'skip'>;
+/**
+ * Keyed `{migrationId}/{changeId}` for the whole change (overwrite or skip), or
+ * `{migrationId}/{changeId}#{path}` for one conflicting path (ours or theirs): one item can change
+ * in several pending migrations.
+ */
+export type Resolutions = Record<string, 'overwrite' | 'skip' | 'ours' | 'theirs'>;
+
+/** Whether a reviewed change can go ahead with these choices. */
+export function isResolved(migrationId: string, change: ConfigChange, resolutions: Resolutions): boolean {
+  if (change.outcome !== 'conflict') return true;
+  if (resolutions[`${migrationId}/${change.id}`]) return true;
+  const conflicts = change.conflicts ?? [];
+  return (
+    conflicts.length > 0 &&
+    conflicts.every((c) => c.path !== '' && resolutions[`${migrationId}/${change.id}#${c.path}`])
+  );
+}
 
 export const useUnpublished = (enabled: boolean) =>
   useQuery({
@@ -124,7 +149,7 @@ export const useRollbackPlan = (migrationId: string | null) =>
   });
 
 export const useCutMigration = () =>
-  useEnvironmentMutation((body: { name: string; description?: string }) =>
+  useEnvironmentMutation((body: { name: string; description?: string; changes?: string[] }) =>
     api.post<Migration>('/admin/environments/migrations', body),
   );
 

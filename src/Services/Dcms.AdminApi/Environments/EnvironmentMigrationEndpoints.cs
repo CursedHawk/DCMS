@@ -36,7 +36,9 @@ public static class EnvironmentMigrationEndpoints
         {
             var name = body.Name?.Trim() ?? "";
             if (name.Length is 0 or > 200) return Results.BadRequest(new { error = "Name the migration (at most 200 characters)." });
-            var migration = await migrator.CutAsync((await environments.CurrentAsync(tenant, ct))!, name, body.Description?.Trim(), me.UserId, me.Email, ct);
+            if (body.Changes is { Count: > 500 }) return Results.BadRequest(new { error = "Choose at most 500 changes." });
+            var migration = await migrator.CutAsync((await environments.CurrentAsync(tenant, ct))!, name, body.Description?.Trim(), me.UserId, me.Email, ct,
+                body.Changes?.ToHashSet(StringComparer.Ordinal));
             if (migration is null)
             {
                 audit.Discard(audit.Declared!);
@@ -172,12 +174,15 @@ public static class EnvironmentMigrationEndpoints
         after = c.After,
         current = reviewed?.Current,
         outcome = reviewed?.Outcome.ToString().ToLowerInvariant(),
+        merged = reviewed?.Outcome is ChangeOutcome.Merge or ChangeOutcome.Conflict ? reviewed.Value : null,
+        conflicts = reviewed?.Conflicts.Select(c => new { path = c.Path, ours = c.Ours, theirs = c.Theirs }),
     };
 
     private const string JobAudits = "Only queues the job, which records what it applied or rolled back "
                                    + "(environment.migration.applied / rolled_back) with the resolutions once it runs.";
 
-    private sealed record CutRequest(string? Name, string? Description);
+    /// <param name="Changes">The unpublished changes to cut, by id; all of them when absent.</param>
+    private sealed record CutRequest(string? Name, string? Description, List<string>? Changes);
     private sealed record ApplyRequest(Guid From, Guid UpTo, Dictionary<string, string>? Resolutions);
     private sealed record RollbackRequest(Dictionary<string, string>? Resolutions);
 }

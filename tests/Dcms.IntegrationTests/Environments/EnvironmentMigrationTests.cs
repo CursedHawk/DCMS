@@ -95,6 +95,26 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         .EnumerateArray().ToList();
 
     [DockerFact]
+    public async Task A_migration_takes_only_the_changes_chosen_and_leaves_the_rest_unpublished()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        (await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"])).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Role(client, ws.Owner, ws.Dev, "Reviewers", ["content:read"])).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var migration = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, ws.Dev,
+            new { name = "Editors only", changes = new[] { "roles/Editors" } }), ct), ct);
+        migration.GetProperty("changes").EnumerateArray().Select(c => c.GetProperty("id").GetString()).Should().Equal("roles/Editors");
+
+        var left = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/changes", ws.Owner, ws.Dev), ct), ct);
+        left.EnumerateArray().Select(c => c.GetProperty("id").GetString()).Should().Equal("roles/Reviewers");
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, ws.Dev,
+            new { name = "Nothing", changes = new[] { "roles/Editors" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "that one is cut already");
+    }
+
+    [DockerFact]
     public async Task A_change_in_development_is_cut_reviewed_and_applied_in_production()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -138,7 +158,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
-    public async Task A_conflict_waits_for_the_reviewer_and_the_last_migration_rolls_back()
+    public async Task Changes_merge_into_what_production_edited_and_a_real_conflict_waits_for_the_reviewer()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.Factory.CreateClient();
@@ -147,7 +167,8 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var first = await CutAsync(client, ws, "Add editors", ct);
         await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
-        // Both sides change the role: development widens it, production narrows it by hand.
+        // Both sides change the role: development adds publishing, production swaps reading
+        // content for reading media by hand. Permissions are a set, so the two merge.
         var devRoles = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, ws.Dev), ct), ct);
         var devEditors = devRoles.EnumerateArray().First(r => r.GetProperty("name").GetString() == "Editors").GetProperty("id").GetGuid();
         (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{devEditors}", ws.Owner, ws.Dev,
@@ -159,22 +180,29 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { name = "Editors", permissions = new[] { "media:read" } }), ct)).IsSuccessStatusCode.Should().BeTrue();
 
         var pending = await PendingAsync(client, ws, ct);
-        pending[0].GetProperty("changes")[0].GetProperty("outcome").GetString().Should().Be("conflict");
+        pending[0].GetProperty("changes")[0].GetProperty("outcome").GetString().Should().Be("merge");
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().BeEquivalentTo(["content:publish", "media:read"],
+            "development's addition lands, and production's own edit stays");
 
-        var unresolved = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
-        (await unresolved.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.conflictUnresolved");
-        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("media:read");
-
-        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second,
-            new Dictionary<string, string> { [$"{second}/roles/Editors"] = "overwrite" }, new EnvironmentApplier(ws.Owner, false), ct));
-        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:publish", "content:read");
-
-        // Only the last one rolls back, and it puts back what the migration replaced.
+        // Only the last one rolls back, and it takes out only what the migration put in.
         var older = () => Engine(m => m.RollbackAsync(ws.ProdEnv, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await older.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.rollbackNotLast");
         await Engine(m => m.RollbackAsync(ws.ProdEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
-        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read");
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("media:read");
         (await PendingAsync(client, ws, ct)).Should().ContainSingle("a rolled-back migration is pending again");
+
+        // Development deletes the role production changed: that is the whole item, the reviewer's call.
+        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/roles/{devEditors}", ws.Owner, ws.Dev), ct)).IsSuccessStatusCode.Should().BeTrue();
+        var third = await CutAsync(client, ws, "Drop editors", ct);
+        pending = await PendingAsync(client, ws, ct);
+        pending[1].GetProperty("changes")[0].GetProperty("outcome").GetString().Should().Be("conflict");
+        var unresolved = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, third, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        (await unresolved.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.conflictUnresolved");
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, third,
+            new Dictionary<string, string> { [$"{third}/roles/Editors"] = "skip" }, new EnvironmentApplier(ws.Owner, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().BeEquivalentTo(["content:publish", "media:read"],
+            "the second migration merged again on the way, and the skipped delete left the role");
     }
 
     [DockerFact]
