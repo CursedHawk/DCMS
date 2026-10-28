@@ -108,9 +108,9 @@ test('an environment uses a service environment’s tables for what is granted',
     .toEqual([{ kind: 'tables', targetEnvironmentId: TENANT.tenantId, targetKey: 'crm', grants: ['companies:read', 'deals:create'] }]);
 });
 
-test('the palette switches environment', async ({ page, api }) => {
+test('the palette switches environment and keeps the page', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments', ENABLED);
-  await page.goto('/media');
+  await page.goto('/settings/roles');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
   await page.keyboard.press('ControlOrMeta+k');
@@ -120,6 +120,7 @@ test('the palette switches environment', async ({ page, api }) => {
   await expect(palette.getByRole('option', { name: 'Switch to production' })).toHaveCount(0);
   await palette.getByRole('option', { name: 'Switch to development' }).click();
   await expect.poll(() => page.evaluate((slug) => localStorage.getItem(`dcms.environment:${slug}`), TENANT.slug)).toBe('development');
+  await expect(page).toHaveURL(/\/settings\/roles$/);
 });
 
 test('one item is owned otherwise than its kind', async ({ page, api }) => {

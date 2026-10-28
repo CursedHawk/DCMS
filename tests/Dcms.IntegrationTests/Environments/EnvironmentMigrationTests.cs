@@ -555,5 +555,79 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         twice.Content = new StringContent("""{"name":"Reviewers","Name":"Editors 2","permissions":["media:read"]}""",
             System.Text.Encoding.UTF8, "application/json");
         (await client.SendAsync(twice, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // A new item under a name production keeps as its own may be made there.
+        (await Role(client, ws.Owner, ws.Prod, "Auditors", ["content:read"])).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{ws.ProdId}/policies", ws.Owner, ws.Prod, new[]
+        {
+            new { kind = "roles", itemKey = (string?)null, mode = "managed" },
+            new { kind = "roles", itemKey = (string?)"Auditors", mode = "local" },
+        }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await Role(client, ws.Owner, ws.Prod, "Auditors", ["content:read"])).StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [DockerFact]
+    public async Task A_deployment_refused_on_a_conflict_is_asked_again_with_resolutions_and_after_a_rollback()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
+        var migration = await CutAsync(client, ws, "Editors", ct);
+
+        async Task<Guid> ApplyAsync(object? resolutions = null) =>
+            (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/pending/apply", ws.Owner, ws.Prod,
+                new { from = ws.DevId, upTo = migration, resolutions }), ct), ct)).GetProperty("jobId").GetGuid();
+        var first = await ApplyAsync();
+        (await ApplyAsync()).Should().Be(first, "the same request twice is one deployment");
+        var resolved = await ApplyAsync(new Dictionary<string, string> { [$"{migration}/roles/Editors"] = "overwrite" });
+        resolved.Should().NotBe(first, "a retry with resolutions is another");
+
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        await Engine(m => m.RollbackAsync(ws.ProdEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        (await ApplyAsync()).Should().NotBe(first, "deploying again after a rollback is another deployment");
+    }
+
+    [DockerFact]
+    public async Task Deleting_a_stage_joins_the_stages_either_side_of_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var staging = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "staging", empty = true }), ct), ct)).GetProperty("id").GetGuid();
+        // development -> staging -> production
+        foreach (var (id, from) in new[] { (ws.ProdId, staging), (staging, ws.DevId) })
+        {
+            (await client.SendAsync(Req(HttpMethod.Patch, $"/api/admin/environments/{id}", ws.Owner, ws.Prod, new { promotesFrom = new[] { from } }), ct))
+                .IsSuccessStatusCode.Should().BeTrue();
+        }
+        (await client.SendAsync(Req(HttpMethod.Patch, $"/api/admin/environments/{ws.DevId}", ws.Owner, ws.Prod, new { promotesFrom = Array.Empty<Guid>() }), ct))
+            .IsSuccessStatusCode.Should().BeTrue();
+
+        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/environments/{staging}", ws.Owner, ws.Prod), ct)).IsSuccessStatusCode.Should().BeTrue();
+        var list = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", ws.Owner, ws.Prod), ct), ct);
+        list.GetProperty("environments").EnumerateArray().Single(e => e.GetProperty("name").GetString() == "production")
+            .GetProperty("promotesFrom").EnumerateArray().Select(x => x.GetGuid()).Should().Equal(ws.DevId);
+    }
+
+    [DockerFact]
+    public async Task An_environment_another_process_made_is_found_before_the_cache_lapses()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        using var scope = fixture.Factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<EnvironmentStore>();
+        (await store.ListAsync(ws.ProdId, ct)).Should().HaveCount(2);
+
+        // Made as the worker would see it: in the database, not in this process's cache.
+        var made = new TenantEnvironment { Id = Guid.NewGuid(), TenantId = ws.ProdId, Name = "elsewhere", Order = -5 };
+        await using (var db = new TenancyDbContext(new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(fixture.PostgresConnectionString).Options))
+        {
+            db.Environments.Add(made);
+            await db.SaveChangesAsync(ct);
+        }
+        (await store.GetAsync(ws.ProdId, made.Id, ct)).Should().NotBeNull();
+        (await store.FindAsync(ws.ProdId, "elsewhere", ct)).Should().NotBeNull();
     }
 }

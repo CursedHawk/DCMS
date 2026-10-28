@@ -33,11 +33,20 @@ public sealed class EnvironmentStore(TenancyDbContext db, IMemoryCache cache)
         return environments;
     }
 
-    public async Task<TenantEnvironment?> FindAsync(Guid tenantId, string name, CancellationToken ct) =>
-        (await ListAsync(tenantId, ct)).FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.Ordinal));
+    public Task<TenantEnvironment?> FindAsync(Guid tenantId, string name, CancellationToken ct) =>
+        FirstAsync(tenantId, e => string.Equals(e.Name, name, StringComparison.Ordinal), ct);
 
-    public async Task<TenantEnvironment?> GetAsync(Guid tenantId, Guid environmentId, CancellationToken ct) =>
-        (await ListAsync(tenantId, ct)).FirstOrDefault(e => e.Id == environmentId);
+    public Task<TenantEnvironment?> GetAsync(Guid tenantId, Guid environmentId, CancellationToken ct) =>
+        FirstAsync(tenantId, e => e.Id == environmentId, ct);
+
+    // The cache is this process's: an environment another process just created is not in it, so
+    // a miss reads again before it counts as none.
+    private async Task<TenantEnvironment?> FirstAsync(Guid tenantId, Func<TenantEnvironment, bool> match, CancellationToken ct)
+    {
+        if ((await ListAsync(tenantId, ct)).FirstOrDefault(match) is { } hit) return hit;
+        Evict(tenantId);
+        return (await ListAsync(tenantId, ct)).FirstOrDefault(match);
+    }
 
     /// <summary>The environment the request or message is in; null with no tenant.</summary>
     public async Task<TenantEnvironment?> CurrentAsync(Kernel.Abstractions.ITenantContext tenant, CancellationToken ct) =>
@@ -67,9 +76,9 @@ public static class EnvironmentResolution
         var tenant = context.RequestServices.GetRequiredService<Kernel.Abstractions.ITenantContext>().TenantId;
         if (tenant is { } tenantId)
         {
-            var all = await context.RequestServices.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, context.RequestAborted);
-            context.Items[ManyItem] = all.Count > 1;
-            var environment = name.Length > 0 ? all.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.Ordinal)) : null;
+            var store = context.RequestServices.GetRequiredService<EnvironmentStore>();
+            var environment = name.Length > 0 ? await store.FindAsync(tenantId, name, context.RequestAborted) : null;
+            context.Items[ManyItem] = (await store.ListAsync(tenantId, context.RequestAborted)).Count > 1;
             if (name.Length > 0 && environment is null)
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;

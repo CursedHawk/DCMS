@@ -734,7 +734,7 @@ public static class SiteEndpoints
         // is planned).
         app.MapPost("/api/admin/sites/{id:guid}/git/commit", async (
             Guid id, CommitRequest body, SitesDbContext db, ITenantContext tenant, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, IServiceProvider services, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Message))
@@ -761,6 +761,13 @@ public static class SiteEndpoints
             else
             {
                 target = string.IsNullOrWhiteSpace(body.TargetBranch) ? sourceBranch : body.TargetBranch!.Trim();
+                // The release of a site this environment leaves to deployments moves by a
+                // deployment only; the platform commits as a git admin, past the branch's protection.
+                if (target == Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch
+                    && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "sites", site.KeyAcrossEnvironments, ct) is { } refused)
+                {
+                    return refused;
+                }
             }
 
             var draftFiles = SiteFileMap.Parse(draft.DefinitionJson);

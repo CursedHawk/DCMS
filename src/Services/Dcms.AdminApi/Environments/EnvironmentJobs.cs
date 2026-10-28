@@ -156,6 +156,9 @@ internal static class EnvironmentJobContext
     public static async Task<TenantEnvironment> JobTargetAsync(this EnvironmentStore environments, IJobContext context)
     {
         var tenantId = context.TenantId!.Value;
+        // A job runs on the worker, whose cached list may predate the change that queued it (a
+        // new environment, a flag just set): the job works from what the database says now.
+        environments.Evict(tenantId);
         return await environments.GetAsync(tenantId, context.EnvironmentId ?? tenantId, context.Cancellation)
                ?? throw new JobFailedException("environments.errors.environmentGone");
     }

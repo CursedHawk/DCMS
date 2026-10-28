@@ -83,16 +83,17 @@ public static class EnvironmentMigrationEndpoints
 
         app.MapPost("/api/admin/environments/pending/apply", async (
             ApplyRequest body, ITenantContext tenant, EnvironmentStore environments, CurrentUser me, IJobQueue jobs,
-            CancellationToken ct) =>
+            EnvironmentMigrator migrator, CancellationToken ct) =>
         {
             var (target, source) = await PairAsync(environments, tenant, body.From, ct);
             if (source is null) return RefusedSource;
+            var dedupe = await DedupeKeyAsync(EnvironmentApplyJob.Kind, migrator, target, body.UpTo, body.Resolutions, ct);
             var job = await jobs.EnqueueAsync(new JobSpec(
                 EnvironmentApplyJob.Kind, target.TenantId,
                 new EnvironmentApplyPayload(body.From, body.UpTo, body.Resolutions ?? [], me.UserId, me.IsSuperAdmin),
                 "jobs.kinds.environmentApply.title",
                 RequiredPermission: PlatformPermissions.EnvironmentsPromote,
-                DedupeKey: $"{EnvironmentApplyJob.Kind}:{target.Id:N}:{body.UpTo:N}",
+                DedupeKey: dedupe,
                 MaxAttempts: 1,
                 LinkPath: "/deployments") { EnvironmentId = target.Id }, ct);
             return Results.Accepted(value: new { jobId = job.Id });
@@ -114,14 +115,17 @@ public static class EnvironmentMigrationEndpoints
         }).RequirePermission(PlatformPermissions.EnvironmentsPromote);
 
         app.MapPost("/api/admin/environments/migrations/{migrationId:guid}/rollback", async (
-            Guid migrationId, RollbackRequest body, ITenantContext tenant, CurrentUser me, IJobQueue jobs, CancellationToken ct) =>
+            Guid migrationId, RollbackRequest body, ITenantContext tenant, CurrentUser me, IJobQueue jobs,
+            EnvironmentStore environments, EnvironmentMigrator migrator, CancellationToken ct) =>
         {
+            var dedupe = await DedupeKeyAsync(EnvironmentRollbackJob.Kind, migrator, (await environments.CurrentAsync(tenant, ct))!,
+                migrationId, body.Resolutions, ct);
             var job = await jobs.EnqueueAsync(new JobSpec(
                 EnvironmentRollbackJob.Kind, tenant.TenantId!.Value,
                 new EnvironmentRollbackPayload(migrationId, body.Resolutions ?? [], me.UserId, me.IsSuperAdmin),
                 "jobs.kinds.environmentRollback.title",
                 RequiredPermission: PlatformPermissions.EnvironmentsPromote,
-                DedupeKey: $"{EnvironmentRollbackJob.Kind}:{tenant.EnvironmentId:N}:{migrationId:N}",
+                DedupeKey: dedupe,
                 MaxAttempts: 1,
                 LinkPath: "/deployments") { EnvironmentId = tenant.EnvironmentId }, ct);
             return Results.Accepted(value: new { jobId = job.Id });
@@ -129,6 +133,22 @@ public static class EnvironmentMigrationEndpoints
           .AuditExempt(JobAudits);
 
         return app;
+    }
+
+    /// <summary>
+    /// The same request twice is one job; the same deployment again once the environment's history
+    /// moved (rolled back, then deployed again), or with other resolutions (a retry after a
+    /// conflict), is another.
+    /// </summary>
+    private static async Task<string> DedupeKeyAsync(
+        string kind, EnvironmentMigrator migrator, TenantEnvironment target, Guid migrationId,
+        Dictionary<string, string>? resolutions, CancellationToken ct)
+    {
+        var history = await migrator.HistoryAsync(target, ct);
+        var state = string.Join(",", history.Select(m => $"{m.MigrationId:N}:{m.RolledBackAt?.UtcTicks}")) + "|"
+                    + string.Join(",", (resolutions ?? []).OrderBy(r => r.Key, StringComparer.Ordinal).Select(r => $"{r.Key}={r.Value}"));
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(state)))[..32];
+        return $"{kind}:{target.Id:N}:{migrationId:N}:{hash}";
     }
 
     /// <summary>

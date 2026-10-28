@@ -26,17 +26,18 @@ export function getCurrentEnvironment(): string | null {
 }
 
 /**
- * Switches environment with a full load, keeping the section (`/sites/abc/settings` lands on
- * `/sites`): the same screens exist there, but the ids in the rest of the path are the other
- * environment's.
+ * Switches environment with a full load, keeping the path up to its first id
+ * (`/sites/<id>/settings` lands on `/sites`, `/settings/roles` stays): the same screens exist
+ * there, but an id names a row of this environment.
  */
 export function switchEnvironment(name: string | null): void {
   const slug = getCurrentTenantSlug();
   if (!slug) return;
   if (name && name !== 'production') localStorage.setItem(environmentKey(slug), name);
   else localStorage.removeItem(environmentKey(slug));
-  const section = window.location.pathname.split('/')[1];
-  window.location.assign(section ? `/${section}` : '/');
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  const id = segments.findIndex((s) => /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s));
+  window.location.assign(`/${(id < 0 ? segments : segments.slice(0, id)).join('/')}`);
 }
 
 /**

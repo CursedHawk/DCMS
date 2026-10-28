@@ -132,7 +132,7 @@ public sealed partial class SiteGitService
 
     /// <summary>
     /// Lays what changed between <paramref name="from"/> and <paramref name="to"/> onto
-    /// <paramref name="targetRepo"/>'s <paramref name="branch"/> as one commit, a three-way apply:
+    /// <paramref name="targetRepo"/>'s <paramref name="branch"/> as one commit, a three-way merge:
     /// how a feature's code reaches an environment whose code has moved on since the feature
     /// branched (ADR 0026) — only the feature's changes, none of what came before it. Both commits
     /// are fetched from <paramref name="sourceRepos"/>. Never forced: the result descends from what
@@ -145,7 +145,6 @@ public sealed partial class SiteGitService
         var (org, repo) = Split(targetRepo);
         var work = Path.Combine(Path.GetTempPath(), "dcms-range-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
-        var patchFile = work + ".patch";
         try
         {
             await RunGitAsync(work, null, ct, "clone", "--branch", branch, "--no-tags", "--quiet", CloneUrl(org, repo), ".");
@@ -161,29 +160,32 @@ public sealed partial class SiteGitService
                     return new GitRangeResult(Found: false, Sha: null, Conflicts: []);
                 }
             }
-            var patch = await RunGitAsync(work, null, ct, "diff", "--binary", "--full-index", from, to);
-            if (patch.Length == 0)
+            if ((await RunGitAsync(work, null, ct, "diff", "--name-only", from, to)).Trim().Length == 0)
             {
                 return new GitRangeResult(Found: true, Sha: (await RunGitAsync(work, null, ct, "rev-parse", "HEAD")).Trim(), Conflicts: []);
             }
-            await File.WriteAllTextAsync(patchFile, patch, ct);
-            var applied = await RunGitRawAsync(work, null, ct, "apply", "--3way", "--index", patchFile);
-            if (applied.ExitCode != 0)
+            // A three-way merge of the trees with the range's start as the base, as a cherry-pick of
+            // the range would: what both sides changed alike (the same file deleted on each) is clean.
+            var merged = await RunGitRawAsync(work, null, ct, "merge-tree", "--write-tree", "--name-only", "--no-messages", "--merge-base", from, "HEAD", to);
+            var lines = merged.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (merged.ExitCode != 0)
             {
-                var unmerged = (await RunGitAsync(work, null, ct, "diff", "--name-only", "--diff-filter=U"))
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 return new GitRangeResult(Found: true, Sha: null,
-                    Conflicts: unmerged.Length > 0 ? unmerged : [Redact(applied.Stderr).Trim()]);
+                    Conflicts: merged.ExitCode == 1 && lines.Length > 1 ? lines[1..] : [Redact(merged.Stderr).Trim()]);
+            }
+            var head = (await RunGitAsync(work, null, ct, "rev-parse", "HEAD")).Trim();
+            if ((await RunGitAsync(work, null, ct, "rev-parse", "HEAD^{tree}")).Trim() == lines[0])
+            {
+                return new GitRangeResult(Found: true, Sha: head, Conflicts: []); // already here
             }
             var env = CommitEnv(_opts.CommitterName, _opts.CommitterEmail, _opts.CommitterName, _opts.CommitterEmail);
-            await RunGitAsync(work, env, ct, "commit", "--quiet", "-m", message);
-            await RunGitAsync(work, null, ct, "push", "--quiet", "origin", "HEAD:" + branch);
-            return new GitRangeResult(Found: true, Sha: (await RunGitAsync(work, null, ct, "rev-parse", "HEAD")).Trim(), Conflicts: []);
+            var commit = (await RunGitAsync(work, env, ct, "commit-tree", lines[0], "-p", head, "-m", message)).Trim();
+            await RunGitAsync(work, null, ct, "push", "--quiet", "origin", $"{commit}:refs/heads/{branch}");
+            return new GitRangeResult(Found: true, Sha: commit, Conflicts: []);
         }
         finally
         {
             TryDeleteDir(work);
-            try { File.Delete(patchFile); } catch (IOException) { }
         }
     }
 

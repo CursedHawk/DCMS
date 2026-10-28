@@ -15,8 +15,8 @@ namespace Dcms.AdminApi.Environments;
 /// <c>409 environment_managed</c>. Deployments write through the kinds in a job, not through these
 /// routes, so they are never stopped by it.
 ///
-/// <para>The item is named the way the kind exports it; a route that creates one has no item yet
-/// and answers to the kind's policy alone.</para>
+/// <para>The item is named the way the kind exports it; a route that creates one answers to the
+/// policy of the name its body gives, or the kind's when it gives none.</para>
 /// </summary>
 public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
 {
@@ -55,25 +55,51 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             await http.Response.WriteAsJsonAsync(new { error = "The request names the item more than once." }, http.RequestAborted);
             return;
         }
-        if (EnvironmentMigrator.Ownership(policies, managed.Kind, key ?? "") != EnvironmentOwnership.Managed
+        // A new item (no key yet) is judged by the name it is given: an item exception covers creating it.
+        if (EnvironmentMigrator.Ownership(policies, managed.Kind, key ?? renamed ?? "") != EnvironmentOwnership.Managed
             && (renamed is null || EnvironmentMigrator.Ownership(policies, managed.Kind, renamed) != EnvironmentOwnership.Managed))
         {
             await next(http);
             return;
         }
 
-        var environments = await services.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, http.RequestAborted);
+        await Refusal(await RefusalBodyAsync(services, tenantId, environmentId, managed.Kind, http.RequestAborted)).ExecuteAsync(http);
+    }
+
+    /// <summary>
+    /// For a handler whose write is managed only sometimes (a commit, when it lands on a site's
+    /// release): the same 409 when this environment leaves <paramref name="key"/> to deployments,
+    /// else null.
+    /// </summary>
+    public static async Task<IResult?> RefuseIfManagedAsync(
+        IServiceProvider services, ITenantContext tenant, string kind, string key, CancellationToken ct)
+    {
+        if (!tenant.HasEnvironments || tenant.TenantId is not { } tenantId) return null;
+        var environmentId = tenant.EnvironmentId ?? tenantId;
+        // rls: request tenant and environment, as in InvokeAsync.
+        var policies = await services.GetRequiredService<TenancyDbContext>().EnvironmentPolicies.AsNoTracking()
+            .Where(p => p.TenantId == tenantId && p.EnvironmentId == environmentId && p.Kind == kind)
+            .ToListAsync(ct);
+        return EnvironmentMigrator.Ownership(policies, kind, key) == EnvironmentOwnership.Managed
+            ? Refusal(await RefusalBodyAsync(services, tenantId, environmentId, kind, ct))
+            : null;
+    }
+
+    private static IResult Refusal(object body) => Results.Json(body, statusCode: StatusCodes.Status409Conflict);
+
+    private static async Task<object> RefusalBodyAsync(IServiceProvider services, Guid tenantId, Guid environmentId, string kind, CancellationToken ct)
+    {
+        var environments = await services.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, ct);
         var sources = environments.FirstOrDefault(e => e.Id == environmentId)?.PromotesFrom ?? [];
         var names = environments.Where(e => sources.Contains(e.Id)).Select(e => e.Name).ToList();
-        http.Response.StatusCode = StatusCodes.Status409Conflict;
-        await http.Response.WriteAsJsonAsync(new
+        return new
         {
             error = names.Count > 0
                 ? $"This is managed by deployments from {string.Join(" or ", names)}. Change it there and deploy it here."
                 : "This is managed by deployments. Change it in the environment that deploys here.",
             code = "environment_managed",
-            kind = managed.Kind,
-        }, http.RequestAborted);
+            kind,
+        };
     }
 
     /// <summary>

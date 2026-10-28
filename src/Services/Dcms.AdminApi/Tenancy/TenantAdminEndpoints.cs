@@ -439,7 +439,14 @@ public sealed class TenantDeleter(
         }
         var siblings = await tenancy.Environments.IgnoreTenantFilter()
             .Where(e => e.TenantId == tenantId && e.PromotesFrom.Contains(environmentId)).ToListAsync(ct);
-        foreach (var sibling in siblings) sibling.PromotesFrom.Remove(environmentId);
+        foreach (var sibling in siblings)
+        {
+            sibling.PromotesFrom.Remove(environmentId);
+            // A stage taken out of the pipeline closes the gap: what took from it takes from its
+            // sources (development -> staging -> production loses staging, keeps the line).
+            if (environment.Purpose != EnvironmentPurpose.Stage) continue;
+            sibling.PromotesFrom = [.. sibling.PromotesFrom, .. environment.PromotesFrom.Where(s => s != sibling.Id && !sibling.PromotesFrom.Contains(s))];
+        }
         tenancy.Environments.Remove(environment);
         await tenancy.SaveChangesAsync(ct);
         environmentStore.Evict(tenantId);
