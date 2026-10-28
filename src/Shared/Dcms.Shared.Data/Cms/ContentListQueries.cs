@@ -419,6 +419,7 @@ public static class ContentListQueries
                 LIMIT 1
             ) tf ON TRUE
             WHERE sp."TenantId" = @tenantId
+              AND sp."EnvironmentId" = @environmentId
               AND sp."Status" = 'Pending'
             ORDER BY sp."PublishAt" ASC, sp."Id" ASC
             LIMIT @take
@@ -427,6 +428,7 @@ public static class ContentListQueries
         var parameters = new List<(string, object?)>
         {
             ("@tenantId", tenantId),
+            ("@environmentId", RlsScope.EnvironmentFor(tenantId) ?? tenantId),
             ("@types", titleFields.Keys.ToArray()),
             ("@fields", titleFields.Values.ToArray()),
             ("@take", take),

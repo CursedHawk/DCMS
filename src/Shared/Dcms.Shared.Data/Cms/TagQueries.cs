@@ -159,7 +159,8 @@ public static class TagQueries
 
         // Each optional filter is a clause that is present or absent, never a
         // parameter compared against NULL — see FieldMatches.
-        var parameters = new List<(string, object?)> { ("@tenantId", tenantId) };
+        // The environment in force for the tenant (ADR 0028): tags are one environment's content.
+        var parameters = new List<(string, object?)> { ("@tenantId", tenantId), ("@environmentId", RlsScope.EnvironmentFor(tenantId) ?? tenantId) };
         parameters.AddRange(TagFieldParameters(tagFields));
         var filters = new List<string>();
         if (publishedOnly)
@@ -190,6 +191,7 @@ public static class TagQueries
             JOIN plugins.plugin_instances p ON p."Id" = i."PluginInstanceId"
             {ArrayFields}
             WHERE i."TenantId" = @tenantId
+              AND i."EnvironmentId" = @environmentId
               AND p."Enabled"
               {string.Join("\n              ", filters)}
               {IsTagField}
@@ -227,6 +229,7 @@ public static class TagQueries
             JOIN plugins.plugin_instances p ON p."Id" = i."PluginInstanceId"
             {ArrayFields}
             WHERE i."TenantId" = @tenantId
+              AND i."EnvironmentId" = @environmentId
               {statusFilter}
               {IsTagField}
               {LooksLikeATag}
@@ -248,6 +251,7 @@ public static class TagQueries
             command.CommandText = sql;
             TenantGucInterceptor.Prepare(db, command);
             Bind(command, "@tenantId", tenantId);
+            Bind(command, "@environmentId", RlsScope.EnvironmentFor(tenantId) ?? tenantId);
             foreach (var (name, value) in TagFieldParameters(tagFields))
             {
                 Bind(command, name, value);
