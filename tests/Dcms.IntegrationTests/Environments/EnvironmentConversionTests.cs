@@ -80,12 +80,20 @@ public class EnvironmentConversionTests(AdminApiFixture fixture)
             """, ct);
 
         // As the migration job runs it: the schema's owner.
-        await using (var tenancy = new TenancyDbContext(
-            new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(fixture.PostgresConnectionString).Options))
+        object? probe;
+        try
         {
+            await using var tenancy = new TenancyDbContext(
+                new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(fixture.PostgresConnectionString).Options);
             await EnvironmentConversion.ApplyAsync(tenancy, NullLogger.Instance, ct);
             await EnvironmentConversion.ApplyAsync(tenancy, NullLogger.Instance, ct); // and again: a no-op
             await ObservabilityViewConfigurator.ApplyAsync(tenancy, NullLogger.Instance, ct);
+            probe = await ScalarAsync($"""SELECT count(*) FROM conversion_probe.realms WHERE "TenantId" = '{environment}'""", ct);
+        }
+        finally
+        {
+            // Not left for the RLS coverage scan, which would take it for an unregistered tenant table.
+            await ExecAsync("DROP SCHEMA IF EXISTS conversion_probe CASCADE", ct);
         }
         using (var scope = fixture.Factory.Services.CreateScope())
         {
@@ -107,8 +115,7 @@ public class EnvironmentConversionTests(AdminApiFixture fixture)
         (await ScalarAsync($"""SELECT count(*) FROM tenancy.tenants WHERE "Id" = '{environment}'""", ct)).Should().Be(0L);
         (await ScalarAsync($"""SELECT "Count" FROM analytics.daily_rollups WHERE "TenantId" = '{workspace}' AND "Day" = '2026-10-01'""", ct))
             .Should().Be(7L, "rollups of the same key are summed");
-        (await ScalarAsync($"""SELECT count(*) FROM conversion_probe.realms WHERE "TenantId" = '{environment}'""", ct))
-            .Should().Be(1L, "another service's rows keyed by the environment stay its own");
+        probe.Should().Be(1L, "another service's rows keyed by the environment stay its own");
         (await ScalarAsync($"""SELECT count(*) FROM tenancy.tenant_memberships WHERE "TenantId" = '{workspace}'""", ct)).Should().Be(1L, "one member list");
         (await ScalarAsync($"""SELECT count(*) FROM tenancy.domains WHERE "TenantId" = '{workspace}' AND "EnvironmentId" = '{environment}'""", ct)).Should().Be(1L);
         (await ScalarAsync("""SELECT count(*) FROM information_schema.columns WHERE table_schema = 'tenancy' AND table_name = 'tenants' AND column_name = 'WorkspaceId'""", ct))
