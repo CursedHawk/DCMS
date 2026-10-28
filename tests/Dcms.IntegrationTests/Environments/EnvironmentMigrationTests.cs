@@ -237,6 +237,54 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task Published_content_deploys_when_chosen_with_its_references_resolved_here()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var news = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, ws.Dev,
+            new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct), ct)).GetProperty("id").GetGuid();
+        async Task<Guid> PublishAsync(string slug, object data)
+        {
+            var id = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/content", ws.Owner, ws.Dev,
+                new { pluginInstanceId = news, contentType = "post", slug, data }), ct), ct)).GetProperty("id").GetGuid();
+            await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/content/{id}/publish", ws.Owner, ws.Dev), ct), ct);
+            return id;
+        }
+        var about = await PublishAsync("about", new { title = "About us" });
+        await PublishAsync("hello", new { title = "Hello", related = about.ToString() });
+
+        var changes = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/changes", ws.Owner, ws.Dev), ct), ct))
+            .EnumerateArray().ToList();
+        var hello = changes.Single(c => c.GetProperty("id").GetString() == "content/news/post/hello");
+        hello.GetProperty("after").GetProperty("related").GetString().Should().Be("@content:news/post/about", "an id means nothing in another environment");
+
+        var migration = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, ws.Dev,
+            new { name = "News and posts", changes = new[] { "plugins/news", "content/news/post/hello", "content/news/post/about" } }), ct), ct))
+            .GetProperty("migrationId").GetGuid();
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+
+        var prodNews = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/instances", ws.Owner, ws.Prod), ct), ct))
+            .EnumerateArray().Single(i => i.GetProperty("slug").GetString() == "news").GetProperty("id").GetGuid();
+        async Task<Dictionary<string, (Guid Id, string Status)>> ProdPostsAsync() =>
+            (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/content?instanceId={prodNews}&contentType=post", ws.Owner, ws.Prod), ct), ct))
+            .GetProperty("items").EnumerateArray().ToDictionary(x => x.GetProperty("slug").GetString()!, x => (x.GetProperty("id").GetGuid(), x.GetProperty("status").GetString()!));
+        var prod = await ProdPostsAsync();
+        prod.Keys.Should().BeEquivalentTo(["about", "hello"]);
+        prod["hello"].Status.Should().Be("Published");
+        var detail = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/content/{prod["hello"].Id}", ws.Owner, ws.Prod), ct), ct);
+        detail.GetRawText().Should().Contain(prod["about"].Id.ToString(), "the reference is production's own about page")
+            .And.NotContain(about.ToString());
+
+        // Unpublished in development: unpublished in production with the next deployment, not deleted.
+        await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/content/{about}/unpublish", ws.Owner, ws.Dev), ct), ct);
+        var second = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, ws.Dev,
+            new { name = "Retire about", changes = new[] { "content/news/post/about" } }), ct), ct)).GetProperty("migrationId").GetGuid();
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        (await ProdPostsAsync())["about"].Status.Should().Be("Draft");
+    }
+
+    [DockerFact]
     public async Task A_deployment_cannot_grant_what_its_deployer_could_not()
     {
         var ct = TestContext.Current.CancellationToken;

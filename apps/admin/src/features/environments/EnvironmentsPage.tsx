@@ -32,6 +32,7 @@ import {
   useSavePolicies,
   useUpdateEnvironment,
   CONFIG_KINDS,
+  POLICY_KINDS,
   type Environment,
   type Ownership,
   type Policy,
@@ -241,7 +242,7 @@ function OwnershipGrid({ environmentId }: { environmentId: string }) {
     <fieldset className="flex flex-col gap-1.5" disabled={!policies.data || save.isPending}>
       <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.ownership')}</legend>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {CONFIG_KINDS.map((kind) => (
+        {POLICY_KINDS.map((kind) => (
           <label key={kind} className="flex items-center justify-between gap-2 text-sm">
             <span className="min-w-0 truncate">{t(`deployments.kinds.${kind}`)}</span>
             <Select value={modeOf(kind)} onValueChange={(mode) => set(kind, mode as Ownership)}>

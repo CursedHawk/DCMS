@@ -102,10 +102,12 @@ function Unpublished() {
   const cut = useCutMigration();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  // What is left out of the migration; everything new starts in it.
-  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  // The changes ticked by hand the other way from their default: configuration starts in the
+  // migration, published content starts out of it -- content moves only when chosen.
+  const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set());
   const list = changes.data ?? [];
-  const chosen = list.filter((c) => !excluded.has(c.id));
+  const included = (c: ConfigChange) => (c.kind !== 'content') !== flipped.has(c.id);
+  const chosen = list.filter(included);
 
   return (
     <section className="flex flex-col gap-3">
@@ -120,13 +122,12 @@ function Unpublished() {
               <div key={c.id} className="flex items-start gap-2">
                 <Checkbox
                   className="mt-2.5"
-                  checked={!excluded.has(c.id)}
+                  checked={included(c)}
                   aria-label={t('deployments.include', { name: c.label })}
-                  onCheckedChange={(on) =>
-                    setExcluded((prev) => {
+                  onCheckedChange={() =>
+                    setFlipped((prev) => {
                       const next = new Set(prev);
-                      if (on === true) next.delete(c.id);
-                      else next.add(c.id);
+                      if (!next.delete(c.id)) next.add(c.id);
                       return next;
                     })
                   }
@@ -152,7 +153,7 @@ function Unpublished() {
                     onSuccess: () => {
                       setName('');
                       setDescription('');
-                      setExcluded(new Set());
+                      setFlipped(new Set());
                       toast.success(t('deployments.cut'));
                     },
                     onError: (err) => toastApiError(err, t),

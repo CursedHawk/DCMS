@@ -2408,7 +2408,8 @@
       "sites": "Web",
       "api-connections": "Připojení API",
       "user-auth": "Přístup uživatelů",
-      "dynamic-apps": "Dynamická aplikace"
+      "dynamic-apps": "Dynamická aplikace",
+      "content": "Publikovaný obsah"
     }
   }
 }

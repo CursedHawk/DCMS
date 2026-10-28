@@ -571,8 +571,20 @@ public sealed class EnvironmentMigrator(
                 row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstAsync(b => b.EnvironmentId == environment.Id, ct);
             }
         }
-        return new Baseline(row,
-            JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, JsonElement>>>(row.ItemsJson) ?? []);
+        var held = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, JsonElement>>>(row.ItemsJson) ?? [];
+        // A kind added since the baseline was made starts from what the environment holds now:
+        // otherwise everything of it would show as unpublished in every environment at once.
+        var added = current.Keys.Where(k => !held.ContainsKey(k)).ToList();
+        if (added.Count > 0)
+        {
+            foreach (var kind in added)
+            {
+                held[kind] = current[kind].ToDictionary(i => i.Key, i => i.Value.Value, StringComparer.Ordinal);
+            }
+            row.ItemsJson = Serialize(held);
+            await db.SaveChangesAsync(ct);
+        }
+        return new Baseline(row, held);
     }
 
     private async Task<List<EnvironmentPolicy>> PoliciesAsync(TenantEnvironment environment, CancellationToken ct)

@@ -2356,7 +2356,8 @@
       "sites": "Site",
       "api-connections": "API connection",
       "user-auth": "User access",
-      "dynamic-apps": "Dynamic app"
+      "dynamic-apps": "Dynamic app",
+      "content": "Published content"
     }
   }
 }

@@ -193,6 +193,7 @@ builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, D
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.PluginsConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ApiConnectionsConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.SitesConfigKind>();
+builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ContentConfigKind>();
 builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentApplyJob, Dcms.AdminApi.Environments.EnvironmentApplyPayload>(
     Dcms.AdminApi.Environments.EnvironmentApplyJob.Kind);
 builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentRollbackJob, Dcms.AdminApi.Environments.EnvironmentRollbackPayload>(

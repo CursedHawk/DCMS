@@ -17,7 +17,7 @@ const ENVIRONMENTS = {
   ],
 };
 const change = (id: string, outcome: string | null, before: unknown, after: unknown, current?: unknown) => ({
-  id, kind: id.split('/')[0], key: id.split('/')[1], label: id.split('/')[1], op: before == null ? 'add' : 'update',
+  id, kind: id.split('/')[0], key: id.slice(id.indexOf('/') + 1), label: id.slice(id.indexOf('/') + 1), op: before == null ? 'add' : 'update',
   before, after, current, outcome,
 });
 const migration = (migrationId: string, name: string, changes: unknown[]) => ({
@@ -52,6 +52,21 @@ test('a change left unticked stays out of the migration', async ({ page, api }) 
   await page.goto('/deployments');
 
   await page.getByRole('checkbox', { name: 'Include Reviewers in the migration' }).click();
+  await page.getByLabel('Migration name').fill('Editors');
+  await page.getByRole('button', { name: 'Create migration of 1 change' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/environments/migrations').map((r) => r.body))
+    .toEqual([{ name: 'Editors', changes: ['roles/Editors'] }]);
+});
+
+test('published content goes into a migration only when ticked', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments/changes', [
+    change('roles/Editors', null, null, { System: false, Permissions: ['content:read'] }),
+    change('content/news/post/hello', null, null, { title: 'Hello' }),
+  ]);
+  api.on('POST', '/api/admin/environments/migrations', migration('m1', 'Editors', []));
+  await page.goto('/deployments');
+
+  await expect(page.getByRole('checkbox', { name: 'Include news/post/hello in the migration' })).not.toBeChecked();
   await page.getByLabel('Migration name').fill('Editors');
   await page.getByRole('button', { name: 'Create migration of 1 change' }).click();
   await expect.poll(() => api.requestsTo('POST', '/api/admin/environments/migrations').map((r) => r.body))
