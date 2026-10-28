@@ -55,12 +55,17 @@ public static class EnvironmentEndpoints
             "A workspace member with no role in the environment named, or in production, lists the environments to find one they "
             + "can open; the handler checks workspace membership itself.");
 
+        // What duplicating can copy besides configuration; the personal ones are offered with a warning.
+        app.MapGet("/api/admin/environments/copy-scopes", (EnvironmentDuplicator duplicator) =>
+            Results.Ok(duplicator.Scopes.Select(x => new { scope = x.Scope, personalData = x.PersonalData })))
+            .RequireAuthorization();
+
         // A new environment goes upstream of the current most-upstream one, which may then be
         // deployed into from it: adding staging, test and development in that order builds
         // development -> test -> staging -> production with no further setup.
         app.MapPost("/api/admin/environments", async (
             CreateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, EnvironmentStore environments,
-            CurrentUser me, IPermissionResolver permissions, WorkspaceMembers members,
+            CurrentUser me, IPermissionResolver permissions, WorkspaceMembers members, EnvironmentDuplicator duplicator,
             IJobQueue jobs, IAuditRecorder audit, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId) return Results.BadRequest(new { error = "Select a workspace first." });
@@ -82,13 +87,22 @@ public static class EnvironmentEndpoints
             }
             var source = body.From is { } from ? all.FirstOrDefault(e => e.Id == from) : all.Single(e => e.IsProduction);
             if (source is null) return Results.BadRequest(new { error = "There is no environment to copy from of that id." });
+            var scopes = (body.Copy ?? []).Distinct(StringComparer.Ordinal).ToList();
+            if (scopes.Except(duplicator.Scopes.Select(x => x.Scope)).FirstOrDefault() is { } unknown)
+            {
+                return Results.BadRequest(new { error = $"Nothing called '{unknown}' can be copied." });
+            }
+            if (scopes.Count > 0 && body.Empty == true)
+            {
+                return Results.BadRequest(new { error = "An empty environment copies no data." });
+            }
 
             var upstream = all.MinBy(e => e.Order)!;
             var created = new TenantEnvironment
             {
                 Id = Guid.NewGuid(), TenantId = tenantId, Name = name, Order = upstream.Order - 1,
             };
-            audit.Declared?.For("environment", created.Id, name);
+            audit.Declared?.For("environment", created.Id, name).With("from", source.Name).With("copy", scopes);
             using (RlsScope.Tenant(tenantId))
             {
                 db.Environments.Add(created);
@@ -104,7 +118,7 @@ public static class EnvironmentEndpoints
             if (body.Empty != true)
             {
                 await jobs.EnqueueAsync(new JobSpec(
-                    EnvironmentCopyJob.Kind, tenantId, new EnvironmentCopyPayload(source.Id),
+                    EnvironmentCopyJob.Kind, tenantId, new EnvironmentCopyPayload(source.Id, scopes),
                     "jobs.kinds.environmentCopy.title", new { environment = name },
                     RequiredPermission: PlatformPermissions.EnvironmentsManage, MaxAttempts: 1,
                     LinkPath: "/deployments") { EnvironmentId = created.Id }, ct);
@@ -401,7 +415,8 @@ public static class EnvironmentEndpoints
 
     /// <param name="Empty">True for an environment without the source's configuration.</param>
     /// <param name="From">The environment whose roles and configuration it starts with; production when absent.</param>
-    private sealed record CreateEnvironmentRequest(string? Name, bool? Empty, Guid? From);
+    /// <param name="Copy">Data scopes to copy from it too (records, submissions, …): a duplicate rather than a fresh copy.</param>
+    private sealed record CreateEnvironmentRequest(string? Name, bool? Empty, Guid? From, List<string>? Copy);
     private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
     private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
     private sealed record LinkRequest(string Kind, Guid TargetEnvironmentId, string? TargetKey, string? Access);

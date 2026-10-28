@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Jobs;
@@ -9,22 +10,32 @@ public sealed record EnvironmentApplyPayload(Guid Source, Guid UpTo, Dictionary<
 
 public sealed record EnvironmentRollbackPayload(Guid MigrationId, Dictionary<string, string> Resolutions, Guid? By = null, bool IsSuperAdmin = false);
 
-public sealed record EnvironmentCopyPayload(Guid Source);
+/// <param name="Data">The data scopes to copy as well (<see cref="IEnvironmentDataCopier.Scope"/>); configuration always comes.</param>
+public sealed record EnvironmentCopyPayload(Guid Source, List<string>? Data = null);
 
 /// <summary>Gives a new environment its source's configuration (ADR 0026: "copy configuration from").</summary>
-public sealed class EnvironmentCopyJob(EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments) : IJobHandler<EnvironmentCopyPayload>
+public sealed class EnvironmentCopyJob(
+    EnvironmentMigrator migrator, EnvironmentDuplicator duplicator, TenancyDbContext db, EnvironmentStore environments)
+    : IJobHandler<EnvironmentCopyPayload>
 {
     public const string Kind = "environments.copy";
 
     public async Task<object?> RunAsync(EnvironmentCopyPayload payload, IJobContext context)
     {
         var (target, source) = await environments.JobPairAsync(context, payload.Source);
+        var scopes = payload.Data ?? [];
+        Dictionary<string, int> copied = [];
         await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, async () =>
         {
+            await context.ReportAsync(0, scopes.Count + 1, "jobs.stages.environmentCopy.configuration");
             await migrator.CopyAsync(target, source, context.Cancellation);
+            var done = 1;
+            copied = await duplicator.CopyAsync(target, source, scopes,
+                async scope => await context.ReportAsync(done++, scopes.Count + 1, $"jobs.stages.environmentCopy.{scope}"),
+                context.Cancellation);
             return true;
         });
-        return null;
+        return new { copied };
     }
 }
 

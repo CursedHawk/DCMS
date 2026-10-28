@@ -1389,7 +1389,16 @@
       "building": "Building",
       "validating": "Checking",
       "writing": "Writing",
-      "flowStep": "Steps"
+      "flowStep": "Steps",
+      "environmentCopy": {
+        "configuration": "Copying configuration",
+        "content-drafts": "Copying drafts",
+        "dynamic-apps-records": "Copying Dynamic Apps records",
+        "plugin-data": "Copying app data",
+        "visitors": "Copying visitor accounts",
+        "form-submissions": "Copying form submissions",
+        "chat": "Copying chat conversations"
+      }
     }
   },
   "marketplace": {
@@ -2249,6 +2258,18 @@
     "switch": "Environment: {{name}}. Switch environment",
     "offHint": "This workspace has production only. Add development, test or staging beside it: each gets its own configuration and content, while members and media stay shared. Nothing changes for production.",
     "pipelineHint": "Listed from the first stage to production. Each environment lists the ones allowed to deploy configuration into it.",
+    "copyFrom": "Copy from",
+    "copyData": "Copy data too",
+    "personalData": "Personal data",
+    "personalDataHint": "Personal data copied here is held twice: whoever can open this environment can read it, and deleting it from one environment leaves the other copy.",
+    "copyScopes": {
+      "content-drafts": "Unpublished content and drafts",
+      "dynamic-apps-records": "Dynamic Apps records",
+      "plugin-data": "App data",
+      "visitors": "Visitor accounts",
+      "form-submissions": "Form submissions",
+      "chat": "Chat conversations"
+    },
     "addLabel": "New environment",
     "add": "Add environment",
     "addHint": "Lowercase letters, digits and dashes. A new environment starts before the first one, gets the workspace members with their current roles, and deploys into the stage after it.",

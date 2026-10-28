@@ -220,6 +220,10 @@ export function adminApi(
     .on('POST', '/api/admin/usage/recalculate', { ...data.USAGE, measuredAt: new Date().toISOString() })
     .on('GET', '/api/admin/environments', data.ENVIRONMENTS_OFF)
     .on('GET', '/api/admin/environments/changes', [])
+    .on('GET', '/api/admin/environments/copy-scopes', [
+      { scope: 'dynamic-apps-records', personalData: false },
+      { scope: 'form-submissions', personalData: true },
+    ])
     .on('GET', '/api/admin/environments/migrations', [])
     .on('GET', '/api/admin/environments/:id/policies', [])
     .on('PUT', '/api/admin/environments/:id/policies', {})

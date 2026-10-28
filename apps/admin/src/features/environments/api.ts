@@ -51,8 +51,21 @@ function useEnvironmentMutation<TInput>(fn: (input: TInput) => Promise<unknown>)
   });
 }
 
+/** A new environment: a copy of `from`'s configuration (production when absent), and of the `copy` data scopes too. */
 export const useAddEnvironment = () =>
-  useEnvironmentMutation((name: string) => api.post<Environment>('/admin/environments', { name }));
+  useEnvironmentMutation((body: { name: string; from?: string; copy?: string[] }) =>
+    api.post<Environment>('/admin/environments', body),
+  );
+
+/** What duplicating can copy besides configuration (ADR 0028). */
+export interface CopyScope {
+  scope: string;
+  /** About people: offered with a warning. */
+  personalData: boolean;
+}
+
+export const useCopyScopes = () =>
+  useQuery({ queryKey: ['environments', 'copy-scopes'], queryFn: () => api.get<CopyScope[]>('/admin/environments/copy-scopes') });
 export const useUpdateEnvironment = () =>
   useEnvironmentMutation(
     ({ id, ...body }: { id: string; name?: string; order?: number; promotesFrom?: string[] }) =>

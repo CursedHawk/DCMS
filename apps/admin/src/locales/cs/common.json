@@ -1420,7 +1420,16 @@
       "building": "Sestavování",
       "validating": "Kontrola",
       "writing": "Zápis",
-      "flowStep": "Kroky"
+      "flowStep": "Kroky",
+      "environmentCopy": {
+        "configuration": "Kopíruje se konfigurace",
+        "content-drafts": "Kopírují se koncepty",
+        "dynamic-apps-records": "Kopírují se záznamy Dynamic Apps",
+        "plugin-data": "Kopírují se data aplikací",
+        "visitors": "Kopírují se účty návštěvníků",
+        "form-submissions": "Kopírují se odeslané formuláře",
+        "chat": "Kopírují se konverzace v chatu"
+      }
     }
   },
   "marketplace": {
@@ -2295,6 +2304,18 @@
     "switch": "Prostředí: {{name}}. Přepnout prostředí",
     "offHint": "Tento pracovní prostor má jen produkci. Přidejte vedle ní vývojové, testovací nebo staging prostředí: každé má vlastní konfiguraci a obsah, členové a knihovna médií zůstávají společné. Na produkci se nic nemění.",
     "pipelineHint": "Seřazeno od první fáze po produkci. U každého prostředí je uvedeno, která do něj smějí nasazovat konfiguraci.",
+    "copyFrom": "Kopírovat z",
+    "copyData": "Zkopírovat i data",
+    "personalData": "Osobní údaje",
+    "personalDataHint": "Zkopírované osobní údaje jsou pak uložené dvakrát: přečte je každý, kdo může otevřít toto prostředí, a smazání v jednom prostředí ponechá kopii v druhém.",
+    "copyScopes": {
+      "content-drafts": "Nepublikovaný obsah a koncepty",
+      "dynamic-apps-records": "Záznamy Dynamic Apps",
+      "plugin-data": "Data aplikací",
+      "visitors": "Účty návštěvníků",
+      "form-submissions": "Odeslané formuláře",
+      "chat": "Konverzace v chatu"
+    },
     "addLabel": "Nové prostředí",
     "add": "Přidat prostředí",
     "addHint": "Malá písmena, číslice a pomlčky. Nové prostředí začíná před prvním, dostane členy pracovního prostoru s jejich současnými rolemi a nasazuje do fáze za sebou.",

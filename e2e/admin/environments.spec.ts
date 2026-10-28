@@ -64,3 +64,17 @@ test('the pill switches environment and keeps the section', async ({ page, api }
   // Every request from then on names it.
   await expect.poll(() => api.requestsTo('GET', '/api/admin/media').at(-1)?.headers['x-dcms-environment']).toBe('development');
 });
+
+test('a duplicate copies the data ticked, and warns about personal data', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('POST', '/api/admin/environments', ({ body }) => ({ ...ENABLED.environments[0], name: (body as { name: string }).name }));
+  await page.goto('/settings/environments');
+
+  await page.getByLabel('New environment').fill('staging');
+  await page.getByRole('checkbox', { name: 'Dynamic Apps records' }).click();
+  await page.getByRole('checkbox', { name: /Form submissions/ }).click();
+  await expect(page.getByText(/Personal data copied here is held twice/)).toBeVisible();
+  await page.getByRole('button', { name: 'Add environment' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/environments').map((c) => c.body))
+    .toEqual([{ name: 'staging', copy: ['dynamic-apps-records', 'form-submissions'] }]);
+});

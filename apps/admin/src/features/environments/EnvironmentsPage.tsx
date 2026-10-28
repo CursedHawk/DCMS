@@ -24,6 +24,7 @@ import {
 } from '@dcms/ui';
 import {
   useAddEnvironment,
+  useCopyScopes,
   useDeleteEnvironment,
   useEnvironments,
   useLinkMutations,
@@ -53,12 +54,24 @@ export function EnvironmentsPage() {
   const navigate = useNavigate();
   const add = useAddEnvironment();
   const [name, setName] = useState('');
+  const [from, setFrom] = useState('');
+  const [copy, setCopy] = useState<string[]>([]);
+  const scopes = useCopyScopes();
   const data = environments.data;
   const list = data?.environments ?? [];
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    add.mutate(name.trim(), { onSuccess: () => setName(''), onError: (err) => toastApiError(err, t) });
+    add.mutate(
+      { name: name.trim(), from: from || undefined, copy: copy.length > 0 ? copy : undefined },
+      {
+        onSuccess: () => {
+          setName('');
+          setCopy([]);
+        },
+        onError: (err) => toastApiError(err, t),
+      },
+    );
   };
 
   return (
@@ -84,19 +97,56 @@ export function EnvironmentsPage() {
             <EnvironmentCard key={env.id} env={env} all={list} above={list[index - 1]} below={list[index + 1]} />
           ))}
 
-          <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Label htmlFor="env-name">{t('environments.addLabel')}</Label>
-              <Input
-                id="env-name"
-                value={name}
-                placeholder="development"
-                onChange={(e) => setName(e.target.value.toLowerCase())}
-              />
+          <form onSubmit={submit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <Label htmlFor="env-name">{t('environments.addLabel')}</Label>
+                <Input
+                  id="env-name"
+                  value={name}
+                  placeholder="development"
+                  onChange={(e) => setName(e.target.value.toLowerCase())}
+                />
+              </div>
+              <div className="sm:w-48">
+                <Label htmlFor="env-from">{t('environments.copyFrom')}</Label>
+                <Select value={from || (list.find((e) => e.isProduction)?.id ?? '')} onValueChange={setFrom}>
+                  <SelectTrigger id="env-from">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {list.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" disabled={!NAME.test(name.trim()) || add.isPending}>
+                <Plus className="h-4 w-4" /> {t('environments.add')}
+              </Button>
             </div>
-            <Button type="submit" disabled={!NAME.test(name.trim()) || add.isPending}>
-              <Plus className="h-4 w-4" /> {t('environments.add')}
-            </Button>
+            {scopes.data && scopes.data.length > 0 ? (
+              <fieldset className="flex flex-col gap-1.5">
+                <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.copyData')}</legend>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {scopes.data.map(({ scope, personalData }) => (
+                    <label key={scope} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={copy.includes(scope)}
+                        onCheckedChange={(on) => setCopy((prev) => (on === true ? [...prev, scope] : prev.filter((x) => x !== scope)))}
+                      />
+                      <span className="min-w-0">{t(`environments.copyScopes.${scope}`, { defaultValue: scope })}</span>
+                      {personalData ? <Badge tone="warning">{t('environments.personalData')}</Badge> : null}
+                    </label>
+                  ))}
+                </div>
+                {copy.some((c) => scopes.data.find((x) => x.scope === c)?.personalData) ? (
+                  <p className="text-xs text-muted-foreground">{t('environments.personalDataHint')}</p>
+                ) : null}
+              </fieldset>
+            ) : null}
           </form>
           <p className="text-xs text-muted-foreground">{t('environments.addHint')}</p>
         </div>

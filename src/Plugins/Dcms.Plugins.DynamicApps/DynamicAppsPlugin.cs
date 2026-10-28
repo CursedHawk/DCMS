@@ -164,6 +164,7 @@ public sealed class DynamicAppsPlugin : IPlugin
         {
             // Applications' configuration moves between a workspace's environments (ADR 0026).
             services.AddScoped<IEnvironmentConfigKind, Metadata.DynamicAppsConfigKind>();
+            services.AddScoped<IEnvironmentDataCopier, Metadata.DynamicAppsRecordsCopier>();
         }
         if (host.IsAdmin && host.RunsBackgroundWork)
         {
