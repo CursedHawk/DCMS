@@ -84,10 +84,10 @@
 
   <ItemGroup Label="Media">
     <PackageVersion Include="FFMpegCore" Version="5.4.0" />
-    <!-- Pinned to 3.1.x: ImageSharp 4.x enforces a commercial license key at
-         build time. 3.1 ships under the Six Labors Split License (free below
+    <!-- Pinned to 3.x: ImageSharp 4.x enforces a commercial license key at
+         build time. 3.x ships under the Six Labors Split License (free below
          the revenue threshold). Revisit in Phase 5 (docs/adr). -->
-    <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageVersion Include="SixLabors.ImageSharp" Version="3.2.0" />
   </ItemGroup>
 
   <!-- ImageSharp advisories of 2026-10-07, fixed only in 4.1.2 (licence key, above). Suppressed
