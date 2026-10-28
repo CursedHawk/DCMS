@@ -17,14 +17,17 @@ namespace Dcms.AdminApi.Tenancy;
 /// with an environment column is re-keyed to (W, E); every other tenant table moves to W, except
 /// what was E's copy of the workspace's: its mirrored memberships (role assignments move to W's
 /// membership of the same person), invitations, usage, AI settings W has its own of, and
-/// notifications W already holds. Audit rows stay where they were written: the log is
+/// notifications W already holds; analytics rollups of the same key are summed, and job dedupe
+/// keys W already uses are cleared. Audit rows stay where they were written: the log is
 /// append-only, and its chain is per tenant.</para>
 ///
 /// <para>Media rows keep their object keys, so what E uploaded is served from where it is.</para>
 /// </summary>
 public static class EnvironmentConversion
 {
-    // Never re-keyed: append-only (audit), or keyed by environment already (edge).
+    // Never re-keyed: append-only (audit), or keyed by environment already (edge). Only the
+    // schemas of the platform's own tenant tables are touched at all: identity shares the
+    // database, and its realms are keyed by the environment, which is the point.
     private static readonly string[] SkippedSchemas = ["audit", "edge"];
 
     // E's copy of what is the workspace's: deleted, not moved.
@@ -64,7 +67,8 @@ public static class EnvironmentConversion
                     tables.Add((reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)));
                 }
             }
-            tables.RemoveAll(t => SkippedSchemas.Contains(t.Schema)
+            var schemas = RlsConfigurator.TenantTables.Select(t => t.Schema).ToHashSet(StringComparer.Ordinal);
+            tables.RemoveAll(t => !schemas.Contains(t.Schema) || SkippedSchemas.Contains(t.Schema)
                                   || (t.Schema, t.Table) is ("tenancy", "environments") or ("tenancy", "tenant_memberships")
                                   || Dropped.Contains((t.Schema, t.Table)));
 
@@ -117,6 +121,17 @@ public static class EnvironmentConversion
                         AND EXISTS (SELECT 1 FROM notifications.notifications w WHERE w."TenantId" = @w AND w."DedupeKey" = x."DedupeKey"));
                     DELETE FROM notifications.notifications x WHERE x."TenantId" = @e
                         AND EXISTS (SELECT 1 FROM notifications.notifications w WHERE w."TenantId" = @w AND w."DedupeKey" = x."DedupeKey");
+                    -- Rollups of the same day, site, type and path are one row per tenant: summed.
+                    UPDATE analytics.daily_rollups w SET "Count" = w."Count" + x."Count"
+                    FROM analytics.daily_rollups x
+                    WHERE w."TenantId" = @w AND x."TenantId" = @e AND w."Day" = x."Day" AND w."SiteId" = x."SiteId"
+                        AND w."Type" = x."Type" AND w."Path" = x."Path";
+                    DELETE FROM analytics.daily_rollups x WHERE x."TenantId" = @e
+                        AND EXISTS (SELECT 1 FROM analytics.daily_rollups w WHERE w."TenantId" = @w AND w."Day" = x."Day"
+                            AND w."SiteId" = x."SiteId" AND w."Type" = x."Type" AND w."Path" = x."Path");
+                    -- A dedupe key only stops the same job being asked for twice; E's are history.
+                    UPDATE jobs.jobs x SET "DedupeKey" = NULL WHERE x."TenantId" = @e AND x."DedupeKey" IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM jobs.jobs w WHERE w."TenantId" = @w AND w."DedupeKey" = x."DedupeKey");
                     """, ct, ("w", workspace), ("e", id));
                 foreach (var (schema, table) in Dropped)
                 {

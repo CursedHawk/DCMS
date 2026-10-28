@@ -70,6 +70,13 @@ public class EnvironmentConversionTests(AdminApiFixture fixture)
                 WHERE "Id" = '{{environment}}';
             INSERT INTO tenancy.domains ("Id","TenantId","EnvironmentId","Hostname","VerificationToken","IsPrimary","CreatedAt")
                 VALUES ('{{Guid.NewGuid()}}','{{environment}}','{{environment}}','{{slug}}-dev.example.test','t',false,now());
+            -- Another service's table in the same database, keyed by "TenantId" as identity's realms
+            -- are: each environment keeps its own row, so it must not be re-keyed.
+            CREATE SCHEMA IF NOT EXISTS conversion_probe;
+            CREATE TABLE IF NOT EXISTS conversion_probe.realms ("TenantId" uuid PRIMARY KEY);
+            INSERT INTO conversion_probe.realms VALUES ('{{workspace}}'), ('{{environment}}');
+            INSERT INTO analytics.daily_rollups ("TenantId","Day","SiteId","Type","Path","Count")
+                VALUES ('{{workspace}}','2026-10-01','{{Guid.Empty}}','pageview','/',3), ('{{environment}}','2026-10-01','{{Guid.Empty}}','pageview','/',4);
             """, ct);
 
         // As the migration job runs it: the schema's owner.
@@ -98,6 +105,10 @@ public class EnvironmentConversionTests(AdminApiFixture fixture)
         mine.EnumerateArray().Select(t => t.GetProperty("slug").GetString()).Should().Contain(slug).And.NotContain($"{slug}-development");
 
         (await ScalarAsync($"""SELECT count(*) FROM tenancy.tenants WHERE "Id" = '{environment}'""", ct)).Should().Be(0L);
+        (await ScalarAsync($"""SELECT "Count" FROM analytics.daily_rollups WHERE "TenantId" = '{workspace}' AND "Day" = '2026-10-01'""", ct))
+            .Should().Be(7L, "rollups of the same key are summed");
+        (await ScalarAsync($"""SELECT count(*) FROM conversion_probe.realms WHERE "TenantId" = '{environment}'""", ct))
+            .Should().Be(1L, "another service's rows keyed by the environment stay its own");
         (await ScalarAsync($"""SELECT count(*) FROM tenancy.tenant_memberships WHERE "TenantId" = '{workspace}'""", ct)).Should().Be(1L, "one member list");
         (await ScalarAsync($"""SELECT count(*) FROM tenancy.domains WHERE "TenantId" = '{workspace}' AND "EnvironmentId" = '{environment}'""", ct)).Should().Be(1L);
         (await ScalarAsync("""SELECT count(*) FROM information_schema.columns WHERE table_schema = 'tenancy' AND table_name = 'tenants' AND column_name = 'WorkspaceId'""", ct))
