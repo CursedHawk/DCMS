@@ -96,18 +96,18 @@ public static class EnvironmentEndpoints
             {
                 return Results.BadRequest(new { error = "An empty environment copies no data." });
             }
-            // A feature environment (development-feature1) is a branch of its source: it starts as
-            // a copy of it, sits beside it and merges back into it. Branching needs a way into the
+            // A copy -- its configuration, and whatever data is ticked -- needs a way into the
             // source, as reading it would.
+            if (!me.IsSuperAdmin && !(await OpenedByAsync(db, tenantId, me.RequireUserId(), ct)).Contains(source.Id))
+            {
+                return Results.Forbid();
+            }
+            // A feature environment (development-feature1) is a branch of its source: it starts as
+            // a copy of it, sits beside it and merges back into it.
             var feature = body.Feature == true;
             if (feature && body.Empty == true)
             {
                 return Results.BadRequest(new { error = "A feature environment starts as a copy of what it branches from." });
-            }
-            if (feature && !me.IsSuperAdmin
-                && !(await OpenedByAsync(db, tenantId, me.RequireUserId(), ct)).Contains(source.Id))
-            {
-                return Results.Forbid();
             }
 
             // A stage goes in front of the pipeline; a feature beside what it branched from.

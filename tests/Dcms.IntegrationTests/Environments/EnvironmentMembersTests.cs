@@ -185,6 +185,9 @@ public class EnvironmentMembersTests(AdminApiFixture fixture)
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", manager, slug,
             new { name = "staging-hotfix", from = stagingId, feature = true }), ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // Nor a plain duplicate of it, with or without its data.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", manager, slug,
+            new { name = "staging-copy", from = stagingId, copy = new[] { "dynamic-apps-records" } }), ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         // The owner may; the branch's people hold what they hold in staging, so the manager has no way in.
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, slug,
