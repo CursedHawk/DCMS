@@ -2287,9 +2287,10 @@
     "useInstance": "App address there",
     "useGrants": "Grants",
     "useGrantsPlaceholder": {
-      "tables": "companies:read, deals:create",
-      "contracts": "billing.invoices/CreateInvoice"
+      "tables": "companies:read, deals:create"
     },
+    "useNoOperations": "No app in {{name}} offers operations.",
+    "useWrites": "Changes data",
     "useRow": {
       "tables": "Tables of {{instance}} in {{name}}",
       "contracts": "Operations of {{instance}} in {{name}}"

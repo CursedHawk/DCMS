@@ -351,7 +351,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, $"{ws.Prod}/billing",
             new { pluginId = "blog", slug = "invoices", name = "Invoices", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
         (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/environments/{ws.DevId}/links", ws.Owner, ws.Prod,
-            new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants = new[] { "content.read/GetItem" } }), ct))
+            new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants = new[] { "blog.posts/Get" } }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
 
         var changes = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/changes", ws.Owner, ws.Dev), ct), ct);
@@ -363,7 +363,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var link = prodLinks.EnumerateArray().Single();
         (link.GetProperty("kind").GetString(), link.GetProperty("targetEnvironmentId").GetGuid(), link.GetProperty("targetKey").GetString())
             .Should().Be(("contracts", billing, "invoices"));
-        link.GetProperty("grants").EnumerateArray().Select(g => g.GetString()).Should().Equal("content.read/GetItem");
+        link.GetProperty("grants").EnumerateArray().Select(g => g.GetString()).Should().Equal("blog.posts/Get");
     }
 
     [DockerFact]
@@ -641,7 +641,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         // The role is written first (roles before links); the link then fails, its target gone.
         await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
         (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/environments/{ws.DevId}/links", ws.Owner, ws.Prod,
-            new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants = new[] { "content.read/GetItem" } }), ct))
+            new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants = new[] { "blog.posts/Get" } }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
         var migration = await CutAsync(client, ws, "Editors and billing", ct);
         (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/environments/{billing}", ws.Owner, ws.Prod), ct)).IsSuccessStatusCode.Should().BeTrue();

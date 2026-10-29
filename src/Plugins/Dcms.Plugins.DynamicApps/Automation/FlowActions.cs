@@ -94,6 +94,7 @@ public static partial class ActionCatalog
     [
         new RecordsCreateAction(), new RecordsUpdateAction(), new RecordsDeleteAction(), new RecordsLookupAction(), new RecordsQueryAction(),
         new LinkedRecordsQueryAction(), new LinkedRecordsCreateAction(), new LinkedRecordsUpdateAction(), new LinkedRecordsDeleteAction(),
+        new LinkedContractCallAction(),
         new FlowInvokeAction(), new EventPublishAction(),
         new EmailSendAction(), new NotificationRaiseAction(),
         new ContentGetAction(), new ContentListAction(),
@@ -516,6 +517,34 @@ internal sealed class LinkedRecordsDeleteAction : LinkedRecordsAction
         var records = await RecordsAsync(context, input, ct);
         await CallAsync(async () => { await records.DeleteRecordAsync(new RecordRequest(input.Table, id), ct); return true; });
         return new JsonObject { ["deleted"] = true };
+    }
+}
+
+internal sealed record LinkedContractInput(string Environment, string App, string Contract, string Operation, JsonObject? Input = null);
+
+/// <summary>
+/// An operation of an app in another environment of the workspace -- a service environment's
+/// billing, say -- through a contracts link its managers set up (ADR 0028): only the operations
+/// the link grants, run as that environment.
+/// </summary>
+internal sealed class LinkedContractCallAction : FlowAction<LinkedContractInput>
+{
+    public override string Id => "environment.contract.call";
+    public override string Description => "Call an operation of an app in another environment, through a contracts link that grants it (e.g. contract blog.posts, operation List). Output: the operation's result.";
+    // What the operation does is the link's to grant, not known here: treated as one that may write.
+    public override OpRisk Risk => OpRisk.Safe;
+    protected override string Schema => "{\"type\":\"object\",\"required\":[\"environment\",\"app\",\"contract\",\"operation\"],\"properties\":{\"environment\":{\"type\":\"string\"},\"app\":{\"type\":\"string\"},\"contract\":{\"type\":\"string\"},\"operation\":{\"type\":\"string\"},\"input\":{\"type\":\"object\"}}}";
+
+    protected override async Task<JsonNode?> RunAsync(FlowActionContext context, LinkedContractInput input, CancellationToken ct)
+    {
+        try
+        {
+            return await context.Plugin.Contracts.LinkedCallAsync(input.Environment, input.App, input.Contract, input.Operation, input.Input, ct);
+        }
+        catch (Exception e) when (e is ContractAccessDeniedException or ContractValidationException or ContractConflictException or ContractLimitException)
+        {
+            throw new FlowFatalException(e.Message);
+        }
     }
 }
 

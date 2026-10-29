@@ -316,10 +316,32 @@ public static class EnvironmentEndpoints
                 .ToListAsync(ct));
         }).RequireAuthorization();
 
+        // What another environment can use from this one through a contracts link: each enabled
+        // app's operations, as the grants that name them.
+        app.MapGet("/api/admin/environments/{id:guid}/operations", async (
+            Guid id, ITenantContext tenant, EnvironmentStore environments, Dcms.Shared.Data.Cms.CmsDbContext cms,
+            Dcms.PluginSdk.Runtime.PluginRegistry registry, CancellationToken ct) =>
+        {
+            if (await TargetAsync(environments, tenant, id, ct) is not { } target) return Results.NotFound();
+            using var rls = target.Scope();
+            var instances = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                .Where(p => p.TenantId == target.TenantId && p.Enabled).OrderBy(p => p.Slug)
+                .Select(p => new { p.Slug, p.Name, p.PluginId }).ToListAsync(ct);
+            return Results.Ok(instances
+                .Select(i => new
+                {
+                    slug = i.Slug, name = i.Name,
+                    operations = EnvironmentLinkRules.Operations(registry, i.PluginId)
+                        .Select(o => new { grant = o.Grant, risk = o.Risk.ToString().ToLowerInvariant(), description = o.Description }).ToList(),
+                })
+                .Where(i => i.operations.Count > 0));
+        }).RequireAuthorization();
+
         app.MapPost("/api/admin/environments/{id:guid}/links", async (
             Guid id, LinkRequest body, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db,
             Dcms.Shared.Data.Cms.CmsDbContext cms, CurrentUser me, IPermissionResolver permissions,
-            Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, IEnumerable<IEnvironmentLinksObserver> observers, CancellationToken ct) =>
+            Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, IEnumerable<IEnvironmentLinksObserver> observers,
+            Dcms.PluginSdk.Runtime.PluginRegistry registry, CancellationToken ct) =>
         {
             if (await TargetAsync(environments, tenant, id, ct) is not { } consumer) return Results.NotFound();
             var tenantId = consumer.TenantId;
@@ -328,7 +350,7 @@ public static class EnvironmentEndpoints
             {
                 return Results.BadRequest(new { error = "A link names another environment of this workspace." });
             }
-            var (link, refused) = await EnvironmentLinkRules.CheckAsync(db, cms, consumer, provider,
+            var (link, refused) = await EnvironmentLinkRules.CheckAsync(db, cms, registry, consumer, provider,
                 body.Kind, body.TargetKey, body.Access, body.Grants, existing: null, ct);
             if (refused is not null)
             {

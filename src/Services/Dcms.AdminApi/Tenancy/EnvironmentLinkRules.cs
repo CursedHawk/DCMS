@@ -1,3 +1,5 @@
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
@@ -25,7 +27,7 @@ public static class EnvironmentLinkRules
 
     /// <param name="existing">The link being replaced, when a deployment updates one: not a collision with itself.</param>
     public static async Task<(Checked? Link, Refused? Refused)> CheckAsync(
-        TenancyDbContext db, CmsDbContext cms, TenantEnvironment consumer, TenantEnvironment provider,
+        TenancyDbContext db, CmsDbContext cms, PluginRegistry registry, TenantEnvironment consumer, TenantEnvironment provider,
         string kind, string? targetKey, string? access, IReadOnlyCollection<string>? grants, Guid? existing, CancellationToken ct)
     {
         var tenantId = consumer.TenantId;
@@ -66,6 +68,12 @@ public static class EnvironmentLinkRules
                     if (instance is null || (kind == EnvironmentLinkKinds.Tables && instance.PluginId != DynamicAppsPluginId))
                     {
                         return (null, new Refused("That environment has no such instance to link to."));
+                    }
+                    // Operations it really provides: a grant naming nothing would wait silently for a call that never works.
+                    if (kind == EnvironmentLinkKinds.Contracts
+                        && grants.Select(g => g.Trim()).Except(Operations(registry, instance.PluginId).Select(o => o.Grant)).FirstOrDefault() is { } unknown)
+                    {
+                        return (null, new Refused($"'{targetKey}' there provides no operation {unknown}."));
                     }
                 }
                 using (consumer.Scope())
@@ -120,6 +128,13 @@ public static class EnvironmentLinkRules
     public static Task<bool> AppLinkedAsync(TenancyDbContext db, Guid tenantId, string slug, CancellationToken ct) =>
         db.EnvironmentLinks.IgnoreTenantFilter()
             .AnyAsync(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.App && l.TargetKey == slug, ct);
+
+    /// <summary>What a contracts link to an instance of <paramref name="pluginId"/> may grant: every operation of every contract it provides.</summary>
+    public static IEnumerable<(string Grant, OpRisk Risk, string? Description)> Operations(PluginRegistry registry, string pluginId) =>
+        registry.Contracts
+            .Where(c => !c.Descriptor.IsPlatform && c.ProvidedBy(pluginId) is not null)
+            .OrderBy(c => c.Descriptor.Name, StringComparer.Ordinal)
+            .SelectMany(c => c.Descriptor.Operations.Select(o => ($"{c.Descriptor.Name}/{o.Name}", o.Risk, o.Description)));
 
     /// <summary>A grant of the link's kind: <c>contract/Operation</c>, or <c>table:verb</c>.</summary>
     public static bool Grant(string kind, string grant)

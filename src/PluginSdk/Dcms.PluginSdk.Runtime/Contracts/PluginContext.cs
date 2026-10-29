@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Data.Rls;
@@ -129,18 +130,69 @@ internal sealed class PluginContext(
 
     public async Task<T> LinkedAsync<T>(string environment, string providerSlug, CancellationToken ct) where T : class
     {
+        var (registered, _) = Declared<T>();
+        return (T)await LinkedProxyAsync(registered, environment, providerSlug, byName: false, ct);
+    }
+
+    public async Task<JsonNode?> LinkedCallAsync(string environment, string providerSlug, string contract, string operation,
+        JsonNode? input, CancellationToken ct)
+    {
+        var registered = (registry.FindContract(contract)
+                          ?? registry.Contracts.Where(c => c.Descriptor.Name == contract).MaxBy(c => c.Descriptor.Major))
+                         is { Descriptor.IsPlatform: false } found
+            ? found
+            : throw new ContractValidationException($"There is no contract '{contract}' to call in another environment.");
+        var op = registered.Descriptor.FindOperation(operation)
+                 ?? throw new ContractValidationException($"{registered.Descriptor.Id} has no operation '{operation}'.");
+        var proxy = await LinkedProxyAsync(registered, environment, providerSlug, byName: true, ct);
+
+        object? argument = null;
+        if (op.InputType is { } inputType)
+        {
+            try
+            {
+                argument = (input ?? new JsonObject()).Deserialize(inputType, ContractDispatcher.Strict)
+                           ?? throw new JsonException("Input is required.");
+            }
+            catch (JsonException e)
+            {
+                throw new ContractValidationException($"Invalid input for {registered.Descriptor.Name}/{op.Name}: {e.Message}");
+            }
+        }
+        Task task;
+        try
+        {
+            task = (Task)op.Method.Invoke(proxy, op.InputType is null ? [ct] : [argument, ct])!;
+        }
+        catch (System.Reflection.TargetInvocationException e) when (e.InnerException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+            throw;
+        }
+        await task;
+        return op.OutputType is null ? null
+            : JsonSerializer.SerializeToNode(task.GetType().GetProperty(nameof(Task<object>.Result))!.GetValue(task), ContractDescriptorBuilder.Json);
+    }
+
+    /// <summary>
+    /// The provider of <paramref name="registered"/> in the linked environment, built and run as
+    /// that environment, behind the link's checks (<see cref="LinkedContractProxy"/>). A call by
+    /// name goes through a contracts link only; a typed one also takes a tables link, for the
+    /// records contract.
+    /// </summary>
+    private async Task<object> LinkedProxyAsync(RegisteredContract registered, string environment, string providerSlug, bool byName, CancellationToken ct)
+    {
         if (LinkedCall.Active)
         {
             throw new ContractAccessDeniedException("A call through an environment link cannot call through another.");
         }
-        var (registered, _) = Declared<T>();
         var descriptor = registered.Descriptor;
         var here = EnvironmentId;
         var link = await services.GetRequiredService<ContractLinks>().FindAsync(tenantId, here, environment, providerSlug, ct)
                    ?? throw new ContractAccessDeniedException($"This environment has no link to '{providerSlug}' in environment '{environment}'.");
-        if (link.Kind == Shared.Data.Tenancy.EnvironmentLinkKinds.Tables && descriptor.Name != TablesContract)
+        if (link.Kind == Shared.Data.Tenancy.EnvironmentLinkKinds.Tables && (byName || descriptor.Name != TablesContract))
         {
-            throw new ContractAccessDeniedException($"A tables link reaches {TablesContract} only.");
+            throw new ContractAccessDeniedException($"A tables link reaches {TablesContract} only, through the records actions.");
         }
 
         // The provider is the target environment's instance, built and run as that environment.
@@ -148,14 +200,16 @@ internal sealed class PluginContext(
         {
             var targetEnabled = await services.GetRequiredService<IPluginInstanceStore>().ListEnabledAsync(tenantId, ct);
             var provider = targetEnabled.FirstOrDefault(i => i.Slug == providerSlug && registered.ProvidedBy(i.PluginId) is not null)
-                           ?? throw new InvalidOperationException($"No enabled instance '{providerSlug}' in environment '{environment}' provides {descriptor.Id}.");
+                           ?? throw new ContractAccessDeniedException($"No enabled instance '{providerSlug}' in environment '{environment}' provides {descriptor.Id}.");
             var providerContext = new PluginContext(tenantId, provider.PluginId, provider, actor, targetEnabled, registry, services)
             {
                 EnvironmentId = link.TargetEnvironmentId,
             };
             var implementation = registered.ProvidedBy(provider.PluginId)!.Implementation;
-            var traced = ContractProxy.Create((T)Construct(implementation, providerContext), descriptor, pluginId, provider.PluginId, services);
-            return LinkedContractProxy.Create(traced, descriptor, link, tenantId, here, pluginId, services);
+            var traced = typeof(ContractProxy).GetMethod(nameof(ContractProxy.Create))!.MakeGenericMethod(descriptor.ContractType)
+                .Invoke(null, [Construct(implementation, providerContext), descriptor, pluginId, provider.PluginId, services])!;
+            return typeof(LinkedContractProxy).GetMethod(nameof(LinkedContractProxy.Create))!.MakeGenericMethod(descriptor.ContractType)
+                .Invoke(null, [traced, descriptor, link, tenantId, here, pluginId, services])!;
         }
     }
 

@@ -2333,9 +2333,10 @@
     "useInstance": "Adresa aplikace tam",
     "useGrants": "Oprávnění",
     "useGrantsPlaceholder": {
-      "tables": "companies:read, deals:create",
-      "contracts": "billing.invoices/CreateInvoice"
+      "tables": "companies:read, deals:create"
     },
+    "useNoOperations": "Žádná aplikace v {{name}} nenabízí operace.",
+    "useWrites": "Mění data",
     "useRow": {
       "tables": "Tabulky {{instance}} v {{name}}",
       "contracts": "Operace {{instance}} v {{name}}"

@@ -108,6 +108,28 @@ test('an environment uses a service environment’s tables for what is granted',
     .toEqual([{ kind: 'tables', targetEnvironmentId: TENANT.tenantId, targetKey: 'crm', grants: ['companies:read', 'deals:create'] }]);
 });
 
+test('an environment uses another’s app operations, picked from what it offers', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('GET', '/api/admin/environments/:id/operations', [
+    { slug: 'invoices', name: 'Invoices', operations: [
+      { grant: 'blog.posts/Get', risk: 'read', description: 'One published post by slug.' },
+      { grant: 'blog.posts/List', risk: 'read', description: 'Published posts, newest first.' },
+    ] },
+  ]);
+  api.on('POST', '/api/admin/environments/:id/links', { id: 'l1' });
+  await page.goto('/settings/environments');
+
+  const form = page.getByText("Use an app's tables or operations", { exact: false }).first().locator('xpath=ancestor::form[1]');
+  await form.getByLabel('What to use').click();
+  await page.getByRole('option', { name: 'Plugin operations' }).click();
+  await form.getByLabel('App address there').click();
+  await page.getByRole('option', { name: 'Invoices (invoices)' }).click();
+  await form.getByRole('checkbox').first().click();
+  await form.getByRole('button', { name: 'Use from there' }).click();
+  await expect.poll(() => api.requestsTo('POST', `/api/admin/environments/${DEV}/links`).map((r) => r.body))
+    .toEqual([{ kind: 'contracts', targetEnvironmentId: TENANT.tenantId, targetKey: 'invoices', grants: ['blog.posts/Get'] }]);
+});
+
 test('the palette switches environment and keeps the page', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments', ENABLED);
   await page.goto('/settings/roles');

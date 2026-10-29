@@ -118,6 +118,21 @@ public interface IPluginContracts
     /// <exception cref="ContractAccessDeniedException">No link grants this, or the call would chain.</exception>
     Task<T> LinkedAsync<T>(string environment, string providerSlug, CancellationToken ct) where T : class =>
         throw new NotSupportedException("This host does not resolve linked contracts.");
+
+    /// <summary>
+    /// One operation of a contract an instance in another environment provides, named rather than
+    /// typed: for automation, which calls whatever a link grants rather than contracts it declared.
+    /// As <see cref="LinkedAsync{T}"/>, through a <c>contracts</c> link granting
+    /// <c>{contract}/{operation}</c>, run as that environment.
+    /// </summary>
+    /// <param name="contract">The contract's id (<c>blog.posts@1</c>) or name (<c>blog.posts</c>, its newest major).</param>
+    /// <param name="operation">The operation's name, e.g. <c>List</c>.</param>
+    /// <returns>The result as JSON; null for an operation that returns nothing.</returns>
+    /// <exception cref="ContractAccessDeniedException">No link grants this, or the call would chain.</exception>
+    /// <exception cref="ContractValidationException">No such contract or operation, or input it does not take.</exception>
+    Task<System.Text.Json.Nodes.JsonNode?> LinkedCallAsync(string environment, string providerSlug, string contract, string operation,
+        System.Text.Json.Nodes.JsonNode? input, CancellationToken ct) =>
+        throw new NotSupportedException("This host does not resolve linked contracts.");
 }
 
 public interface IPluginEventHandler<in TEvent> where TEvent : IPluginEvent

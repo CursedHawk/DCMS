@@ -249,6 +249,20 @@ export const useLinks = (environmentId: string) =>
     queryFn: () => api.get<EnvironmentLink[]>(`/admin/environments/${environmentId}/links`),
   });
 
+/** An app of an environment and the operations a contracts link to it may grant. */
+export interface OfferedApp {
+  slug: string;
+  name: string;
+  operations: { grant: string; risk: 'read' | 'safe' | 'dangerous'; description: string | null }[];
+}
+
+export const useOperations = (environmentId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ['environments', 'operations', environmentId],
+    queryFn: () => api.get<OfferedApp[]>(`/admin/environments/${environmentId}/operations`),
+    enabled: enabled && !!environmentId,
+  });
+
 export function useLinkMutations(environmentId: string) {
   const qc = useQueryClient();
   const onSuccess = () => void qc.invalidateQueries({ queryKey: ['environments', 'links', environmentId] });

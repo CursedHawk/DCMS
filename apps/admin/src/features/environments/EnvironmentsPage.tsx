@@ -30,6 +30,7 @@ import {
   useEnvironments,
   useLinkMutations,
   useLinks,
+  useOperations,
   usePolicies,
   useSavePolicies,
   useUpdateEnvironment,
@@ -449,7 +450,12 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
   const [useTarget, setUseTarget] = useState(others[0]?.id ?? '');
   const [instance, setInstance] = useState('');
   const [grants, setGrants] = useState('');
-  const grantList = grants.split(/[\n,]/).map((g) => g.trim()).filter(Boolean);
+  // A contracts link grants operations the app there really has: picked from what it offers.
+  const offers = useOperations(useTarget, useKind === 'contracts');
+  const offered = (offers.data ?? []).find((a) => a.slug === instance);
+  const [picked, setPicked] = useState<string[]>([]);
+  const grantList =
+    useKind === 'contracts' ? picked : grants.split(/[\n,]/).map((g) => g.trim()).filter(Boolean);
 
   return (
     <fieldset className="flex flex-col gap-1.5">
@@ -586,6 +592,7 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
               onSuccess: () => {
                 setInstance('');
                 setGrants('');
+                setPicked([]);
               },
               onError,
             },
@@ -594,7 +601,14 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
       >
         <span className="text-sm text-muted-foreground">{t('environments.useHint')}</span>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Select value={useKind} onValueChange={(v) => setUseKind(v as 'tables' | 'contracts')}>
+          <Select
+            value={useKind}
+            onValueChange={(v) => {
+              setUseKind(v as 'tables' | 'contracts');
+              setInstance('');
+              setPicked([]);
+            }}
+          >
             <SelectTrigger className="sm:w-40" aria-label={t('environments.useKind')}>
               <SelectValue />
             </SelectTrigger>
@@ -603,13 +617,43 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
               <SelectItem value="contracts">{t('environments.useKinds.contracts')}</SelectItem>
             </SelectContent>
           </Select>
-          <Input
-            aria-label={t('environments.useInstance')}
-            placeholder={t('environments.useInstance')}
-            value={instance}
-            onChange={(e) => setInstance(e.target.value.toLowerCase())}
-          />
-          <Select value={useTarget} onValueChange={setUseTarget}>
+          {useKind === 'contracts' ? (
+            <Select
+              value={instance}
+              onValueChange={(v) => {
+                setInstance(v);
+                setPicked([]);
+              }}
+            >
+              <SelectTrigger className="sm:flex-1" aria-label={t('environments.useInstance')}>
+                <SelectValue placeholder={t('environments.useInstance')} />
+              </SelectTrigger>
+              <SelectContent>
+                {(offers.data ?? []).map((a) => (
+                  <SelectItem key={a.slug} value={a.slug}>
+                    {a.name} ({a.slug})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              aria-label={t('environments.useInstance')}
+              placeholder={t('environments.useInstance')}
+              value={instance}
+              onChange={(e) => setInstance(e.target.value.toLowerCase())}
+            />
+          )}
+          <Select
+            value={useTarget}
+            onValueChange={(v) => {
+              setUseTarget(v);
+              if (useKind === 'contracts') {
+                setInstance('');
+                setPicked([]);
+              }
+            }}
+          >
             <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
               <SelectValue />
             </SelectTrigger>
@@ -622,13 +666,42 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
             </SelectContent>
           </Select>
         </div>
-        <Textarea
-          aria-label={t('environments.useGrants')}
-          placeholder={t(`environments.useGrantsPlaceholder.${useKind}`)}
-          rows={2}
-          value={grants}
-          onChange={(e) => setGrants(e.target.value)}
-        />
+        {useKind === 'contracts' ? (
+          offers.data && offers.data.length === 0 ? (
+            <span className="text-sm text-muted-foreground">{t('environments.useNoOperations', { name: nameOf(useTarget) })}</span>
+          ) : (
+            <div className="flex flex-col gap-1" role="group" aria-label={t('environments.useGrants')}>
+              {offered?.operations.map((o) => (
+                <label key={o.grant} className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={picked.includes(o.grant)}
+                    onCheckedChange={(on) =>
+                      setPicked((p) => (on === true ? [...p, o.grant] : p.filter((g) => g !== o.grant)))
+                    }
+                  />
+                  <span className="min-w-0">
+                    <span className="font-mono text-xs break-all">{o.grant}</span>
+                    {o.risk !== 'read' && (
+                      <Badge tone="outline" className="ml-2">
+                        {t('environments.useWrites')}
+                      </Badge>
+                    )}
+                    {o.description && <span className="block text-muted-foreground">{o.description}</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )
+        ) : (
+          <Textarea
+            aria-label={t('environments.useGrants')}
+            placeholder={t('environments.useGrantsPlaceholder.tables')}
+            rows={2}
+            value={grants}
+            onChange={(e) => setGrants(e.target.value)}
+          />
+        )}
         <div>
           <Button type="submit" variant="outline" disabled={!instance.trim() || !useTarget || grantList.length === 0 || add.isPending}>
             <Link2 className="h-4 w-4" /> {t('environments.useSubmit')}
