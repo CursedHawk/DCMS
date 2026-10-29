@@ -145,7 +145,15 @@ public sealed class EnvironmentMigrator(
             foreach (var item in source[kind.Kind].Values.OrderBy(i => i.Key, StringComparer.Ordinal))
             {
                 using var scope = target.Scope();
-                await kind.ApplyAsync(target.TenantId, item.Key, item.Value, new EnvironmentApplyContext(null), ct);
+                try
+                {
+                    await kind.ApplyAsync(target.TenantId, item.Key, item.Value, new EnvironmentApplyContext(null), ct);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    // Which item, in words the job can show: the source has something this one refuses.
+                    throw new EnvironmentMigrationException("environments.errors.copyRemoved", $"{kind.Kind} '{item.Key}': {e.Message}");
+                }
             }
         }
 

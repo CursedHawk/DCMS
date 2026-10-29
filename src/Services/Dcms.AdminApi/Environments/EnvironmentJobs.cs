@@ -13,9 +13,14 @@ public sealed record EnvironmentRollbackPayload(Guid MigrationId, Dictionary<str
 /// <param name="Data">The data scopes to copy as well (<see cref="IEnvironmentDataCopier.Scope"/>); configuration always comes.</param>
 public sealed record EnvironmentCopyPayload(Guid Source, List<string>? Data = null);
 
-/// <summary>Gives a new environment its source's configuration (ADR 0026: "copy configuration from").</summary>
+/// <summary>
+/// Gives a new environment its source's configuration (ADR 0026: "copy configuration from"), and
+/// the data scopes ticked. All or nothing: a copy that stops partway is no environment to work in,
+/// so it is deleted again and the job says on what it stopped.
+/// </summary>
 public sealed class EnvironmentCopyJob(
-    EnvironmentMigrator migrator, EnvironmentDuplicator duplicator, TenancyDbContext db, EnvironmentStore environments)
+    EnvironmentMigrator migrator, EnvironmentDuplicator duplicator, TenancyDbContext db, EnvironmentStore environments,
+    Tenancy.TenantDeleter deleter, ILogger<EnvironmentCopyJob> logger)
     : IJobHandler<EnvironmentCopyPayload>
 {
     public const string Kind = "environments.copy";
@@ -25,16 +30,34 @@ public sealed class EnvironmentCopyJob(
         var (target, source) = await environments.JobPairAsync(context, payload.Source);
         var scopes = payload.Data ?? [];
         Dictionary<string, int> copied = [];
-        await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, async () =>
+        try
         {
-            await context.ReportAsync(0, scopes.Count + 1, "jobs.stages.environmentCopy.configuration");
-            await migrator.CopyAsync(target, source, context.Cancellation);
-            var done = 1;
-            copied = await duplicator.CopyAsync(target, source, scopes,
-                async scope => await context.ReportAsync(done++, scopes.Count + 1, $"jobs.stages.environmentCopy.{scope}"),
-                context.Cancellation);
-            return true;
-        });
+            await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, async () =>
+            {
+                await context.ReportAsync(0, scopes.Count + 1, "jobs.stages.environmentCopy.configuration");
+                await migrator.CopyAsync(target, source, context.Cancellation);
+                var done = 1;
+                copied = await duplicator.CopyAsync(target, source, scopes,
+                    async scope => await context.ReportAsync(done++, scopes.Count + 1, $"jobs.stages.environmentCopy.{scope}"),
+                    context.Cancellation);
+                return true;
+            });
+        }
+        catch (Exception failure) when (failure is not OperationCanceledException)
+        {
+            var reason = failure is JobFailedException f ? f.Detail ?? f.ErrorKey : failure.Message;
+            try
+            {
+                await deleter.DeleteEnvironmentAsync(target.TenantId, target.Id, CancellationToken.None);
+                environments.Evict(target.TenantId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Environment {Environment}, whose copy failed, could not be deleted; it stays.", target.Id);
+                throw new JobFailedException("environments.errors.copyLeft", reason, failure);
+            }
+            throw new JobFailedException("environments.errors.copyRemoved", reason, failure);
+        }
         return new { copied };
     }
 }

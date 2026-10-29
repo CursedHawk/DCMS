@@ -73,4 +73,56 @@ public sealed class EnvironmentLinkTests(ContentFlowFixture fixture)
         // Read only: a write through the link is refused, not sent to production.
         (await content.SendAsync(Site(HttpMethod.Post, devSlug, "/api/news/post"), ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    /// <summary>
+    /// A duplicate is all or nothing: a source holding something the copy refuses (here an app of
+    /// its own and an app link at one address, from before that was refused) leaves no half-made
+    /// environment behind, and the job says what stopped it.
+    /// </summary>
+    [DockerFact]
+    public async Task A_copy_that_stops_partway_is_removed_again_and_says_on_what()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = fixture.Admin.CreateClient();
+        var owner = Guid.NewGuid();
+        var prod = "copy-" + Guid.NewGuid().ToString("N")[..8];
+        await Ok(await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/tenants", owner, body:
+            new { slug = prod, name = prod, ownerUserId = owner, ownerEmail = $"{owner:N}@dcms.test" }, superAdmin: true), ct), ct);
+        await Ok(await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, prod,
+            new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct), ct);
+        var billing = (await Ok(await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, prod,
+            new { name = "billing", service = true, empty = true }), ct), ct)).GetProperty("id").GetGuid();
+        await Ok(await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, $"{prod}/billing",
+            new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct), ct);
+        var prodId = (await Ok(await admin.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", owner, prod), ct), ct)).GetProperty("workspaceId").GetGuid();
+        await using (var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString))
+        {
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $$"""
+                INSERT INTO tenancy.environment_links ("Id","TenantId","EnvironmentId","Kind","TargetTenantId","TargetKey","Access","CreatedAt")
+                VALUES ('{{Guid.NewGuid()}}','{{prodId}}','{{prodId}}','app','{{billing}}','news','Read',now());
+                """;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        var qa = (await Ok(await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, prod, new { name = "qa" }), ct), ct))
+            .GetProperty("id").GetGuid();
+        JsonElement job = default;
+        for (var i = 0; i < 200; i++)
+        {
+            var jobs = await Ok(await admin.SendAsync(Req(HttpMethod.Get, "/api/admin/jobs?pageSize=20", owner, prod), ct), ct);
+            job = jobs.GetProperty("items").EnumerateArray().FirstOrDefault(j => j.GetProperty("kind").GetString() == "environments.copy");
+            if (job.ValueKind == JsonValueKind.Object && job.GetProperty("status").GetString() is "Failed" or "Succeeded") break;
+            await Task.Delay(250, ct);
+        }
+        job.GetProperty("status").GetString().Should().Be("Failed");
+        job.GetProperty("errorKey").GetString().Should().Be("environments.errors.copyRemoved");
+        job.GetProperty("errorDetail").GetString().Should().Contain("links 'app/billing/news'").And.Contain("its own app at this address");
+
+        var left = await Ok(await admin.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", owner, prod), ct), ct);
+        left.GetProperty("environments").EnumerateArray().Select(e => e.GetProperty("id").GetGuid()).Should().NotContain(qa);
+        left.GetProperty("environments").EnumerateArray().Single(e => e.GetProperty("name").GetString() == "production")
+            .GetProperty("promotesFrom").EnumerateArray().Should().BeEmpty("the pipeline is as it was before the copy");
+    }
 }

@@ -2381,6 +2381,8 @@
       "addressLinked": "Aplikace z tohoto nasazení používá adresu, na kterou je zde připojena aplikace jiného prostředí.",
       "cannotApply": "Změnu zde nelze v současné podobě použít. Podrobnosti úlohy říkají kterou a proč.",
       "undone": "Nasazení se zastavilo na změně, kterou nešlo provést, a vše, co zde už změnilo, bylo vráceno. Podrobnosti úlohy říkají kterou změnu a proč.",
+      "copyRemoved": "Kopírování se zastavilo na položce, kterou toto prostředí nemohlo přijmout, a nové prostředí bylo znovu odstraněno. Podrobnosti úlohy říkají kterou a proč.",
+      "copyLeft": "Kopírování se zastavilo na položce, kterou toto prostředí nemohlo přijmout, a napůl vytvořené prostředí se nepodařilo odstranit. Smažte je v Nastavení → Prostředí; podrobnosti úlohy říkají, co kopírování zastavilo.",
       "partlyApplied": "Nasazení se zastavilo na změně, kterou nešlo provést, a ne vše, co zde už změnilo, šlo vrátit. Podrobnosti úlohy uvádějí, co zůstalo."
     },
     "ownership": "Kdo zde co mění",

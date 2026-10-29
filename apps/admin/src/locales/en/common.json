@@ -2335,6 +2335,8 @@
       "addressLinked": "An app in this deployment uses an address another environment's app is linked at here.",
       "cannotApply": "A change could not be applied here as it stands. The job's details say which and why.",
       "undone": "The deployment stopped on a change it could not make, and everything it had changed here was put back. The job's details say which change and why.",
+      "copyRemoved": "Copying stopped on an item this environment could not take, so the new environment was removed again. The job's details say which and why.",
+      "copyLeft": "Copying stopped on an item this environment could not take, and the half-made environment could not be removed. Delete it in Settings → Environments; the job's details say what stopped the copy.",
       "partlyApplied": "The deployment stopped on a change it could not make, and not everything it had changed here could be put back. The job's details list what is left."
     },
     "ownership": "Who changes what here",
