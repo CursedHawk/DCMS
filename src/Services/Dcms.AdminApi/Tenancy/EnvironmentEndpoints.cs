@@ -1,4 +1,5 @@
 using Dcms.AdminApi.Environments;
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Rls;
@@ -318,7 +319,7 @@ public static class EnvironmentEndpoints
         app.MapPost("/api/admin/environments/{id:guid}/links", async (
             Guid id, LinkRequest body, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db,
             Dcms.Shared.Data.Cms.CmsDbContext cms, CurrentUser me, IPermissionResolver permissions,
-            Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
+            Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, IEnumerable<IEnvironmentLinksObserver> observers, CancellationToken ct) =>
         {
             if (await TargetAsync(environments, tenant, id, ct) is not { } consumer) return Results.NotFound();
             var tenantId = consumer.TenantId;
@@ -344,12 +345,14 @@ public static class EnvironmentEndpoints
                 .With("target", provider.Name).With("access", row.Access.ToString()).With("grants", row.Grants);
             await db.SaveChangesAsync(ct);
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
+            foreach (var observer in observers) await observer.LinkChangedAsync(tenantId, consumer.Id, provider.Id, row.Kind, ct);
             return Results.Created($"/api/admin/environments/{id}/links/{row.Id}", new { id = row.Id });
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
 
         app.MapDelete("/api/admin/environments/{id:guid}/links/{linkId:guid}", async (
             Guid id, Guid linkId, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CurrentUser me,
-            IPermissionResolver permissions, Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
+            IPermissionResolver permissions, Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit,
+            IEnumerable<IEnvironmentLinksObserver> observers, CancellationToken ct) =>
         {
             if (await TargetAsync(environments, tenant, id, ct) is not { } consumer) return Results.NotFound();
             if (!await CanManageAsync(consumer.TenantId, me, permissions, ct)) return Results.Forbid();
@@ -361,6 +364,7 @@ public static class EnvironmentEndpoints
             audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("environment", consumer.Name);
             await db.SaveChangesAsync(ct);
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
+            foreach (var observer in observers) await observer.LinkChangedAsync(consumer.TenantId, consumer.Id, link.TargetEnvironmentId, link.Kind, ct);
             return Results.NoContent();
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
 

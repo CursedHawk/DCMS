@@ -305,3 +305,29 @@ public sealed class SiteGateReconciler(IServiceScopeFactory scopes, ILogger<Site
         }
     }
 }
+
+/// <summary>
+/// A users link made or removed: the environment's hosts sign in through another realm now, or
+/// their own again. Both environments' rows and realms follow at once -- the consumer's hosts
+/// move between the two realms -- since content-api already takes only the new realm's tokens.
+/// </summary>
+public sealed class SiteGateLinkObserver(SiteGatePublisher publisher, ILogger<SiteGateLinkObserver> logger) : PluginSdk.Abstractions.IEnvironmentLinksObserver
+{
+    public async Task LinkChangedAsync(Guid tenantId, Guid environmentId, Guid targetEnvironmentId, string kind, CancellationToken ct)
+    {
+        if (kind != EnvironmentLinkKinds.Users) return;
+        foreach (var environment in new[] { environmentId, targetEnvironmentId })
+        {
+            // The link is saved either way; what fails here the reconciler's next pass does.
+            try
+            {
+                using var rls = RlsScope.Environment(tenantId, environment);
+                await publisher.PublishAsync(tenantId, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not publish the site rules of environment {EnvironmentId} after a users link changed.", environment);
+            }
+        }
+    }
+}

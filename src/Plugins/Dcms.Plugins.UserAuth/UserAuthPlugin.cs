@@ -99,6 +99,7 @@ public sealed class UserAuthPlugin : IPlugin
             // minutes. RealmAdminClient comes from admin-api, the one service identity answers.
             services.AddScoped<SiteGatePublisher>();
             services.AddScoped<RealmRelay>();
+            services.AddScoped<IEnvironmentLinksObserver, SiteGateLinkObserver>();
             // Its roles and API rules move between a workspace's environments (ADR 0026).
             services.AddScoped<IEnvironmentConfigKind, UserAuthConfigKind>();
             if (host.RunsBackgroundWork)

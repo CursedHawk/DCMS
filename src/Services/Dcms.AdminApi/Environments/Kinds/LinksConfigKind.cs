@@ -19,7 +19,7 @@ namespace Dcms.AdminApi.Environments.Kinds;
 // on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
 public sealed class LinksConfigKind(
     TenancyDbContext db, Dcms.Shared.Data.Cms.CmsDbContext cms, EnvironmentStore environments, ICacheService cache,
-    Dcms.Shared.Security.Authorization.IPermissionResolver permissions) : IEnvironmentConfigKind
+    Dcms.Shared.Security.Authorization.IPermissionResolver permissions, IEnumerable<IEnvironmentLinksObserver> observers) : IEnvironmentConfigKind
 {
     public string Kind => "links";
 
@@ -94,5 +94,6 @@ public sealed class LinksConfigKind(
         }
         await db.SaveChangesAsync(ct);
         await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(here), ct);
+        foreach (var observer in observers) await observer.LinkChangedAsync(tenantId, here, target.Id, kind, ct);
     }
 }

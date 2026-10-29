@@ -54,7 +54,8 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{prodId}/links", app.Owner, app.Tenant,
             body: new { kind = "users", targetEnvironmentId = devId }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict, "never a chain");
 
-        (await PublishAsync(prodId, devId, ct)).Should().BeTrue();
+        // At once, not at the reconciler's next pass: content-api takes production's tokens from now on.
+        (await PublishAsync(prodId, devId, ct)).Should().BeFalse("making the link published it");
         var row = (await RowsAsync(devId, ct)).Single();
         (row.Hostname, row.RealmSlug, row.RealmTenantId).Should().Be((host, app.Tenant, prodId));
         fixture.Realms.RealmOf(prodId)!.Hosts.Should().Contain(host, "production's realm sends people back to development's sites");
@@ -77,8 +78,8 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
             .EnumerateArray().Single().GetProperty("id").GetGuid();
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Delete, $"/api/admin/environments/{devId}/links/{link}", app.Owner, app.Tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await PublishAsync(prodId, devId, ct)).Should().BeTrue();
-        await PublishAsync(prodId, prodId, ct);
+        (await PublishAsync(prodId, devId, ct)).Should().BeFalse("removing the link published it");
+        (await PublishAsync(prodId, prodId, ct)).Should().BeFalse("and production's realm let go of development's hosts");
         row = (await RowsAsync(devId, ct)).Single();
         (row.RealmSlug, row.RealmTenantId).Should().Be(($"{app.Tenant}-development", null));
         fixture.Realms.RealmOf(devId)!.Hosts.Should().Equal(host);
