@@ -35,11 +35,17 @@ public sealed class EnvironmentDeploymentTests(ContentFlowFixture fixture)
         var dev = (await As(HttpMethod.Post, "/api/admin/environments", app.Tenant, new { name = "development" })).GetProperty("id").GetGuid();
         var prod = (await As(HttpMethod.Get, "/api/admin/environments", app.Tenant)).GetProperty("workspaceId").GetGuid();
         var devSlug = $"{app.Tenant}/development";
-        // This fixture runs job lanes: the copy job queued with the environment sets it up.
-        for (var i = 0; i < 100; i++)
+        // This fixture runs job lanes: the copy job queued with the environment sets it up. Done is
+        // the job finished, not its first kind arrived: building the app while it still runs races
+        // its later kinds, which write production's application over it.
+        for (var i = 0; i < 200; i++)
         {
-            var instances = await As(HttpMethod.Get, "/api/admin/plugins/instances", devSlug);
-            if (instances.EnumerateArray().Any(x => x.GetProperty("slug").GetString() == "crm")) break;
+            var jobs = await As(HttpMethod.Get, "/api/admin/jobs?pageSize=20", app.Tenant);
+            if (jobs.GetProperty("items").EnumerateArray().Any(j => j.GetProperty("kind").GetString() == "environments.copy"
+                    && j.GetProperty("status").GetString() == "Succeeded"))
+            {
+                break;
+            }
             await Task.Delay(100, ct);
         }
         (await As(HttpMethod.Get, "/api/admin/environments/changes", devSlug)).EnumerateArray()

@@ -307,6 +307,20 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var featureCut = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, featureTarget,
             new { name = "Feature 1" }), ct), ct)).GetProperty("migrationId").GetGuid();
 
+        // Development moves on; the feature takes what it did since the branch, and only that.
+        feature.GetProperty("promotesFrom").EnumerateArray().Select(x => x.GetGuid()).Should().Equal([ws.DevId], "a feature takes from what it branched from");
+        await Role(client, ws.Owner, ws.Dev, "Later", ["content:read"]);
+        var later = await CutAsync(client, ws, "Development later", ct);
+        var fromDev = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/environments/pending?from={ws.DevId}", ws.Owner, featureTarget), ct), ct);
+        fromDev.EnumerateArray().Select(p => p.GetProperty("migration").GetProperty("name").GetString()).Should().Equal(["Development later"]);
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var job = ActivatorUtilities.CreateInstance<EnvironmentApplyJob>(scope.ServiceProvider);
+            using var rls = RlsScope.Environment(ws.ProdId, featureId);
+            await job.RunAsync(new EnvironmentApplyPayload(ws.DevId, later, [], ws.Owner), new JobRun(ws.ProdId, featureId, ct));
+        }
+        (await RolePermissionsAsync(client, ws.Owner, featureTarget, "Later", ct)).Should().Equal("content:read");
+
         // Production takes deployments from the feature too.
         await JsonAsync(await client.SendAsync(Req(HttpMethod.Patch, $"/api/admin/environments/{ws.ProdId}", ws.Owner, ws.Prod,
             new { promotesFrom = new[] { ws.DevId, featureId } }), ct), ct);

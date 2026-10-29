@@ -42,6 +42,9 @@ public static class EnvironmentEndpoints
                     return Results.Forbid();
                 }
             }
+            // The database's, not this process's cache: a job on the worker (a merged feature going,
+            // a failed copy removed) changes environments this process does not hear of.
+            environments.Evict(tenantId);
             var all = await environments.ListAsync(tenantId, ct);
             var opens = me.IsSuperAdmin || all.Count == 1
                 ? all.Select(e => e.Id).ToHashSet()
@@ -126,6 +129,9 @@ public static class EnvironmentEndpoints
                 Order = service ? all.Max(e => e.Order) + 1 : upstream.Order - 1,
                 Purpose = feature ? EnvironmentPurpose.Feature : service ? EnvironmentPurpose.Service : EnvironmentPurpose.Stage,
                 ForkedFrom = feature ? source.Id : null,
+                // A feature takes what its source does after the branch, so a clash on merging is
+                // settled by bringing the source's work in first.
+                PromotesFrom = feature ? [source.Id] : [],
                 MergesOwnChangesOnly = body.MergesOwnChangesOnly ?? feature,
                 DeleteWhenMerged = feature && body.DeleteWhenMerged == true,
             };
