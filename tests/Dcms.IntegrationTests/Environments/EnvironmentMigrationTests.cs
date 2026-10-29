@@ -476,6 +476,24 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
                 .SingleAsync(r => r.TenantId == ws.ProdId && r.Key == "sales", ct);
             role.Permissions.Should().Equal("crm:read");
         }
+
+        // Production left to the pipeline still sets its own key, and only its key.
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{ws.ProdId}/policies", ws.Owner, ws.Prod,
+            new[] { new { kind = "api-connections", itemKey = (string?)null, mode = "managed" } }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.SendAsync(Req(HttpMethod.Put, "/api/admin/connections/events", ws.Owner, ws.Prod, new
+        {
+            name = "Events", baseUrl = "https://elsewhere.example.test", authKind = "bearer", secret = "prod-key", operations = new[] { "/events" }, refreshMinutes = 60,
+        }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.SendAsync(Req(HttpMethod.Put, "/api/admin/connections/events/secret", ws.Owner, ws.Prod, new { secret = "prod-key" }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var scope = fixture.Factory.Services.CreateScope())
+        using (RlsScope.Tenant(ws.ProdId))
+        {
+            var connection = await scope.ServiceProvider.GetRequiredService<CmsDbContext>().ApiConnections.IgnoreTenantFilter()
+                .SingleAsync(c => c.TenantId == ws.ProdId && c.Slug == "events", ct);
+            connection.SecretCiphertext.Should().NotBeNull();
+            connection.BaseUrl.Should().Be("https://api.example.test", "the rest stays the deployment's");
+        }
     }
 
     [DockerFact]
@@ -608,6 +626,36 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var history = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/migrations", ws.Owner, ws.Prod), ct), ct);
         history.EnumerateArray().Single(m => m.GetProperty("name").GetString() == "Editors and temps")
             .GetProperty("resolutions").GetProperty("roles/Editors").GetString().Should().Be("skip");
+    }
+
+    [DockerFact]
+    public async Task A_deployment_that_fails_partway_puts_back_everything_it_wrote()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var billing = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "billing", service = true, empty = true }), ct), ct)).GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, $"{ws.Prod}/billing",
+            new { pluginId = "blog", slug = "invoices", name = "Invoices", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+        // The role is written first (roles before links); the link then fails, its target gone.
+        await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/environments/{ws.DevId}/links", ws.Owner, ws.Prod,
+            new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants = new[] { "content.read/GetItem" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        var migration = await CutAsync(client, ws, "Editors and billing", ct);
+        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/environments/{billing}", ws.Owner, ws.Prod), ct)).IsSuccessStatusCode.Should().BeTrue();
+
+        var failed = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(),
+            new EnvironmentApplier(ws.Owner, false), ct));
+        (await failed.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.undone");
+
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().BeEmpty("the role written before the failure is put back");
+        (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/migrations", ws.Owner, ws.Prod), ct), ct))
+            .EnumerateArray().Should().BeEmpty("nothing of it is recorded");
+        (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments/changes", ws.Owner, ws.Prod), ct), ct))
+            .EnumerateArray().Should().BeEmpty("nor left looking like production's own change");
+        (await PendingAsync(client, ws, ct)).Should().ContainSingle("it is still waiting to deploy");
     }
 
     [DockerFact]

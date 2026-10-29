@@ -144,8 +144,23 @@ test('one item is owned otherwise than its kind', async ({ page, api }) => {
 
 test('a screen this environment leaves to deployments says where to change it', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments', ENABLED);
-  api.on('GET', `/api/admin/environments/${TENANT.tenantId}/policies`, [{ kind: 'roles', itemKey: null, mode: 'Managed' }]);
+  api.on('GET', `/api/admin/environments/${TENANT.tenantId}/policies`, [
+    { kind: 'roles', itemKey: null, mode: 'Managed' },
+    { kind: 'roles', itemKey: 'Auditors', mode: 'Local' },
+  ]);
+  api.on('GET', '/api/admin/roles', [
+    { id: 'r1', name: 'Editors', isSystem: false, permissions: ['content:read'], memberCount: 0 },
+    { id: 'r2', name: 'Auditors', isSystem: false, permissions: ['audit:read'], memberCount: 0 },
+  ]);
   await page.goto('/settings/roles');
   await expect(page.getByText('Managed by deployments')).toBeVisible();
   await expect(page.getByText(/takes this from development/)).toBeVisible();
+
+  // What would be refused is not offered; production's own role still is.
+  const row = (name: string) => page.getByRole('row').filter({ hasText: name });
+  await expect(row('Editors').getByRole('button', { name: 'Edit' })).toBeDisabled();
+  await expect(row('Editors').getByRole('button', { name: 'Delete' })).toBeDisabled();
+  await expect(row('Auditors').getByRole('button', { name: 'Edit' })).toBeEnabled();
+  // An exception keeps one name local, so a role can still be made here -- under that name.
+  await expect(page.getByRole('button', { name: 'Create role' }).first()).toBeEnabled();
 });

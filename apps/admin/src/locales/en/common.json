@@ -2315,7 +2315,7 @@
     "moveDown": "Move later",
     "receivesFrom": "Receives deployments from",
     "deleteTitle": "Delete the {{name}} environment?",
-    "deleteHint": "Everything in it is deleted: content, media, sites, data and users. Other environments are not affected. This cannot be undone.",
+    "deleteHint": "Everything in it is deleted: its content, sites, apps and their data, and its site users. The media library and the workspace members are shared and stay. Other environments are not affected. This cannot be undone.",
     "errors": {
       "conflictUnresolved": "A conflict has no decision yet.",
       "migrationNotPending": "That migration is no longer waiting to deploy.",
@@ -2325,7 +2325,9 @@
       "unknownPlugin": "A plugin in this deployment is not installed here.",
       "pluginInstanceRemoved": "An app was removed in the source; apps are switched off, not removed.",
       "slugTakenByOtherPlugin": "An app here already uses that address for another plugin.",
-      "cannotApply": "A change could not be applied here as it stands. The job's details say which and why."
+      "cannotApply": "A change could not be applied here as it stands. The job's details say which and why.",
+      "undone": "The deployment stopped on a change it could not make, and everything it had changed here was put back. The job's details say which change and why.",
+      "partlyApplied": "The deployment stopped on a change it could not make, and not everything it had changed here could be put back. The job's details list what is left."
     },
     "ownership": "Who changes what here",
     "ownershipOf": "Who changes {{kind}} here",

@@ -51,6 +51,7 @@ import { StarterPicker } from './StarterPicker';
 import { useGeneratedApi } from './generated/useGeneratedApi';
 import { ensurePaletteTypes } from './types/palette';
 import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 
 interface SiteData {
   name: string;
@@ -126,6 +127,8 @@ export function IdePage({ siteId }: { siteId: string }) {
     queryKey: ['site', siteId],
     queryFn: () => api.get<SiteData>(`/admin/sites/${siteId}`),
   });
+  // Only a deployment moves the release of a site this environment leaves to deployments.
+  const releaseManaged = useManaged('sites').managed(site.data?.environmentKey);
 
   // Live deployments and commits for everyone with this site open. `sub` identifies this user
   // so the hook can tell your own publish (which already toasted) from a colleague's.
@@ -362,7 +365,7 @@ export function IdePage({ siteId }: { siteId: string }) {
         id: 'publish',
         label: t('ide.git.publishToRelease'),
         keywords: 'deploy ship release',
-        disabled: publish.isPending || !!conflict || session.switching,
+        disabled: publish.isPending || !!conflict || session.switching || releaseManaged,
         run: () => publish.mutate(),
       },
       {
@@ -384,6 +387,7 @@ export function IdePage({ siteId }: { siteId: string }) {
     preview,
     generated,
     publish,
+    releaseManaged,
   ]);
 
   useIdeShortcuts(
@@ -475,7 +479,8 @@ export function IdePage({ siteId }: { siteId: string }) {
         </Button>
         <Button
           onClick={() => publish.mutate()}
-          disabled={publish.isPending || !!conflict || session.switching}
+          disabled={publish.isPending || !!conflict || session.switching || releaseManaged}
+          title={releaseManaged ? t('environments.managedTitle') : undefined}
         >
           <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
         </Button>

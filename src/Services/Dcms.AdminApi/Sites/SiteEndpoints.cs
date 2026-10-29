@@ -47,6 +47,8 @@ public static class SiteEndpoints
                     renderMode = s.RenderMode.ToString(),
                     activeBuildId = s.ActiveBuildId,
                     updatedAt = s.UpdatedAt,
+                    // What environment policies name it by (ADR 0028).
+                    environmentKey = s.EnvironmentKey ?? s.Id.ToString(),
                 })
                 .ToListAsync(ct);
             return Results.Ok(sites);
@@ -367,6 +369,22 @@ public static class SiteEndpoints
                 };
                 db.Drafts.Add(draft);
                 await db.SaveChangesAsync(ct);
+            }
+            else if (site.GitRepoFullName is not null && draft.BaseSha is not null
+                     && await git.HeadShaAsync(site.GitRepoFullName, b, ct) is { } head && head != draft.BaseSha)
+            {
+                // The branch moved without this draft (a deployment, a colleague, a `git push`). A
+                // draft with no edits of its own follows it; one with edits stays, and committing
+                // reconciles them onto the new head.
+                var based = await git.ReadFilesAsync(site.GitRepoFullName, draft.BaseSha, ct);
+                if (based.Count == 1 && based.ContainsKey("README.md")) based = new Dictionary<string, string>(); // seeded as empty, above
+                if (SiteFileMap.Parse(draft.DefinitionJson) is var mine && mine.Count == based.Count
+                    && mine.All(f => based.TryGetValue(f.Key, out var v) && v == f.Value))
+                {
+                    draft.DefinitionJson = SiteFileMap.Serialize(await git.ReadFilesAsync(site.GitRepoFullName, head, ct));
+                    (draft.BaseSha, draft.Version, draft.UpdatedAt) = (head, draft.Version + 1, DateTimeOffset.UtcNow);
+                    await db.SaveChangesAsync(ct);
+                }
             }
 
             var files = SiteFileMap.Parse(draft.DefinitionJson);

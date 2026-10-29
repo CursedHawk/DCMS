@@ -31,15 +31,18 @@ import {
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 interface SiteSummary {
   id: string;
   name: string;
   renderMode: string;
   activeBuildId?: string;
+  environmentKey: string;
 }
 
 export function SitesPage() {
   const { t } = useTranslation();
+  const { managed, canCreate } = useManaged('sites');
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -83,7 +86,7 @@ export function SitesPage() {
         actions={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button disabled={!canCreate} title={canCreate ? undefined : t('environments.managedTitle')}>
                 <Plus className="h-4 w-4" /> {t('sites.newSite')}
               </Button>
             </DialogTrigger>
@@ -155,8 +158,9 @@ export function SitesPage() {
               <Button
                 size="icon"
                 variant="ghost"
-                title={t('sites.delete')}
+                title={managed(s.environmentKey) ? t('environments.managedTitle') : t('sites.delete')}
                 aria-label={t('sites.delete')}
+                disabled={managed(s.environmentKey)}
                 className="absolute right-2 top-2 can-hover:opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                 onClick={() => setPendingDelete(s)}
               >
@@ -171,7 +175,7 @@ export function SitesPage() {
           title={t('sites.title')}
           description={t('app.tagline')}
           action={
-            <Button onClick={() => setOpen(true)}>
+            <Button onClick={() => setOpen(true)} disabled={!canCreate}>
               <Plus className="h-4 w-4" /> {t('sites.newSite')}
             </Button>
           }

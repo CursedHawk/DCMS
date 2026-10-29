@@ -2361,7 +2361,7 @@
     "moveDown": "Posunout později",
     "receivesFrom": "Přijímá nasazení z",
     "deleteTitle": "Smazat prostředí {{name}}?",
-    "deleteHint": "Smaže se vše, co obsahuje: obsah, média, weby, data i uživatelé. Ostatní prostředí zůstanou beze změny. Akci nelze vrátit.",
+    "deleteHint": "Smaže se vše, co obsahuje: obsah, weby, aplikace a jejich data i uživatelé webů. Knihovna médií a členové pracovního prostoru jsou sdílení a zůstanou. Ostatní prostředí zůstanou beze změny. Akci nelze vrátit.",
     "errors": {
       "conflictUnresolved": "Konflikt ještě nemá rozhodnutí.",
       "migrationNotPending": "Tato migrace už nečeká na nasazení.",
@@ -2371,7 +2371,9 @@
       "unknownPlugin": "Plugin z tohoto nasazení zde není nainstalován.",
       "pluginInstanceRemoved": "Ve zdroji byla odebrána aplikace; aplikace se vypínají, neodebírají.",
       "slugTakenByOtherPlugin": "Aplikace zde už tuto adresu používá pro jiný plugin.",
-      "cannotApply": "Změnu zde nelze v současné podobě použít. Podrobnosti úlohy říkají kterou a proč."
+      "cannotApply": "Změnu zde nelze v současné podobě použít. Podrobnosti úlohy říkají kterou a proč.",
+      "undone": "Nasazení se zastavilo na změně, kterou nešlo provést, a vše, co zde už změnilo, bylo vráceno. Podrobnosti úlohy říkají kterou změnu a proč.",
+      "partlyApplied": "Nasazení se zastavilo na změně, kterou nešlo provést, a ne vše, co zde už změnilo, šlo vrátit. Podrobnosti úlohy uvádějí, co zůstalo."
     },
     "ownership": "Kdo zde co mění",
     "ownershipOf": "Kdo zde mění: {{kind}}",

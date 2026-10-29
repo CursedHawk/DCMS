@@ -172,6 +172,8 @@ public static class AuditActions
     public const string ApiConnectionSaved = "api.connection.saved";
     public const string ApiConnectionDeleted = "api.connection.deleted";
     public const string ApiConnectionRefreshed = "api.connection.refreshed";
+    /// <summary>The key alone set: an environment's own, never deployed (ADR 0028).</summary>
+    public const string ApiConnectionKeySet = "api.connection.key_set";
 
     /// <summary>A plugin called a writing (Safe or Dangerous) operation on another contract.</summary>
     public const string PluginContractInvoked = "plugin.contract.invoked";

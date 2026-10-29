@@ -21,9 +21,11 @@ import { api } from '../../lib/api';
 import { usePluginCatalog, usePluginInstances } from './api';
 import { InstallPluginDialog } from './InstallPluginDialog';
 import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 
 export function PluginsPage() {
   const { t } = useTranslation();
+  const { managed } = useManaged('plugins');
   const qc = useQueryClient();
   const navigate = useNavigate();
   const catalog = usePluginCatalog();
@@ -138,6 +140,8 @@ export function PluginsPage() {
                       <Settings2 className="h-4 w-4" />
                     </Link>
                     <Switch
+                      disabled={managed(inst.slug)}
+                      title={managed(inst.slug) ? t('environments.managedTitle') : undefined}
                       checked={inst.enabled}
                       onCheckedChange={(v) => toggle.mutate({ id: inst.id, enabled: v })}
                     />

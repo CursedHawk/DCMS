@@ -101,6 +101,24 @@ public static class ApiConnectionEndpoints
             return Results.Ok(View(row));
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionRefreshed, "api_connection");
 
+        // The key alone. It is each environment's own and never deploys (ADR 0028), so an
+        // environment that leaves the connection itself to deployments still sets it here.
+        app.MapPut("/api/admin/connections/{slug}/secret", async (
+            string slug, SaveConnectionSecret body, CmsDbContext db, ITransitEncryptor transit, ApiConnectionFetcher fetcher,
+            CancellationToken ct) =>
+        {
+            var row = await db.ApiConnections.FirstOrDefaultAsync(c => c.Slug == slug, ct);
+            if (row is null) return Results.NotFound();
+            if (row.AuthKind == "none") return Results.BadRequest(new { error = "this connection uses no key." });
+            if (string.IsNullOrEmpty(body.Secret)) return Results.BadRequest(new { error = "a key is required." });
+            if (Encoding.UTF8.GetByteCount(body.Secret) > 4096) return Results.BadRequest(new { error = "the key is longer than 4 KB." });
+            row.SecretCiphertext = await transit.EncryptAsync(ApiConnectionRules.TransitKey, Encoding.UTF8.GetBytes(body.Secret), ct);
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            await fetcher.RefreshAsync(row, ct);
+            return Results.Ok(View(row));
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionKeySet, "api_connection");
+
         app.MapDelete("/api/admin/connections/{slug}", async (string slug, CmsDbContext db, CancellationToken ct) =>
         {
             var row = await db.ApiConnections.FirstOrDefaultAsync(c => c.Slug == slug, ct);
@@ -116,6 +134,8 @@ public static class ApiConnectionEndpoints
 
         return app;
     }
+
+    public sealed record SaveConnectionSecret(string? Secret);
 
     public sealed record OperationShape(string Operation, string? Items, List<string> Fields, DateTimeOffset FetchedAt);
 

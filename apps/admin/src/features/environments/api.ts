@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { runtimeConfig } from '../../runtime-config';
-import { adminHeaders } from '../../tenants';
+import { adminHeaders, getCurrentEnvironment } from '../../tenants';
 
 /** One environment of the workspace (ADR 0028): a dimension of the tenant, production's id the tenant's. */
 export interface Environment {
@@ -202,6 +202,28 @@ export const usePolicies = (environmentId: string | undefined) =>
     enabled: !!environmentId,
     queryFn: () => api.get<Policy[]>(`/admin/environments/${environmentId}/policies`),
   });
+
+/**
+ * Whether this environment leaves an item of `kind` to deployments (ADR 0028): its own policy
+ * when it has one, the kind's otherwise. `canCreate` holds while some new item could still be
+ * made here -- the kind is not managed, or an item exception keeps one name local.
+ */
+export function useManaged(kind: string) {
+  const environments = useEnvironments();
+  const current = getCurrentEnvironment() ?? 'production';
+  const here = environments.data?.enabled ? environments.data.environments.find((e) => e.name === current) : undefined;
+  const policies = usePolicies(here?.id);
+  const list = here ? (policies.data ?? []) : [];
+  const kindManaged = list.find((p) => p.kind === kind && p.itemKey == null)?.mode === 'Managed';
+  const managed = (itemKey?: string | null) => {
+    const own = itemKey ? list.find((p) => p.kind === kind && p.itemKey === itemKey) : undefined;
+    return own ? own.mode === 'Managed' : kindManaged;
+  };
+  // A new site has no key until it exists, so no exception can let one be made (the server agrees).
+  const canCreate =
+    !kindManaged || (kind !== 'sites' && list.some((p) => p.kind === kind && p.itemKey != null && p.mode !== 'Managed'));
+  return { here, managed, canCreate };
+}
 
 export function useSavePolicies(environmentId: string) {
   const qc = useQueryClient();

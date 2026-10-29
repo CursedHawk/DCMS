@@ -34,6 +34,7 @@ import { SlugField } from '../../components/SlugField';
 import { useAutoSlug } from '../../lib/slug';
 import { CONNECTIONS_KEY, type ApiConnection } from './api';
 import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 
 /**
  * External API connections (Mode D backlog #124). DCMS calls the API with the key, on a
@@ -42,6 +43,7 @@ import { ManagedNotice } from '../environments/ManagedNotice';
  */
 export function ConnectionsPage() {
   const { t } = useTranslation();
+  const { managed, canCreate } = useManaged('api-connections');
   const confirm = useConfirm();
   const qc = useQueryClient();
   const connections = useQuery({ queryKey: CONNECTIONS_KEY, queryFn: () => api.get<ApiConnection[]>('/admin/connections') });
@@ -71,7 +73,7 @@ export function ConnectionsPage() {
         title={t('connections.title')}
         description={t('connections.description')}
         actions={
-          <Button onClick={() => setEditing('new')}>
+          <Button onClick={() => setEditing('new')} disabled={!canCreate} title={canCreate ? undefined : t('environments.managedTitle')}>
             <Plus className="h-4 w-4" /> {t('connections.add')}
           </Button>
         }
@@ -101,13 +103,21 @@ export function ConnectionsPage() {
                     <Button size="sm" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate(c.slug)}>
                       <RefreshCw className="h-4 w-4" /> {t('connections.refresh')}
                     </Button>
-                    <Button size="icon" variant="ghost" title={t('actions.edit')} onClick={() => setEditing(c)}>
+                    {/* Left to deployments, only the key is this environment's to set. */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title={managed(c.slug) ? t('environments.managedTitle') : t('actions.edit')}
+                      disabled={managed(c.slug) && c.authKind === 'none'}
+                      onClick={() => setEditing(c)}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       size="icon"
                       variant="ghost"
-                      title={t('actions.delete')}
+                      title={managed(c.slug) ? t('environments.managedTitle') : t('actions.delete')}
+                      disabled={managed(c.slug)}
                       onClick={() =>
                         void confirm({ title: t('connections.confirmDelete', { name: c.name }), destructive: true }).then(
                           (ok) => ok && remove.mutate(c.slug),
@@ -138,6 +148,7 @@ export function ConnectionsPage() {
         <ConnectionDialog
           connection={editing === 'new' ? null : editing}
           existing={(connections.data ?? []).map((c) => c.slug)}
+          keyOnly={editing !== 'new' && managed(editing.slug)}
           onClose={() => setEditing(null)}
         />
       )}
@@ -148,9 +159,12 @@ export function ConnectionsPage() {
 function ConnectionDialog({
   connection,
   existing,
+  keyOnly = false,
   onClose,
 }: {
   connection: ApiConnection | null;
+  /** The connection is this environment's deployments'; its key alone is set here. */
+  keyOnly?: boolean;
   /** Slugs already used. Saving is a PUT by slug, so a new one with a taken slug would overwrite that connection. */
   existing: readonly string[];
   onClose: () => void;
@@ -170,7 +184,9 @@ function ConnectionDialog({
 
   const save = useMutation({
     mutationFn: () =>
-      api.put<ApiConnection>(`/admin/connections/${slug.trim()}`, {
+      keyOnly
+        ? api.put<ApiConnection>(`/admin/connections/${slug.trim()}/secret`, { secret })
+        : api.put<ApiConnection>(`/admin/connections/${slug.trim()}`, {
         name,
         baseUrl,
         authKind,
@@ -206,7 +222,7 @@ function ConnectionDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="conn-name">{t('connections.name')}</Label>
-              <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} required />
+              <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} required disabled={keyOnly} />
             </div>
             <SlugField
               id="conn-slug"
@@ -220,12 +236,12 @@ function ConnectionDialog({
           </div>
           <div className="space-y-1">
             <Label htmlFor="conn-url">{t('connections.baseUrl')}</Label>
-            <Input id="conn-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
+            <Input id="conn-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required disabled={keyOnly} />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>{t('connections.auth')}</Label>
-              <Select value={authKind} onValueChange={setAuthKind}>
+              <Select value={authKind} onValueChange={setAuthKind} disabled={keyOnly}>
                 <SelectTrigger aria-label={t('connections.auth')}>
                   <SelectValue />
                 </SelectTrigger>
@@ -241,7 +257,7 @@ function ConnectionDialog({
             {(authKind === 'header' || authKind === 'query') && (
               <div className="space-y-1">
                 <Label htmlFor="conn-auth-name">{t(authKind === 'header' ? 'connections.headerName' : 'connections.queryName')}</Label>
-                <Input id="conn-auth-name" value={authName} placeholder={authKind === 'header' ? 'X-Api-Key' : 'api_key'} onChange={(e) => setAuthName(e.target.value)} />
+                <Input id="conn-auth-name" value={authName} placeholder={authKind === 'header' ? 'X-Api-Key' : 'api_key'} onChange={(e) => setAuthName(e.target.value)} disabled={keyOnly} />
               </div>
             )}
           </div>
@@ -261,18 +277,18 @@ function ConnectionDialog({
           )}
           <div className="space-y-1">
             <Label htmlFor="conn-ops">{t('connections.operations')}</Label>
-            <Textarea id="conn-ops" rows={4} value={operations} placeholder={'/events\n/events?city=brno'} onChange={(e) => setOperations(e.target.value)} />
+            <Textarea id="conn-ops" rows={4} value={operations} placeholder={'/events\n/events?city=brno'} onChange={(e) => setOperations(e.target.value)} disabled={keyOnly} />
             <p className="text-xs text-muted-foreground">{t('connections.operationsHint')}</p>
           </div>
           <div className="w-40 space-y-1">
             <Label htmlFor="conn-refresh">{t('connections.refreshMinutes')}</Label>
-            <Input id="conn-refresh" type="number" min={15} max={1440} value={refreshMinutes} onChange={(e) => setRefreshMinutes(e.target.value)} />
+            <Input id="conn-refresh" type="number" min={15} max={1440} value={refreshMinutes} onChange={(e) => setRefreshMinutes(e.target.value)} disabled={keyOnly} />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t('actions.cancel')}
             </Button>
-            <Button type="submit" disabled={save.isPending || !slug.trim()}>
+            <Button type="submit" disabled={save.isPending || !slug.trim() || (keyOnly && !secret)}>
               {t('actions.save')}
             </Button>
           </DialogFooter>

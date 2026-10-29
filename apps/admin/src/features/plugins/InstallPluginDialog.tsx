@@ -20,6 +20,8 @@ import { SchemaForm } from '../../components/SchemaForm';
 import { SlugField } from '../../components/SlugField';
 import { api } from '../../lib/api';
 import { isSlugTaken, useAutoSlug } from '../../lib/slug';
+import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 import { usePluginUi } from '../../pluginHost/api';
 import { usePluginWidgets } from '../../pluginHost/host';
 import { type PluginManifest, parseConfigSchema } from './api';
@@ -47,6 +49,8 @@ export function InstallPluginDialog({
   const [name, setName] = useState(manifest.name);
   const [slug, setSlug] = useAutoSlug(name);
   const [takenSlug, setTakenSlug] = useState<string | null>(null);
+  // An app is named by its slug; one this environment leaves to deployments is installed there.
+  const locked = useManaged('plugins').managed(slug.trim());
   const [description, setDescription] = useState('');
   const [config, setConfig] = useState<unknown>({});
   const schema = parseConfigSchema(manifest.configJsonSchema);
@@ -120,6 +124,7 @@ export function InstallPluginDialog({
               />
             </div>
           ) : null}
+          <ManagedNotice kind="plugins" itemKey={slug.trim()} />
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -127,7 +132,7 @@ export function InstallPluginDialog({
           </Button>
           <Button
             disabled={
-              !slug.trim() || (descriptionRequired && !description.trim()) || create.isPending
+              !slug.trim() || (descriptionRequired && !description.trim()) || create.isPending || locked
             }
             onClick={() => create.mutate()}
           >

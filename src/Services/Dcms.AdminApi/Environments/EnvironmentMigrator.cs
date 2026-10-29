@@ -257,6 +257,7 @@ public sealed class EnvironmentMigrator(
         // was for every later change — to the outcome of those changes and to what they add.
         var policies = await PoliciesAsync(target, ct);
         var state = await ExportAsync(target, ct);
+        var before = Copy(state);
         var plans = new List<(EnvironmentMigration Migration, List<ReviewedChange> Changes, List<ChangeWrite> Writes, Dictionary<string, string> Chosen)>();
         foreach (var p in pending.Take(last + 1))
         {
@@ -275,11 +276,21 @@ public sealed class EnvironmentMigrator(
         }
         var context = await AuthorizeAsync(target, applier, plans.SelectMany(p => p.Writes), ct);
 
-        foreach (var (migration, reviewed, writes, chosen) in plans)
+        var started = DateTimeOffset.UtcNow;
+        await AllOrNothingAsync(target, before, plans.SelectMany(p => p.Writes), context, async () =>
         {
-            await WriteAsync(target, writes, context, ct);
-            await RecordAsync(target, migration, reviewed, writes, chosen, applier.UserId, forward: true, ct);
-        }
+            foreach (var (migration, reviewed, writes, chosen) in plans)
+            {
+                await WriteAsync(target, writes, context, ct);
+                await RecordAsync(target, migration, reviewed, writes, chosen, applier.UserId, forward: true, ct);
+            }
+        }, async () =>
+        {
+            var ids = plans.Select(p => p.Migration.MigrationId).ToList();
+            db.EnvironmentMigrations.RemoveRange(await db.EnvironmentMigrations.IgnoreTenantFilter()
+                .Where(m => m.EnvironmentId == target.Id && ids.Contains(m.MigrationId) && m.AppliedAt >= started && m.RolledBackAt == null)
+                .ToListAsync(CancellationToken.None));
+        });
         return plans.Count;
     }
 
@@ -289,13 +300,88 @@ public sealed class EnvironmentMigrator(
         EnvironmentApplier applier, CancellationToken ct)
     {
         var (row, reviewed) = await RollbackPlanAsync(target, migrationId, ct);
+        var before = await ExportAsync(target, ct);
         // A rollback restores what the migration replaced; no item is the target's to keep here.
         var (writes, chosen) = Choose(row.MigrationId, reviewed, resolutions, []);
         var context = await AuthorizeAsync(target, applier, writes, ct);
-        await WriteAsync(target, writes, context, ct);
-        await RecordAsync(target, row, reviewed, writes, chosen, applier.UserId, forward: false, ct);
+        await AllOrNothingAsync(target, before, writes, context, async () =>
+        {
+            await WriteAsync(target, writes, context, ct);
+            await RecordAsync(target, row, reviewed, writes, chosen, applier.UserId, forward: false, ct);
+        }, async () =>
+        {
+            var held = await db.EnvironmentMigrations.IgnoreTenantFilter()
+                .FirstAsync(m => m.EnvironmentId == target.Id && m.Id == row.Id, CancellationToken.None);
+            held.RolledBackAt = null;
+        });
         return row;
     }
+
+    /// <summary>
+    /// Runs a deployment's (or a rollback's) writes as all or nothing: when one fails, every item it
+    /// touched is put back as it was before it started -- newest kinds first, each through its kind,
+    /// as a deployment would write it -- and its history and baseline with them. Git and published
+    /// content cannot share a transaction, so this is an undo, not a rollback of one: what could not
+    /// be put back is named in the failure.
+    /// </summary>
+    private async Task AllOrNothingAsync(
+        TenantEnvironment target, Dictionary<string, Dictionary<string, EnvironmentConfigItem>> before,
+        IEnumerable<ChangeWrite> touched, EnvironmentApplyContext context, Func<Task> work, Func<Task> unrecord)
+    {
+        string baseline;
+        using (target.Scope())
+        {
+            baseline = (await BaselineAsync(target, before, CancellationToken.None)).Row.ItemsJson;
+        }
+        var items = touched.Select(w => (w.Change.Kind, w.Change.Key)).Distinct().ToList();
+        try
+        {
+            await work();
+        }
+        catch (Exception failure)
+        {
+            var reason = failure is EnvironmentMigrationException m ? m.Detail ?? m.Key : failure.Message;
+            db.ChangeTracker.Clear();
+            var left = new List<string>();
+            var now = await ExportAsync(target, CancellationToken.None);
+            var order = _kinds.Select((k, i) => (k.Kind, i)).ToDictionary(x => x.Kind, x => x.i, StringComparer.Ordinal);
+            foreach (var (kind, key) in items.OrderByDescending(x => order.GetValueOrDefault(x.Kind)))
+            {
+                JsonElement? was = before.TryGetValue(kind, out var b) && b.TryGetValue(key, out var bi) ? bi.Value : null;
+                JsonElement? @is = now.TryGetValue(kind, out var n) && n.TryGetValue(key, out var ni) ? ni.Value : null;
+                if (Same(was, @is)) continue;
+                try
+                {
+                    using var rls = target.Scope();
+                    await KindOf(kind).ApplyAsync(target.TenantId, key, was, context with { Before = @is }, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    left.Add($"{kind}/{key}: {ex.Message}");
+                }
+            }
+            try
+            {
+                using var rls = target.Scope();
+                db.ChangeTracker.Clear();
+                await unrecord();
+                var row = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstAsync(r => r.EnvironmentId == target.Id, CancellationToken.None);
+                row.ItemsJson = baseline;
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                left.Add($"history: {ex.Message}");
+            }
+            throw left.Count == 0
+                ? new EnvironmentMigrationException("environments.errors.undone", reason)
+                : new EnvironmentMigrationException("environments.errors.partlyApplied", $"{reason}; not put back: {string.Join("; ", left)}");
+        }
+    }
+
+    private static Dictionary<string, Dictionary<string, EnvironmentConfigItem>> Copy(
+        Dictionary<string, Dictionary<string, EnvironmentConfigItem>> items) =>
+        items.ToDictionary(k => k.Key, k => new Dictionary<string, EnvironmentConfigItem>(k.Value, StringComparer.Ordinal), StringComparer.Ordinal);
 
     /// <summary>
     /// What each change writes once the reviewer's choices are in: a whole-change choice keyed

@@ -26,10 +26,13 @@ import { api } from '../../lib/api';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
 import { PermissionMatrix } from './PermissionMatrix';
 import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 
 export function RolesPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  // A role this environment leaves to deployments is changed in the environment that deploys here.
+  const { managed, canCreate } = useManaged('roles');
   const qc = useQueryClient();
   const roles = useRoles();
   const catalog = usePermissionCatalog();
@@ -130,8 +133,9 @@ export function RolesPage() {
           <Button
             size="icon"
             variant="ghost"
-            title={t('actions.edit')}
+            title={managed(r.name) ? t('environments.managedTitle') : t('actions.edit')}
             aria-label={t('actions.edit')}
+            disabled={managed(r.name)}
             onClick={() => openEdit(r)}
           >
             <Pencil className="h-4 w-4" aria-hidden />
@@ -141,8 +145,9 @@ export function RolesPage() {
               size="icon"
               variant="ghost"
               className="text-destructive"
-              title={t('actions.delete')}
+              title={managed(r.name) ? t('environments.managedTitle') : t('actions.delete')}
               aria-label={t('actions.delete')}
+              disabled={managed(r.name)}
               onClick={() => {
                 // Deleting a role silently strips whatever it granted from everyone holding
                 // it, so say how many people that is.
@@ -166,7 +171,7 @@ export function RolesPage() {
       <PageHeader
         title={t('roles.title')}
         actions={
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!canCreate} title={canCreate ? undefined : t('environments.managedTitle')}>
             <Plus className="h-4 w-4" /> {t('roles.createRole')}
           </Button>
         }
@@ -187,7 +192,7 @@ export function RolesPage() {
             icon={ShieldCheck}
             title={t('roles.title')}
             action={
-              <Button onClick={openCreate}>
+              <Button onClick={openCreate} disabled={!canCreate}>
                 <Plus className="h-4 w-4" aria-hidden /> {t('roles.createRole')}
               </Button>
             }
