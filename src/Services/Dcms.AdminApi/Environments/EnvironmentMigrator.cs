@@ -176,8 +176,13 @@ public sealed class EnvironmentMigrator(
                 CreatedAt = m.CreatedAt, ChangesJson = m.ChangesJson, Order = order++, AppliedBy = m.AppliedBy,
             });
         }
+        // The baseline is the source's configuration, as written here: a site's release is the
+        // commit this environment's repository got, not the source's, or every site would read
+        // as changed here the moment the copy is done.
+        var copied = await ExportAsync(target, ct);
         var items = source.ToDictionary(
-            k => k.Key, k => k.Value.ToDictionary(i => i.Key, i => i.Value.Value, StringComparer.Ordinal), StringComparer.Ordinal);
+            k => k.Key, k => k.Value.ToDictionary(i => i.Key, i => AsWritten(k.Key, i.Key, i.Value.Value, copied)!.Value, StringComparer.Ordinal),
+            StringComparer.Ordinal);
         var baseline = await db.EnvironmentBaselines.IgnoreTenantFilter().FirstOrDefaultAsync(b => b.EnvironmentId == target.Id, ct);
         if (baseline is null)
         {
@@ -387,6 +392,28 @@ public sealed class EnvironmentMigrator(
         }
     }
 
+    /// <summary>
+    /// <paramref name="value"/> with what its kind merged itself taken from what the write left in
+    /// the environment (<paramref name="current"/>): git's commit, not the source's.
+    /// </summary>
+    private JsonElement? AsWritten(string kind, string key, JsonElement? value,
+        Dictionary<string, Dictionary<string, EnvironmentConfigItem>> current)
+    {
+        if (value is not { ValueKind: JsonValueKind.Object } || !current.TryGetValue(kind, out var now)
+            || !now.TryGetValue(key, out var written) || written.Value.ValueKind != JsonValueKind.Object)
+        {
+            return value;
+        }
+        var properties = KindOf(kind).SelfMergedProperties;
+        if (properties.Count == 0) return value;
+        var node = JsonNode.Parse(value.Value.GetRawText())!.AsObject();
+        foreach (var property in properties)
+        {
+            node[property] = written.Value.TryGetProperty(property, out var p) ? JsonNode.Parse(p.GetRawText()) : null;
+        }
+        return JsonSerializer.SerializeToElement(node);
+    }
+
     private static Dictionary<string, Dictionary<string, EnvironmentConfigItem>> Copy(
         Dictionary<string, Dictionary<string, EnvironmentConfigItem>> items) =>
         items.ToDictionary(k => k.Key, k => new Dictionary<string, EnvironmentConfigItem>(k.Value, StringComparer.Ordinal), StringComparer.Ordinal);
@@ -558,18 +585,7 @@ public sealed class EnvironmentMigrator(
         {
             JsonElement? held = baseline.Items.TryGetValue(r.Change.Kind, out var items) && items.TryGetValue(r.Change.Key, out var b) ? b : null;
             var value = r.Change.Before is null || r.Change.After is null || held is null ? r.Change.After : MergedValue(r.Change, held, _ => "theirs");
-            // What the kind merged itself is whatever the write left there (git's merge commit).
-            if (value is { ValueKind: JsonValueKind.Object } && current.TryGetValue(r.Change.Kind, out var now)
-                && now.TryGetValue(r.Change.Key, out var written) && written.Value.ValueKind == JsonValueKind.Object)
-            {
-                var node = JsonNode.Parse(value.Value.GetRawText())!.AsObject();
-                foreach (var property in KindOf(r.Change.Kind).SelfMergedProperties)
-                {
-                    node[property] = written.Value.TryGetProperty(property, out var p) ? JsonNode.Parse(p.GetRawText()) : null;
-                }
-                value = JsonSerializer.SerializeToElement(node);
-            }
-            Set(baseline.Items, r.Change.Kind, r.Change.Key, value);
+            Set(baseline.Items, r.Change.Kind, r.Change.Key, AsWritten(r.Change.Kind, r.Change.Key, value, current));
         }
         baseline.Row.ItemsJson = Serialize(baseline.Items);
         baseline.Row.UpdatedAt = DateTimeOffset.UtcNow;
