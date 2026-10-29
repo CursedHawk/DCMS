@@ -604,7 +604,9 @@ public sealed class EnvironmentMigrator(
                 AuthorUserId = migration.AuthorUserId,
                 AuthorEmail = migration.AuthorEmail,
                 CreatedAt = migration.CreatedAt,
-                ChangesJson = migration.ChangesJson,
+                // What this environment took: a change the reviewer left out here is not passed on
+                // from here either -- the next stage is offered what this one has.
+                ChangesJson = JsonSerializer.Serialize(Changes(migration).Where(c => chosen.GetValueOrDefault(c.Id) != "skip").Select(ToJson)),
                 Order = await NextOrderAsync(target, ct),
                 AppliedBy = userId,
                 ResolutionsJson = JsonSerializer.Serialize(chosen),
@@ -748,15 +750,26 @@ public sealed class EnvironmentMigrator(
             .Where(m => m.EnvironmentId == environment.Id)
             .MaxAsync(m => (long?)m.Order, ct) ?? 0) + 1;
 
-    public static List<ConfigChange> Changes(EnvironmentMigration migration) =>
-        (JsonNode.Parse(migration.ChangesJson)?.AsArray() ?? [])
-        .Select(n => new ConfigChange(
-            n!["kind"]!.GetValue<string>(),
-            n["key"]!.GetValue<string>(),
-            n["label"]?.GetValue<string>(),
-            Element(n["before"]),
-            Element(n["after"])))
-        .ToList();
+    /// <summary>
+    /// What the migration changed where this row was recorded: a change the reviewer left out there
+    /// is not among them (rows recorded before that was dropped on recording still name it).
+    /// </summary>
+    public static List<ConfigChange> Changes(EnvironmentMigration migration)
+    {
+        var skipped = migration.ResolutionsJson is { Length: > 0 } resolutions
+            ? (JsonSerializer.Deserialize<Dictionary<string, string>>(resolutions) ?? [])
+                .Where(r => r.Value == "skip").Select(r => r.Key).ToHashSet(StringComparer.Ordinal)
+            : [];
+        return (JsonNode.Parse(migration.ChangesJson)?.AsArray() ?? [])
+            .Select(n => new ConfigChange(
+                n!["kind"]!.GetValue<string>(),
+                n["key"]!.GetValue<string>(),
+                n["label"]?.GetValue<string>(),
+                Element(n["before"]),
+                Element(n["after"])))
+            .Where(c => !skipped.Contains(c.Id))
+            .ToList();
+    }
 
     private static JsonElement? Element(JsonNode? node) =>
         node is null ? null : JsonSerializer.SerializeToElement(node);

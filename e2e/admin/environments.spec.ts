@@ -191,3 +191,14 @@ test('a screen this environment leaves to deployments says where to change it', 
   // An exception keeps one name local, so a role can still be made here -- under that name.
   await expect(page.getByRole('button', { name: 'Create role' }).first()).toBeEnabled();
 });
+
+test('content this environment takes from deployments is not edited here', async ({ page, api }) => {
+  api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('GET', `/api/admin/environments/${TENANT.tenantId}/policies`, [{ kind: 'content', itemKey: null, mode: 'Managed' }]);
+  await page.goto('/content');
+  await page.getByRole('button', { name: 'New item' }).first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('Managed by deployments')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Save and publish' })).toBeDisabled();
+});

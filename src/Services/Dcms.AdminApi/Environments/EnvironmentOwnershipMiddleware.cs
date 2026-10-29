@@ -46,7 +46,9 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
         // The item as it is, and as the request would name it: renaming an item of one's own onto
         // the name of one the pipeline owns, or creating one under that name, is refused as well.
         var key = await KeyAsync(managed.Kind, http, tenantId, services);
-        var (renamed, ambiguous) = await BodyKeyAsync(managed.Kind, http);
+        var (renamed, ambiguous) = managed.Kind == "content" && key is null
+            ? await NewContentKeyAsync(http, tenantId, services)
+            : await BodyKeyAsync(managed.Kind, http);
         if (ambiguous)
         {
             // Which of the duplicates a handler binds is its serializer's business; checking one
@@ -138,6 +140,43 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
         }
     }
 
+    /// <summary>
+    /// A new content item's key, <c>{app}/{type}/{slug}</c>, from the body that creates it:
+    /// <c>pluginInstanceId</c>, <c>contentType</c> and <c>slug</c>.
+    /// </summary>
+    private static async Task<(string? Key, bool Ambiguous)> NewContentKeyAsync(HttpContext http, Guid tenantId, IServiceProvider services)
+    {
+        if (http.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) return (null, false);
+        http.Request.EnableBuffering();
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body, cancellationToken: http.RequestAborted);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return (null, false);
+            var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var name in new[] { "pluginInstanceId", "contentType", "slug" })
+            {
+                var matches = doc.RootElement.EnumerateObject().Where(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matches.Count > 1) return (null, true);
+                values[name] = matches.FirstOrDefault().Value.ValueKind == System.Text.Json.JsonValueKind.String ? matches[0].Value.GetString() : null;
+            }
+            if (!Guid.TryParse(values["pluginInstanceId"], out var instanceId) || values["contentType"] is not { } type || values["slug"] is not { } slug)
+            {
+                return (null, false);
+            }
+            var app = await services.GetRequiredService<CmsDbContext>().PluginInstances.AsNoTracking()
+                .Where(p => p.TenantId == tenantId && p.Id == instanceId).Select(p => p.Slug).FirstOrDefaultAsync(http.RequestAborted);
+            return (app is null ? null : $"{app}/{type}/{slug}", false);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (null, false);
+        }
+        finally
+        {
+            http.Request.Body.Position = 0;
+        }
+    }
+
     /// <summary>The item a route touches, keyed as its kind exports it; null for a new one.</summary>
     private static async Task<string?> KeyAsync(string kind, HttpContext http, Guid tenantId, IServiceProvider services)
     {
@@ -158,6 +197,12 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
                 var site = await services.GetRequiredService<SitesDbContext>().Sites.AsNoTracking()
                     .FirstOrDefaultAsync(s => s.TenantId == tenantId && s.Id == siteId, ct);
                 return site?.KeyAcrossEnvironments;
+            case "content" when Id("id") is { } itemId:
+                var cms = services.GetRequiredService<CmsDbContext>();
+                return await (from c in cms.ContentItems.AsNoTracking()
+                              join p in cms.PluginInstances.AsNoTracking() on c.PluginInstanceId equals p.Id
+                              where c.Id == itemId && p.TenantId == tenantId
+                              select p.Slug + "/" + c.ContentType + "/" + c.Slug).FirstOrDefaultAsync(ct);
             case "user-auth" when Id("roleId") is { } userRoleId:
                 var roleKey = await services.GetRequiredService<UserAuthDbContext>().Roles.AsNoTracking()
                     .Where(r => r.TenantId == tenantId && r.Id == userRoleId).Select(r => r.Key).FirstOrDefaultAsync(ct);

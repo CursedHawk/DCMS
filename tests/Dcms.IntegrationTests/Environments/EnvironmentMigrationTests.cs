@@ -457,6 +457,32 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_change_left_out_in_one_environment_is_not_passed_on_from_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var feature = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "development-f", from = ws.DevId, feature = true }), ct), ct)).GetProperty("id").GetGuid();
+        var featureEnv = await EnvironmentTarget.LoadAsync(fixture.Factory.Services, ws.ProdId, feature);
+        await Engine(m => m.CopyAsync(featureEnv, ws.DevEnv, ct));
+        var inFeature = $"{ws.Prod}/development-f";
+        await Role(client, ws.Owner, inFeature, "Kept", ["content:read"]);
+        await Role(client, ws.Owner, inFeature, "Left out", ["media:read"]);
+        var cut = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, inFeature,
+            new { name = "Feature" }), ct), ct)).GetProperty("migrationId").GetGuid();
+
+        // Development merges the feature without one of its roles.
+        await Engine(m => m.ApplyAsync(ws.DevEnv, featureEnv, cut, new Dictionary<string, string> { [$"{cut}/roles/Left out"] = "skip" },
+            new EnvironmentApplier(ws.Owner, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Dev, "Left out", ct)).Should().BeEmpty();
+
+        // Production is offered from development what development has: not the role it left out.
+        var pending = await PendingAsync(client, ws, ct);
+        pending.Single().GetProperty("changes").EnumerateArray().Select(c => c.GetProperty("id").GetString()).Should().Equal("roles/Kept");
+    }
+
+    [DockerFact]
     public async Task Api_connections_move_without_their_key_and_user_roles_move_by_key()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -595,6 +621,29 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { kind = "roles", itemKey = (string?)"Auditors", mode = "local" },
         }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await Role(client, ws.Owner, ws.Prod, "Auditors", ["content:read"])).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Content too: a post is written, edited and published in production only when it is production's own.
+        var news = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, ws.Prod,
+            new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct), ct)).GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{ws.ProdId}/policies", ws.Owner, ws.Prod, new[]
+        {
+            new { kind = "content", itemKey = (string?)null, mode = "managed" },
+            new { kind = "content", itemKey = (string?)"news/post/notice", mode = "local" },
+        }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Task<HttpResponseMessage> Post(string slug) => client.SendAsync(Req(HttpMethod.Post, "/api/admin/content", ws.Owner, ws.Prod,
+            new { pluginInstanceId = news, contentType = "post", slug, data = new { title = slug } }), ct);
+        (await Post("hello")).StatusCode.Should().Be(HttpStatusCode.Conflict, "production's content comes from deployments");
+        var notice = (await JsonAsync(await Post("notice"), ct)).GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/content/{notice}/publish", ws.Owner, ws.Prod), ct))
+            .IsSuccessStatusCode.Should().BeTrue("the notice is production's own");
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{ws.ProdId}/policies", ws.Owner, ws.Prod, new[]
+        {
+            new { kind = "content", itemKey = (string?)null, mode = "managed" },
+        }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/content/{notice}", ws.Owner, ws.Prod, new { data = new { title = "changed" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "an item the pipeline owns is not edited directly");
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/content/{notice}/unpublish", ws.Owner, ws.Prod), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [DockerFact]

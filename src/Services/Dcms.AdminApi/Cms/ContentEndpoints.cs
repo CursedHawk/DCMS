@@ -234,7 +234,8 @@ public static class ContentEndpoints
             db.ContentItems.Add(item);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/content/{item.Id}", new { id = item.Id });
-        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentCreated, "content_item");
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentCreated, "content_item")
+            .ManagedByDeployments("content");
 
         app.MapPut("/api/admin/content/{id:guid}", async (
             Guid id, UpdateContentRequest body, IPluginCatalog catalog, CmsDbContext db, CurrentUser me, CancellationToken ct) =>
@@ -257,7 +258,8 @@ public static class ContentEndpoints
             item.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { versionId = version.Id, versionNo = version.VersionNo });
-        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentUpdated, "content_item");
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentUpdated, "content_item")
+            .ManagedByDeployments("content");
 
         // An optional `data` body makes this "save and publish": the edits become a new
         // draft version and that version is published, in one transaction.
@@ -310,7 +312,8 @@ public static class ContentEndpoints
             // number no dashboard can reconcile against the content it claims to describe.
             metrics.ContentPublished(tenant.TenantId!.Value, item.ContentType);
             return Results.Ok(new { status = "published", instanceSlug = instance?.Slug });
-        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentPublished, "content_item");
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentPublished, "content_item")
+            .ManagedByDeployments("content");
 
         app.MapPost("/api/admin/content/{id:guid}/schedule", async (
             Guid id, ScheduleRequest body, IPluginCatalog catalog, CmsDbContext db, ITenantContext tenant,
@@ -363,7 +366,8 @@ public static class ContentEndpoints
 
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { scheduleId = scheduled.Id, publishAt = scheduled.PublishAt });
-        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduled, "content_item");
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduled, "content_item")
+            .ManagedByDeployments("content");
 
         // Cancel a pending schedule. Scoped by item id rather than schedule id so the
         // editor can cancel from what it displays without holding the row's key.
@@ -383,7 +387,8 @@ public static class ContentEndpoints
             audit.Declared?.With("cancelled", cancelled);
 
             return Results.Ok(new { cancelled });
-        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduleCancelled, "content_item");
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduleCancelled, "content_item")
+            .ManagedByDeployments("content");
 
         app.MapPost("/api/admin/content/{id:guid}/unpublish", async (
             Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope,
@@ -412,7 +417,8 @@ public static class ContentEndpoints
             await db.SaveChangesAsync(ct);
             metrics.ContentUnpublished(tenant.TenantId!.Value, item.ContentType);
             return Results.Ok(new { status = "unpublished" });
-        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentUnpublished, "content_item");
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentUnpublished, "content_item")
+            .ManagedByDeployments("content");
 
         return app;
     }

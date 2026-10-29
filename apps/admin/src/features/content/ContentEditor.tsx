@@ -30,6 +30,8 @@ import {
 } from '../plugins/api';
 import { ContentFieldInput } from './ContentFieldInput';
 import { useContentItem, useTagVocabularies } from './api';
+import { ManagedNotice } from '../environments/ManagedNotice';
+import { useManaged } from '../environments/api';
 
 /**
  * Present a tenant-defined field as a plugin field, so admin-defined and built-in
@@ -235,6 +237,12 @@ export function ContentEditor({
     action.mutate('publish');
   }
 
+  // An environment that takes this content from deployments refuses changing it here (ADR 0028).
+  const appSlug = usePluginInstances().data?.find((i) => i.id === instanceId)?.slug;
+  const { managed } = useManaged('content');
+  const itemKey = appSlug ? `${appSlug}/${contentType.name}/${slug}` : null;
+  const locked = itemKey !== null && managed(itemKey);
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent wide>
@@ -253,6 +261,7 @@ export function ContentEditor({
           <CenteredSpinner />
         ) : (
           <DialogBody className="space-y-4">
+            {itemKey ? <ManagedNotice kind="content" itemKey={itemKey} /> : null}
             {contentType.fields
               // The custom values are edited field by field below, never as raw JSON.
               .filter((f) => f.name !== valuesField)
@@ -342,7 +351,7 @@ export function ContentEditor({
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={cancelSchedule.isPending}
+                      disabled={locked || cancelSchedule.isPending}
                       onClick={() => cancelSchedule.mutate()}
                     >
                       {t('content.cancelSchedule')}
@@ -366,7 +375,7 @@ export function ContentEditor({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!scheduleAt || schedule.isPending}
+                    disabled={locked || !scheduleAt || schedule.isPending}
                     onClick={() => schedule.mutate()}
                   >
                     {t('actions.schedule')}
@@ -380,7 +389,7 @@ export function ContentEditor({
 
         <DialogFooter className="flex-wrap">
           {!isNew && detail.data?.status === 'Published' ? (
-            <Button variant="outline" onClick={() => action.mutate('unpublish')}>
+            <Button variant="outline" disabled={locked} onClick={() => action.mutate('unpublish')}>
               {t('actions.unpublish')}
             </Button>
           ) : null}
@@ -390,7 +399,7 @@ export function ContentEditor({
           </Button>
           <Button
             variant="secondary"
-            disabled={(isNew && !slug.trim()) || save.isPending}
+            disabled={locked || (isNew && !slug.trim()) || save.isPending}
             onClick={() => save.mutate()}
           >
             {t('actions.save')}
@@ -401,7 +410,7 @@ export function ContentEditor({
             what gets published is what is on screen.
           */}
           <Button
-            disabled={(isNew && !slug.trim()) || save.isPending || action.isPending}
+            disabled={locked || (isNew && !slug.trim()) || save.isPending || action.isPending}
             onClick={() => saveAndPublish()}
           >
             {t('content.saveAndPublish')}
