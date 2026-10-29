@@ -94,10 +94,15 @@ public class LinkedContractProxy : DispatchProxy
         {
             throw new ContractAccessDeniedException($"{_descriptor.Name}/{op.Name} is not offered to other environments.");
         }
-        if (Grant(op.Name, args) is not { } grant || !_link.Grants.Contains(grant))
+        var grant = Grant(op.Name, args);
+        if (grant is null && _link.Kind == EnvironmentLinkKinds.Tables)
         {
             throw new ContractAccessDeniedException(
-                $"The link to environment '{_link.TargetName}' does not grant {Grant(op.Name, args) ?? op.Name}.");
+                $"A tables link reaches one table at a time: this {op.Name} names no single table, or reaches another through a lookup.");
+        }
+        if (grant is null || !_link.Grants.Contains(grant))
+        {
+            throw new ContractAccessDeniedException($"The link to environment '{_link.TargetName}' does not grant {grant ?? op.Name}.");
         }
         var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
         var rate = Rates.AddOrUpdate(_link.Id, (minute, 1), (_, r) => r.Minute == minute ? (minute, r.Count + 1) : (minute, 1));

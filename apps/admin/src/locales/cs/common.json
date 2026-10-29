@@ -2332,10 +2332,16 @@
     },
     "useInstance": "Adresa aplikace tam",
     "useGrants": "Oprávnění",
-    "useGrantsPlaceholder": {
-      "tables": "companies:read, deals:create"
+    "useNothing": {
+      "contracts": "Žádná aplikace v {{name}} nenabízí operace.",
+      "tables": "Žádná aplikace v {{name}} nemá tabulky k nabídnutí."
     },
-    "useNoOperations": "Žádná aplikace v {{name}} nenabízí operace.",
+    "verbs": {
+      "read": "Číst",
+      "create": "Vytvářet",
+      "update": "Upravovat",
+      "delete": "Mazat"
+    },
     "useWrites": "Mění data",
     "useRow": {
       "tables": "Tabulky {{instance}} v {{name}}",

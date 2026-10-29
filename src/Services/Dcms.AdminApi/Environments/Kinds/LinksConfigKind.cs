@@ -19,7 +19,8 @@ namespace Dcms.AdminApi.Environments.Kinds;
 // on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
 public sealed class LinksConfigKind(
     TenancyDbContext db, Dcms.Shared.Data.Cms.CmsDbContext cms, EnvironmentStore environments, ICacheService cache,
-    Dcms.Shared.Security.Authorization.IPermissionResolver permissions, IEnumerable<IEnvironmentLinksObserver> observers, Dcms.PluginSdk.Runtime.PluginRegistry registry) : IEnvironmentConfigKind
+    Dcms.Shared.Security.Authorization.IPermissionResolver permissions, IEnumerable<IEnvironmentLinksObserver> observers, Dcms.PluginSdk.Runtime.PluginRegistry registry,
+    IEnumerable<IEnvironmentLinkTables> linkTables) : IEnvironmentConfigKind
 {
     public string Kind => "links";
 
@@ -78,7 +79,7 @@ public sealed class LinksConfigKind(
             var wanted = value.Value.Deserialize<Value>()!;
             var consumer = await environments.GetAsync(tenantId, here, ct)
                            ?? throw new EnvironmentConfigException("this environment is gone");
-            var (rules, refused) = await Tenancy.EnvironmentLinkRules.CheckAsync(db, cms, registry, consumer, target,
+            var (rules, refused) = await Tenancy.EnvironmentLinkRules.CheckAsync(db, cms, registry, linkTables, consumer, target,
                 kind, targetKey, wanted.Access, wanted.Grants, link?.Id, ct);
             if (refused is not null) throw new EnvironmentConfigException($"link '{key}': {refused.Error}");
             if (link is null)

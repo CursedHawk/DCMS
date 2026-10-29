@@ -96,13 +96,18 @@ test('a feature environment branches from the one chosen and can go once merged'
 
 test('an environment uses a service environment’s tables for what is granted', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments', ENABLED);
+  api.on('GET', '/api/admin/environments/:id/offers', [
+    { slug: 'crm', name: 'CRM', operations: [], tables: ['companies', 'deals'] },
+  ]);
   api.on('POST', '/api/admin/environments/:id/links', { id: 'l1' });
   await page.goto('/settings/environments');
 
   // development is listed first; its form is the one around its grants.
-  const form = page.getByLabel('Grants').first().locator('xpath=ancestor::form[1]');
-  await form.getByLabel('App address there').fill('crm');
-  await form.getByLabel('Grants').fill('companies:read\ndeals:create');
+  const form = page.getByText("Use an app's tables or operations", { exact: false }).first().locator('xpath=ancestor::form[1]');
+  await form.getByLabel('App address there').click();
+  await page.getByRole('option', { name: 'CRM (crm)' }).click();
+  await form.getByRole('checkbox', { name: 'companies:read' }).click();
+  await form.getByRole('checkbox', { name: 'deals:create' }).click();
   await form.getByRole('button', { name: 'Use from there' }).click();
   await expect.poll(() => api.requestsTo('POST', `/api/admin/environments/${DEV}/links`).map((r) => r.body))
     .toEqual([{ kind: 'tables', targetEnvironmentId: TENANT.tenantId, targetKey: 'crm', grants: ['companies:read', 'deals:create'] }]);
@@ -110,8 +115,8 @@ test('an environment uses a service environment’s tables for what is granted',
 
 test('an environment uses another’s app operations, picked from what it offers', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments', ENABLED);
-  api.on('GET', '/api/admin/environments/:id/operations', [
-    { slug: 'invoices', name: 'Invoices', operations: [
+  api.on('GET', '/api/admin/environments/:id/offers', [
+    { slug: 'invoices', name: 'Invoices', tables: [], operations: [
       { grant: 'blog.posts/Get', risk: 'read', description: 'One published post by slug.' },
       { grant: 'blog.posts/List', risk: 'read', description: 'Published posts, newest first.' },
     ] },

@@ -75,6 +75,15 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
         // No link yet: nothing.
         await FluentActions.Awaiting(LinkedAsync).Should().ThrowAsync<ContractAccessDeniedException>();
 
+        // Tables sales really has, as it offers them.
+        var offers = await (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/environments/{salesId}/offers", app.Owner, app.Tenant), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        offers.EnumerateArray().Single(o => o.GetProperty("slug").GetString() == "crm").GetProperty("tables").EnumerateArray()
+            .Select(t => t.GetString()).Should().Equal("companies");
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{devId}/links", app.Owner, app.Tenant,
+            body: new { kind = "tables", targetEnvironmentId = salesId, targetKey = "crm", grants = new[] { "companies:read", "ghosts:read" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
         var linked = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{devId}/links", app.Owner, app.Tenant,
             body: new { kind = "tables", targetEnvironmentId = salesId, targetKey = "crm", grants = new[] { "companies:read" } }), ct);
         linked.StatusCode.Should().Be(HttpStatusCode.Created, await linked.Content.ReadAsStringAsync(ct));
@@ -89,7 +98,7 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
             .Should().ThrowAsync<ContractAccessDeniedException>();
         await FluentActions.Awaiting(() => records.QueryRecordsAsync(new TableQuery("companies",
                 new RecordQuery { Filter = new RecordFilter { Field = "owner.name", Op = "eq", Value = "x" } }), ct))
-            .Should().ThrowAsync<ContractAccessDeniedException>();
+            .Should().ThrowAsync<ContractAccessDeniedException>().WithMessage("*reaches another through a lookup*");
     }
 
     [DockerFact]
@@ -109,7 +118,7 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
             .GetProperty("workspaceId").GetGuid();
 
         // What billing offers is listed for whoever sets the link up.
-        var offered = await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/environments/{billing}/operations", app.Owner, app.Tenant), ct), ct);
+        var offered = await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/environments/{billing}/offers", app.Owner, app.Tenant), ct), ct);
         offered.EnumerateArray().Single(i => i.GetProperty("slug").GetString() == "invoices").GetProperty("operations").EnumerateArray()
             .Select(o => o.GetProperty("grant").GetString()).Should().Contain(["blog.posts/Get", "blog.posts/List"]);
 

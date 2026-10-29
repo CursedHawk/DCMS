@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Data.Cms;
@@ -21,13 +22,12 @@ public static class EnvironmentLinkRules
     /// <summary>Why it may not be: <paramref name="Conflict"/> when it collides with a link that exists, else bad input.</summary>
     public sealed record Refused(string Error, bool Conflict = false);
 
-    private const string DynamicAppsPluginId = "dynamic-apps";
-
     private static readonly string[] TableVerbs = ["read", "create", "update", "delete"];
 
     /// <param name="existing">The link being replaced, when a deployment updates one: not a collision with itself.</param>
     public static async Task<(Checked? Link, Refused? Refused)> CheckAsync(
-        TenancyDbContext db, CmsDbContext cms, PluginRegistry registry, TenantEnvironment consumer, TenantEnvironment provider,
+        TenancyDbContext db, CmsDbContext cms, PluginRegistry registry, IEnumerable<IEnvironmentLinkTables> linkTables,
+        TenantEnvironment consumer, TenantEnvironment provider,
         string kind, string? targetKey, string? access, IReadOnlyCollection<string>? grants, Guid? existing, CancellationToken ct)
     {
         var tenantId = consumer.TenantId;
@@ -65,9 +65,21 @@ public static class EnvironmentLinkRules
                 {
                     var instance = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
                         .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == targetKey, ct);
-                    if (instance is null || (kind == EnvironmentLinkKinds.Tables && instance.PluginId != DynamicAppsPluginId))
+                    var tables = kind == EnvironmentLinkKinds.Tables && instance is not null
+                        ? linkTables.FirstOrDefault(t => t.PluginId == instance.PluginId)
+                        : null;
+                    if (instance is null || (kind == EnvironmentLinkKinds.Tables && tables is null))
                     {
                         return (null, new Refused("That environment has no such instance to link to."));
+                    }
+                    // Tables it really has: a grant naming none would wait silently for a call that never works.
+                    if (tables is not null)
+                    {
+                        var known = await tables.TablesAsync(tenantId, instance.Id, ct);
+                        if (grants.Select(g => g.Trim()).Select(g => g[..g.LastIndexOf(':')]).FirstOrDefault(t => !known.Contains(t)) is { } unknownTable)
+                        {
+                            return (null, new Refused($"'{targetKey}' there has no table {unknownTable}."));
+                        }
                     }
                     // Operations it really provides: a grant naming nothing would wait silently for a call that never works.
                     if (kind == EnvironmentLinkKinds.Contracts

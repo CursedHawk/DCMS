@@ -19,7 +19,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Textarea,
   toastApiError,
   useConfirm,
 } from '@dcms/ui';
@@ -30,7 +29,7 @@ import {
   useEnvironments,
   useLinkMutations,
   useLinks,
-  useOperations,
+  useOffers,
   usePolicies,
   useSavePolicies,
   useUpdateEnvironment,
@@ -44,6 +43,7 @@ import {
 // Typed as a plain string: the router's route union is built from routes.tsx, which imports this page.
 const DEPLOYMENTS: string = '/deployments';
 const NAME = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
+const VERBS = ['read', 'create', 'update', 'delete'] as const;
 
 /**
  * Settings → Environments (ADR 0028): adding them, their order and which of them may deploy
@@ -449,13 +449,17 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
   const [useKind, setUseKind] = useState<'tables' | 'contracts'>('tables');
   const [useTarget, setUseTarget] = useState(others[0]?.id ?? '');
   const [instance, setInstance] = useState('');
-  const [grants, setGrants] = useState('');
-  // A contracts link grants operations the app there really has: picked from what it offers.
-  const offers = useOperations(useTarget, useKind === 'contracts');
-  const offered = (offers.data ?? []).find((a) => a.slug === instance);
+  // A link grants what the app there really has -- operations or tables -- picked from what it offers.
+  const offers = useOffers(useTarget);
+  const apps = (offers.data ?? []).filter((a) => (useKind === 'contracts' ? a.operations.length : a.tables.length) > 0);
+  const offered = apps.find((a) => a.slug === instance);
   const [picked, setPicked] = useState<string[]>([]);
-  const grantList =
-    useKind === 'contracts' ? picked : grants.split(/[\n,]/).map((g) => g.trim()).filter(Boolean);
+  const toggle = (grant: string, on: boolean) => setPicked((p) => (on ? [...p, grant] : p.filter((g) => g !== grant)));
+  const pick = (next: () => void) => {
+    next();
+    setInstance('');
+    setPicked([]);
+  };
 
   return (
     <fieldset className="flex flex-col gap-1.5">
@@ -587,28 +591,14 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
         onSubmit={(e) => {
           e.preventDefault();
           add.mutate(
-            { kind: useKind, targetEnvironmentId: useTarget, targetKey: instance.trim(), grants: grantList },
-            {
-              onSuccess: () => {
-                setInstance('');
-                setGrants('');
-                setPicked([]);
-              },
-              onError,
-            },
+            { kind: useKind, targetEnvironmentId: useTarget, targetKey: instance, grants: picked },
+            { onSuccess: () => pick(() => {}), onError },
           );
         }}
       >
         <span className="text-sm text-muted-foreground">{t('environments.useHint')}</span>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Select
-            value={useKind}
-            onValueChange={(v) => {
-              setUseKind(v as 'tables' | 'contracts');
-              setInstance('');
-              setPicked([]);
-            }}
-          >
+          <Select value={useKind} onValueChange={(v) => pick(() => setUseKind(v as 'tables' | 'contracts'))}>
             <SelectTrigger className="sm:w-40" aria-label={t('environments.useKind')}>
               <SelectValue />
             </SelectTrigger>
@@ -617,43 +607,25 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
               <SelectItem value="contracts">{t('environments.useKinds.contracts')}</SelectItem>
             </SelectContent>
           </Select>
-          {useKind === 'contracts' ? (
-            <Select
-              value={instance}
-              onValueChange={(v) => {
-                setInstance(v);
-                setPicked([]);
-              }}
-            >
-              <SelectTrigger className="sm:flex-1" aria-label={t('environments.useInstance')}>
-                <SelectValue placeholder={t('environments.useInstance')} />
-              </SelectTrigger>
-              <SelectContent>
-                {(offers.data ?? []).map((a) => (
-                  <SelectItem key={a.slug} value={a.slug}>
-                    {a.name} ({a.slug})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              aria-label={t('environments.useInstance')}
-              placeholder={t('environments.useInstance')}
-              value={instance}
-              onChange={(e) => setInstance(e.target.value.toLowerCase())}
-            />
-          )}
           <Select
-            value={useTarget}
+            value={instance}
             onValueChange={(v) => {
-              setUseTarget(v);
-              if (useKind === 'contracts') {
-                setInstance('');
-                setPicked([]);
-              }
+              setInstance(v);
+              setPicked([]);
             }}
           >
+            <SelectTrigger className="sm:flex-1" aria-label={t('environments.useInstance')}>
+              <SelectValue placeholder={t('environments.useInstance')} />
+            </SelectTrigger>
+            <SelectContent>
+              {apps.map((a) => (
+                <SelectItem key={a.slug} value={a.slug}>
+                  {a.name} ({a.slug})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={useTarget} onValueChange={(v) => pick(() => setUseTarget(v))}>
             <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
               <SelectValue />
             </SelectTrigger>
@@ -666,44 +638,46 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
             </SelectContent>
           </Select>
         </div>
-        {useKind === 'contracts' ? (
-          offers.data && offers.data.length === 0 ? (
-            <span className="text-sm text-muted-foreground">{t('environments.useNoOperations', { name: nameOf(useTarget) })}</span>
-          ) : (
-            <div className="flex flex-col gap-1" role="group" aria-label={t('environments.useGrants')}>
-              {offered?.operations.map((o) => (
-                <label key={o.grant} className="flex items-start gap-2 text-sm">
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={picked.includes(o.grant)}
-                    onCheckedChange={(on) =>
-                      setPicked((p) => (on === true ? [...p, o.grant] : p.filter((g) => g !== o.grant)))
-                    }
-                  />
-                  <span className="min-w-0">
-                    <span className="font-mono text-xs break-all">{o.grant}</span>
-                    {o.risk !== 'read' && (
-                      <Badge tone="outline" className="ml-2">
-                        {t('environments.useWrites')}
-                      </Badge>
-                    )}
-                    {o.description && <span className="block text-muted-foreground">{o.description}</span>}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )
+        {offers.data && apps.length === 0 ? (
+          <span className="text-sm text-muted-foreground">{t(`environments.useNothing.${useKind}`, { name: nameOf(useTarget) })}</span>
+        ) : useKind === 'contracts' ? (
+          <div className="flex flex-col gap-1" role="group" aria-label={t('environments.useGrants')}>
+            {offered?.operations.map((o) => (
+              <label key={o.grant} className="flex items-start gap-2 text-sm">
+                <Checkbox className="mt-0.5" checked={picked.includes(o.grant)} onCheckedChange={(on) => toggle(o.grant, on === true)} />
+                <span className="min-w-0">
+                  <span className="font-mono text-xs break-all">{o.grant}</span>
+                  {o.risk !== 'read' && (
+                    <Badge tone="outline" className="ml-2">
+                      {t('environments.useWrites')}
+                    </Badge>
+                  )}
+                  {o.description && <span className="block text-muted-foreground">{o.description}</span>}
+                </span>
+              </label>
+            ))}
+          </div>
         ) : (
-          <Textarea
-            aria-label={t('environments.useGrants')}
-            placeholder={t('environments.useGrantsPlaceholder.tables')}
-            rows={2}
-            value={grants}
-            onChange={(e) => setGrants(e.target.value)}
-          />
+          <div className="flex flex-col gap-1" role="group" aria-label={t('environments.useGrants')}>
+            {offered?.tables.map((table) => (
+              <div key={table} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span className="min-w-0 basis-full font-mono text-xs break-all sm:basis-40">{table}</span>
+                {VERBS.map((verb) => (
+                  <label key={verb} className="flex items-center gap-1.5">
+                    <Checkbox
+                      checked={picked.includes(`${table}:${verb}`)}
+                      onCheckedChange={(on) => toggle(`${table}:${verb}`, on === true)}
+                      aria-label={`${table}:${verb}`}
+                    />
+                    {t(`environments.verbs.${verb}`)}
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
         )}
         <div>
-          <Button type="submit" variant="outline" disabled={!instance.trim() || !useTarget || grantList.length === 0 || add.isPending}>
+          <Button type="submit" variant="outline" disabled={!instance || !useTarget || picked.length === 0 || add.isPending}>
             <Link2 className="h-4 w-4" /> {t('environments.useSubmit')}
           </Button>
         </div>

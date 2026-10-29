@@ -2286,10 +2286,16 @@
     },
     "useInstance": "App address there",
     "useGrants": "Grants",
-    "useGrantsPlaceholder": {
-      "tables": "companies:read, deals:create"
+    "useNothing": {
+      "contracts": "No app in {{name}} offers operations.",
+      "tables": "No app in {{name}} has tables to offer."
     },
-    "useNoOperations": "No app in {{name}} offers operations.",
+    "verbs": {
+      "read": "Read",
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete"
+    },
     "useWrites": "Changes data",
     "useRow": {
       "tables": "Tables of {{instance}} in {{name}}",
