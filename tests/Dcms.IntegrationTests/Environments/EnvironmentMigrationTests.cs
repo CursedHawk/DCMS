@@ -659,6 +659,38 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task An_app_of_its_own_and_an_app_link_never_share_an_address()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var billing = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "billing", service = true, empty = true }), ct), ct)).GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, $"{ws.Prod}/billing",
+            new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/environments/{ws.ProdId}/links", ws.Owner, ws.Prod,
+            new { kind = "app", targetEnvironmentId = billing, targetKey = "news", access = "read" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Production's /api/news is billing's: an app of its own there would never be reached.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, ws.Prod,
+            new { pluginId = "blog", slug = "news", name = "Own news", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Nor does one arrive by deployment: refused, and nothing of it is left.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", ws.Owner, ws.Dev,
+            new { pluginId = "blog", slug = "news", name = "Own news", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+        var migration = await CutAsync(client, ws, "Own news", ct);
+        var refused = () => Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, migration, new Dictionary<string, string>(),
+            new EnvironmentApplier(ws.Owner, false), ct));
+        (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.undone");
+        (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/instances", ws.Owner, ws.Prod), ct), ct))
+            .EnumerateArray().Should().BeEmpty();
+
+        // And the other way round: development has its own news, so it cannot link one.
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/environments/{ws.DevId}/links", ws.Owner, ws.Prod,
+            new { kind = "app", targetEnvironmentId = billing, targetKey = "news", access = "read" }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [DockerFact]
     public async Task Deleting_a_stage_joins_the_stages_either_side_of_it()
     {
         var ct = TestContext.Current.CancellationToken;

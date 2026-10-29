@@ -2325,6 +2325,7 @@
       "unknownPlugin": "A plugin in this deployment is not installed here.",
       "pluginInstanceRemoved": "An app was removed in the source; apps are switched off, not removed.",
       "slugTakenByOtherPlugin": "An app here already uses that address for another plugin.",
+      "addressLinked": "An app in this deployment uses an address another environment's app is linked at here.",
       "cannotApply": "A change could not be applied here as it stands. The job's details say which and why.",
       "undone": "The deployment stopped on a change it could not make, and everything it had changed here was put back. The job's details say which change and why.",
       "partlyApplied": "The deployment stopped on a change it could not make, and not everything it had changed here could be put back. The job's details list what is left."

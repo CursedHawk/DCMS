@@ -60,6 +60,10 @@ public sealed class PluginsConfigKind(
         var created = instance is null;
         if (instance is null)
         {
+            if (await Tenancy.EnvironmentLinkRules.AppLinkedAsync(tenancy, tenantId, key, ct))
+            {
+                throw new EnvironmentMigrationException("environments.errors.addressLinked", key);
+            }
             instance = new PluginInstance
             {
                 Id = Guid.NewGuid(), TenantId = tenantId, PluginId = manifest.Id, PluginVersion = manifest.Version, Slug = key,

@@ -1,4 +1,5 @@
 using Dcms.Shared.Data.Tenancy;
+using Dcms.AdminApi.Tenancy;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
@@ -69,6 +70,10 @@ public static class PluginInstanceEndpoints
             if (await db.PluginInstances.AnyAsync(p => p.Slug == body.Slug, ct))
             {
                 return Results.Conflict(new { error = "slug already in use." });
+            }
+            if (await EnvironmentLinkRules.AppLinkedAsync(tenancy, tenant.TenantId!.Value, body.Slug, ct))
+            {
+                return Results.Conflict(new { error = "Another environment's app is linked at this address." });
             }
             if (!manifest.AllowMultipleInstances &&
                 await db.PluginInstances.AnyAsync(p => p.PluginId == body.PluginId, ct))

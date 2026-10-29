@@ -100,6 +100,11 @@ public static class EnvironmentLinkRules
                     {
                         return (null, new Refused("This app is already linked.", Conflict: true));
                     }
+                    // One address, one app: a link would hide this environment's own app from its sites.
+                    if (await cms.PluginInstances.IgnoreTenantFilter().AnyAsync(p => p.TenantId == tenantId && p.Slug == targetKey, ct))
+                    {
+                        return (null, new Refused("This environment has its own app at this address.", Conflict: true));
+                    }
                 }
                 return (new Checked(kind, targetKey, appAccess, []), null);
             }
@@ -107,6 +112,14 @@ public static class EnvironmentLinkRules
                 return (null, new Refused("A link is an app, users, contracts or tables link."));
         }
     }
+
+    /// <summary>
+    /// Whether an app link of the environment the caller is in already serves this address from
+    /// elsewhere: an app of its own there would never be reached.
+    /// </summary>
+    public static Task<bool> AppLinkedAsync(TenancyDbContext db, Guid tenantId, string slug, CancellationToken ct) =>
+        db.EnvironmentLinks.IgnoreTenantFilter()
+            .AnyAsync(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.App && l.TargetKey == slug, ct);
 
     /// <summary>A grant of the link's kind: <c>contract/Operation</c>, or <c>table:verb</c>.</summary>
     public static bool Grant(string kind, string grant)

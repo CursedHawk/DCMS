@@ -2371,6 +2371,7 @@
       "unknownPlugin": "Plugin z tohoto nasazení zde není nainstalován.",
       "pluginInstanceRemoved": "Ve zdroji byla odebrána aplikace; aplikace se vypínají, neodebírají.",
       "slugTakenByOtherPlugin": "Aplikace zde už tuto adresu používá pro jiný plugin.",
+      "addressLinked": "Aplikace z tohoto nasazení používá adresu, na kterou je zde připojena aplikace jiného prostředí.",
       "cannotApply": "Změnu zde nelze v současné podobě použít. Podrobnosti úlohy říkají kterou a proč.",
       "undone": "Nasazení se zastavilo na změně, kterou nešlo provést, a vše, co zde už změnilo, bylo vráceno. Podrobnosti úlohy říkají kterou změnu a proč.",
       "partlyApplied": "Nasazení se zastavilo na změně, kterou nešlo provést, a ne vše, co zde už změnilo, šlo vrátit. Podrobnosti úlohy uvádějí, co zůstalo."
