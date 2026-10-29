@@ -76,7 +76,9 @@
     "undo": "Undo",
     "redo": "Redo",
     "dismiss": "Dismiss",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next"
   },
   "common": {
     "loading": "Loading…",
@@ -2257,8 +2259,7 @@
     "description": "Development, test, staging and production in one workspace: each has its own configuration and content, and all share its members and media library. Configuration moves between them as reviewed deployments.",
     "switch": "Environment: {{name}}. Switch environment",
     "offHint": "This workspace has production only. Add development, test or staging beside it: each gets its own configuration and content, while members and media stay shared. Nothing changes for production.",
-    "pipelineHint": "Listed from the first stage to production. Each environment lists the ones allowed to deploy configuration into it.",
-    "copyFrom": "Copy from",
+    "pipelineHint": "Configuration travels left to right: each environment takes reviewed deployments from the one before it. Open one to change its settings, locks and links.",
     "copyData": "Copy data too",
     "personalData": "Personal data",
     "personalDataHint": "Personal data copied here is held twice: whoever can open this environment can read it, and deleting it from one environment leaves the other copy.",
@@ -2270,26 +2271,8 @@
       "form-submissions": "Form submissions",
       "chat": "Chat conversations"
     },
-    "featureBranch": "Feature environment",
     "deleteWhenMerged": "Delete once merged",
-    "featureHint": "A branch of the environment it copies from: it sits beside it, merges back into it, and deploys only the migrations made in it.",
     "featureOf": "Feature of {{name}}",
-    "serviceEnvironment": "Service environment",
-    "serviceHint": "Outside the pipeline: nothing deploys into or out of it. Other environments use its apps and tables through links.",
-    "service": "Service",
-    "useSubmit": "Use from there",
-    "useHint": "Use an app's tables or operations in another environment: a plugin or flow here calls it, running there, for exactly what is granted.",
-    "useKind": "What to use",
-    "useKinds": {
-      "tables": "Dynamic Apps tables",
-      "contracts": "Plugin operations"
-    },
-    "useInstance": "App address there",
-    "useGrants": "Grants",
-    "useNothing": {
-      "contracts": "No app in {{name}} offers operations.",
-      "tables": "No app in {{name}} has tables to offer."
-    },
     "verbs": {
       "read": "Read",
       "create": "Create",
@@ -2297,10 +2280,6 @@
       "delete": "Delete"
     },
     "useWrites": "Changes data",
-    "useRow": {
-      "tables": "Tables of {{instance}} in {{name}}",
-      "contracts": "Operations of {{instance}} in {{name}}"
-    },
     "switchTo": "Switch to {{name}}",
     "managedTitle": "Managed by deployments",
     "managedFrom": "This environment takes this from {{names}}: changes made here are refused. Make them there and deploy them here.",
@@ -2312,9 +2291,6 @@
     "exceptionMode": "Who owns the item",
     "addException": "Add exception",
     "removeException": "Remove the exception for {{item}}",
-    "addLabel": "New environment",
-    "add": "Add environment",
-    "addHint": "Lowercase letters, digits and dashes. A new environment starts before the first one, gets the workspace members with their current roles, and deploys into the stage after it.",
     "name": "Environment name",
     "root": "Production",
     "rename": "Rename",
@@ -2339,7 +2315,6 @@
       "copyLeft": "Copying stopped on an item this environment could not take, and the half-made environment could not be removed. Delete it in Settings → Environments; the job's details say what stopped the copy.",
       "partlyApplied": "The deployment stopped on a change it could not make, and not everything it had changed here could be put back. The job's details list what is left."
     },
-    "ownership": "Who changes what here",
     "ownershipOf": "Who changes {{kind}} here",
     "lockToPipeline": "Lock to pipeline",
     "modes": {
@@ -2347,27 +2322,178 @@
       "Local": "Here only",
       "Managed": "Deployments only"
     },
-    "links": "Used from other environments",
-    "usersLinkRow": "Site users from {{name}}",
-    "usersUnlink": "Stop using site users from another environment",
-    "usersLink": "Use site users",
-    "usersLinkHint": "Sites here can sign people in through another environment's users and groups. Takes effect within five minutes.",
-    "linkRow": "/api/{{address}} from {{name}}",
-    "unlink": "Stop using /api/{{address}} from another environment",
-    "linkAddress": "App address",
-    "linkFrom": "From environment",
     "linkAccess": "Access",
-    "link": "Use app",
     "access": {
       "Read": "Read only",
       "ReadWrite": "Read and write"
-    }
+    },
+    "emptyTitle": "Production only",
+    "pipeline": "Pipeline",
+    "services": "Services",
+    "servicesHint": "Outside the pipeline: the environments above use their apps, tables and sign-in through links.",
+    "purposes": {
+      "stage": "Stage",
+      "feature": "Feature",
+      "service": "Service",
+      "production": "Production"
+    },
+    "tabs": {
+      "overview": "Overview",
+      "locks": "Locks",
+      "links": "Links"
+    },
+    "tile": {
+      "outside": "Outside the pipeline",
+      "takesFrom": "Takes deployments from {{names}}",
+      "takesNothing": "Takes no deployments",
+      "lock": {
+        "open": "Editable here",
+        "partial": "Partly locked",
+        "locked": "Locked to pipeline"
+      },
+      "links_one": "Uses {{count}} link",
+      "links_other": "Uses {{count}} links",
+      "branchOf": "Branch of {{name}}"
+    },
+    "detail": {
+      "service": "A service: outside the pipeline. Other environments use what it has through links.",
+      "deploysInto": "Deploys into {{names}}",
+      "name": "Name",
+      "receivesHint": "Deployments into this environment may come only from the ones ticked.",
+      "position": "Stage {{at}} of {{count}}",
+      "feature": "Feature",
+      "ownOnly": "Merge only its own changes",
+      "ownOnlyHint": "Deploying from it offers just the migrations made in it, not what it came with.",
+      "danger": "Delete",
+      "delete": "Delete {{name}}"
+    },
+    "new": {
+      "title": "New environment",
+      "step": "Step {{step}} of {{count}}",
+      "purpose": "What it is for",
+      "stageHint": "A step of the pipeline, like development or test. It goes at the front and deploys into the first stage.",
+      "featureHint": "A branch for one piece of work. It sits beside the environment it branches from and merges back into it.",
+      "serviceHint": "Something the others use, like billing or a shared catalogue. Nothing deploys into or out of it.",
+      "whereStage": "It goes in front of {{name}} and deploys into it.",
+      "whereFeature": "It branches from {{name}} and merges back into it.",
+      "whereService": "It sits outside the pipeline; other environments use it through links.",
+      "nameHint": "Lowercase letters, digits and dashes.",
+      "nameTaken": "The workspace already has an environment of that name.",
+      "branchOf": "Branch of",
+      "startFrom": "Start from",
+      "copyOf": "Copy of {{name}}",
+      "empty": "Empty",
+      "emptyHint": "No apps, roles or sites: set them up here or deploy them in.",
+      "deleteWhenMergedHint": "It is deleted once everything made in it is deployed into what it branched from.",
+      "configurationComes": "Everything {{name}} is configured with comes along: roles, apps and their settings, sites, connections, Dynamic Apps models, sign-in rules and links. Data is copied only when ticked.",
+      "create": "Create {{name}}"
+    },
+    "locks": {
+      "title": "Who changes what here",
+      "description": "Here and deployments: edited here, and deployments may change it too. Here only: deployments leave it alone. Deployments only: locked, changed only by deploying.",
+      "unlockAll": "Unlock everything",
+      "exceptionsHint": "One item owned otherwise than its kind: the legal page kept here while the rest of the content comes from deployments, say.",
+      "kinds": {
+        "roles": "Who may do what in the admin.",
+        "plugins": "Installed apps and their settings.",
+        "api-connections": "Connections to outside APIs, without their keys.",
+        "sites": "Sites and their released code.",
+        "user-auth": "Site users’ roles, page rules and API access.",
+        "dynamic-apps": "Dynamic Apps tables, forms and flows.",
+        "links": "What this environment uses from the others.",
+        "content": "Published posts, pages and other content."
+      },
+      "keyHints": {
+        "roles": "Role name, e.g. Editors",
+        "plugins": "App address, e.g. news",
+        "api-connections": "Connection address, e.g. weather",
+        "sites": "Site key",
+        "user-auth": "role:key or api:app, e.g. role:members",
+        "dynamic-apps": "App address, e.g. crm",
+        "links": "kind/environment/address, e.g. app/billing/leads",
+        "content": "app/type/slug, e.g. news/post/legal"
+      }
+    },
+    "connect": {
+      "noOthers": "This workspace has no other environment to use anything from.",
+      "fromWhich": "From which environment",
+      "whichApp": "Which app in {{name}}",
+      "alreadyLinked": "Already linked",
+      "ownApp": "This environment has its own app at {{address}}",
+      "readHint": "Sites here read it; anything that would change it is refused.",
+      "readWriteHint": "Sites here read it and submit to it, as if it were theirs.",
+      "appSummary": "Sites in {{here}} call {{address}} and get {{name}}’s app.",
+      "usersSummary": "Sites in {{here}} will sign people in with {{name}}’s users and groups. What they may do stays {{here}}’s to decide, by its own roles.",
+      "noUsers": "{{name}} has no User Auth app, so it has no site users to lend.",
+      "whichOperations": "What it may call",
+      "whichTables": "What it may do with each table",
+      "table": "Table",
+      "remove": "Stop: {{what}}",
+      "rows": {
+        "users": "Sites sign people in with {{name}}’s users",
+        "app": "/api/{{address}} comes from {{name}}",
+        "contracts": "Operations of {{app}} in {{name}}",
+        "tables": "Tables of {{app}} in {{name}}"
+      },
+      "kinds": {
+        "users": {
+          "title": "Site sign-in",
+          "description": "Sites here sign people in with another environment’s users and groups.",
+          "action": "Use another environment’s users",
+          "none": "Sites here sign people in with this environment’s own users.",
+          "submit": "Use these users"
+        },
+        "app": {
+          "title": "Apps",
+          "description": "An address here (/api/…) is served by an app of another environment: its posts, its forms.",
+          "action": "Use an app",
+          "none": "Every address here is served by this environment’s own apps.",
+          "submit": "Use this app",
+          "nothingThere": "{{name}} has no app to use."
+        },
+        "contracts": {
+          "title": "Operations",
+          "description": "Flows and plugins here call an app’s operations in another environment, running there.",
+          "action": "Use operations",
+          "none": "Nothing here calls another environment’s operations.",
+          "submit": "Allow these operations",
+          "nothingThere": "No app in {{name}} offers operations to other environments."
+        },
+        "tables": {
+          "title": "Tables",
+          "description": "Flows here read and change Dynamic Apps tables of another environment.",
+          "action": "Use tables",
+          "none": "Nothing here uses another environment’s tables.",
+          "submit": "Allow these tables",
+          "nothingThere": "No app in {{name}} has tables."
+        }
+      }
+    },
+    "copyFailed": "Creating {{name}} failed",
+    "dismiss": "Dismiss",
+    "settingUp": "Being set up",
+    "settingUpTitle": "Being set up",
+    "settingUpHint": "Its configuration and the data you chose are being copied. Nobody can open it until everything is in; this page shows each step as it happens.",
+    "settingUpCount": "Being set up: {{done}} of {{count}} steps",
+    "readyToast": "{{name}} is ready",
+    "setup": {
+      "waiting": "Waiting",
+      "copying": "Copying…",
+      "rows_one": "{{count}} row",
+      "rows_other": "{{count}} rows",
+      "item": "{{item}} ({{at}} of {{count}})",
+      "copied_one": "{{count}} copied",
+      "copied_other": "{{count}} copied",
+      "none": "Nothing to copy",
+      "queued": "Waiting for the copy to start…"
+    },
+    "features": "Features",
+    "featuresHint": "Branches for one piece of work each. They merge back into the environment they came from."
   },
   "deployments": {
     "title": "Deployments",
     "description": "Configuration changes in {{name}}, deployments waiting to come in, and its history. Every change is shown before it is applied.",
     "off": "This workspace has no environments",
-    "unpublished": "Changes not in a migration yet",
     "nothingChanged": "Nothing has changed since the last migration.",
     "migrationName": "Migration name",
     "migrationDescription": "What it does (optional)",
@@ -2382,7 +2508,6 @@
     "deployUpTo_other": "Deploy these {{count}} migrations",
     "resolveFirst": "Choose what to do with each conflict first.",
     "queued": "Deployment started. It shows in Jobs while it runs.",
-    "history": "History",
     "noHistory": "No migrations yet.",
     "rolledBack": "Rolled back",
     "rollBack": "Roll back",
@@ -2428,6 +2553,26 @@
       "dynamic-apps": "Dynamic app",
       "content": "Published content",
       "links": "Environment link"
-    }
+    },
+    "tabs": {
+      "incoming": "Incoming",
+      "changes": "Changes here",
+      "history": "History"
+    },
+    "cannotDeploy": "Deploying here needs the permission to promote between environments.",
+    "noSources": "Nothing deploys into {{name}}: it takes no deployments.",
+    "changesHint": "What changed here since the last migration. Put the changes you want into a migration, and {{names}} can deploy it.",
+    "changesHintNoTarget": "What changed here since the last migration. No environment deploys from here yet.",
+    "waiting_one": "{{count}} migration waiting",
+    "waiting_other": "{{count}} migrations waiting",
+    "deployAll_one": "Deploy {{count}} migration",
+    "deployAll_other": "Deploy all {{count}} migrations",
+    "fullJson": "Show the full values",
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items",
+    "fields_one": "{{count}} field",
+    "fields_other": "{{count}} fields",
+    "moreFields_one": "and {{count}} more field",
+    "moreFields_other": "and {{count}} more fields"
   }
 }

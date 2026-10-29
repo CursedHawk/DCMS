@@ -100,6 +100,7 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
       // request. Only a job this page has never seen, or one that just started or finished,
       // needs the lists refetched — debounced, because a group finishing is a burst of them.
       let jobRefetch: ReturnType<typeof setTimeout> | undefined;
+      let environmentsRefetch: ReturnType<typeof setTimeout> | undefined;
       connection.on('JobChanged', (change: JobChanged) => {
         // A site build's job id is its build id. Its start is the one moment the site's own hub
         // does not announce, so a deployments view still showing it as queued refetches here.
@@ -108,6 +109,11 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
             .getQueriesData<Array<{ id: string; status?: string }>>({ queryKey: ['site-builds'] })
             .some(([, rows]) => Array.isArray(rows) && rows.some((b) => b.id === change.id && b.status === 'Queued'));
           if (queued) void qc.invalidateQueries({ queryKey: ['site-builds'] });
+        }
+        // A new environment is being copied (its copy job ticking): its steps live on the environment.
+        if (qc.getQueryData<{ environments?: { ready?: boolean }[] }>(['environments'])?.environments?.some((e) => e.ready === false)) {
+          clearTimeout(environmentsRefetch);
+          environmentsRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: ['environments'] }), 400);
         }
         if (!applyJobChanged(qc, change)) return;
         clearTimeout(jobRefetch);

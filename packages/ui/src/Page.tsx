@@ -34,7 +34,9 @@ export function PageHeader({
     <div className="mb-6">
       {crumbs}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+        {/* basis-60: on a phone the actions wrap below a title of readable width, rather than
+            squeezing it into a column a word wide. */}
+        <div className="min-w-0 flex-1 basis-60 [overflow-wrap:anywhere]">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
           {description ? (
             <div className="mt-1 text-sm text-muted-foreground">{description}</div>

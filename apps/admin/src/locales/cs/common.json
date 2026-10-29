@@ -76,7 +76,9 @@
     "undo": "Zpět",
     "redo": "Znovu",
     "dismiss": "Zavřít",
-    "confirm": "Potvrdit"
+    "confirm": "Potvrdit",
+    "back": "Zpět",
+    "next": "Další"
   },
   "common": {
     "loading": "Načítání…",
@@ -2303,8 +2305,7 @@
     "description": "Vývoj, test, staging a produkce v jednom pracovním prostoru: každé prostředí má vlastní konfiguraci a obsah a všechna sdílejí jeho členy a knihovnu médií. Konfigurace se mezi nimi přenáší schválenými nasazeními.",
     "switch": "Prostředí: {{name}}. Přepnout prostředí",
     "offHint": "Tento pracovní prostor má jen produkci. Přidejte vedle ní vývojové, testovací nebo staging prostředí: každé má vlastní konfiguraci a obsah, členové a knihovna médií zůstávají společné. Na produkci se nic nemění.",
-    "pipelineHint": "Seřazeno od první fáze po produkci. U každého prostředí je uvedeno, která do něj smějí nasazovat konfiguraci.",
-    "copyFrom": "Kopírovat z",
+    "pipelineHint": "Konfigurace putuje zleva doprava: každé prostředí přebírá zkontrolovaná nasazení z toho před ním. Otevřete prostředí a změňte jeho nastavení, zámky a propojení.",
     "copyData": "Zkopírovat i data",
     "personalData": "Osobní údaje",
     "personalDataHint": "Zkopírované osobní údaje jsou pak uložené dvakrát: přečte je každý, kdo může otevřít toto prostředí, a smazání v jednom prostředí ponechá kopii v druhém.",
@@ -2316,26 +2317,8 @@
       "form-submissions": "Odeslané formuláře",
       "chat": "Konverzace v chatu"
     },
-    "featureBranch": "Prostředí pro funkci",
     "deleteWhenMerged": "Po sloučení smazat",
-    "featureHint": "Větev prostředí, ze kterého se kopíruje: stojí vedle něj, slučuje se zpět do něj a nasazuje jen migrace vytvořené v něm.",
     "featureOf": "Funkce z {{name}}",
-    "serviceEnvironment": "Servisní prostředí",
-    "serviceHint": "Mimo pipeline: nic se do něj ani z něj nenasazuje. Ostatní prostředí používají jeho aplikace a tabulky přes propojení.",
-    "service": "Služba",
-    "useSubmit": "Používat odtud",
-    "useHint": "Používat tabulky nebo operace aplikace z jiného prostředí: plugin nebo tok odsud je volá, běží tam a smí přesně to, co je povoleno.",
-    "useKind": "Co používat",
-    "useKinds": {
-      "tables": "Tabulky Dynamic Apps",
-      "contracts": "Operace pluginu"
-    },
-    "useInstance": "Adresa aplikace tam",
-    "useGrants": "Oprávnění",
-    "useNothing": {
-      "contracts": "Žádná aplikace v {{name}} nenabízí operace.",
-      "tables": "Žádná aplikace v {{name}} nemá tabulky k nabídnutí."
-    },
     "verbs": {
       "read": "Číst",
       "create": "Vytvářet",
@@ -2343,10 +2326,6 @@
       "delete": "Mazat"
     },
     "useWrites": "Mění data",
-    "useRow": {
-      "tables": "Tabulky {{instance}} v {{name}}",
-      "contracts": "Operace {{instance}} v {{name}}"
-    },
     "switchTo": "Přepnout na {{name}}",
     "managedTitle": "Spravováno nasazeními",
     "managedFrom": "Toto prostředí to přebírá z {{names}}: změny provedené zde se odmítnou. Proveďte je tam a nasaďte je sem.",
@@ -2358,9 +2337,6 @@
     "exceptionMode": "Kdo položku vlastní",
     "addException": "Přidat výjimku",
     "removeException": "Odebrat výjimku pro {{item}}",
-    "addLabel": "Nové prostředí",
-    "add": "Přidat prostředí",
-    "addHint": "Malá písmena, číslice a pomlčky. Nové prostředí začíná před prvním, dostane členy pracovního prostoru s jejich současnými rolemi a nasazuje do fáze za sebou.",
     "name": "Název prostředí",
     "root": "Produkce",
     "rename": "Přejmenovat",
@@ -2385,7 +2361,6 @@
       "copyLeft": "Kopírování se zastavilo na položce, kterou toto prostředí nemohlo přijmout, a napůl vytvořené prostředí se nepodařilo odstranit. Smažte je v Nastavení → Prostředí; podrobnosti úlohy říkají, co kopírování zastavilo.",
       "partlyApplied": "Nasazení se zastavilo na změně, kterou nešlo provést, a ne vše, co zde už změnilo, šlo vrátit. Podrobnosti úlohy uvádějí, co zůstalo."
     },
-    "ownership": "Kdo zde co mění",
     "ownershipOf": "Kdo zde mění: {{kind}}",
     "lockToPipeline": "Uzamknout na pipeline",
     "modes": {
@@ -2393,27 +2368,181 @@
       "Local": "Jen zde",
       "Managed": "Jen nasazení"
     },
-    "links": "Používáno z jiných prostředí",
-    "usersLinkRow": "Uživatelé webů z prostředí {{name}}",
-    "usersUnlink": "Přestat používat uživatele webů z jiného prostředí",
-    "usersLink": "Použít uživatele",
-    "usersLinkHint": "Weby zde mohou přihlašovat lidi přes uživatele a skupiny jiného prostředí. Projeví se do pěti minut.",
-    "linkRow": "/api/{{address}} z {{name}}",
-    "unlink": "Přestat používat /api/{{address}} z jiného prostředí",
-    "linkAddress": "Adresa aplikace",
-    "linkFrom": "Z prostředí",
     "linkAccess": "Přístup",
-    "link": "Použít aplikaci",
     "access": {
       "Read": "Jen čtení",
       "ReadWrite": "Čtení i zápis"
-    }
+    },
+    "emptyTitle": "Jen produkce",
+    "pipeline": "Pipeline",
+    "services": "Služby",
+    "servicesHint": "Mimo pipeline: prostředí výše používají jejich aplikace, tabulky a přihlašování přes propojení.",
+    "purposes": {
+      "stage": "Fáze",
+      "feature": "Funkce",
+      "service": "Služba",
+      "production": "Produkce"
+    },
+    "tabs": {
+      "overview": "Přehled",
+      "locks": "Zámky",
+      "links": "Propojení"
+    },
+    "tile": {
+      "outside": "Mimo pipeline",
+      "takesFrom": "Přebírá nasazení z {{names}}",
+      "takesNothing": "Nepřebírá žádná nasazení",
+      "lock": {
+        "open": "Upravitelné zde",
+        "partial": "Částečně zamčeno",
+        "locked": "Zamčeno na pipeline"
+      },
+      "links_one": "Používá {{count}} propojení",
+      "links_few": "Používá {{count}} propojení",
+      "links_other": "Používá {{count}} propojení",
+      "branchOf": "Větev z {{name}}"
+    },
+    "detail": {
+      "service": "Služba: mimo pipeline. Ostatní prostředí používají, co má, přes propojení.",
+      "deploysInto": "Nasazuje do {{names}}",
+      "name": "Název",
+      "receivesHint": "Nasazení do tohoto prostředí smějí přicházet jen ze zaškrtnutých.",
+      "position": "Fáze {{at}} z {{count}}",
+      "feature": "Funkce",
+      "ownOnly": "Slučovat jen vlastní změny",
+      "ownOnlyHint": "Nasazení z něj nabízí jen migrace vytvořené v něm, ne to, s čím vzniklo.",
+      "danger": "Smazat",
+      "delete": "Smazat {{name}}"
+    },
+    "new": {
+      "title": "Nové prostředí",
+      "step": "Krok {{step}} z {{count}}",
+      "purpose": "K čemu slouží",
+      "stageHint": "Krok pipeline, jako vývoj nebo test. Zařadí se na začátek a nasazuje do první fáze.",
+      "featureHint": "Větev pro jednu práci. Stojí vedle prostředí, ze kterého vychází, a slučuje se zpět do něj.",
+      "serviceHint": "Něco, co ostatní používají, jako fakturace nebo sdílený katalog. Nic se do něj ani z něj nenasazuje.",
+      "whereStage": "Zařadí se před {{name}} a nasazuje do něj.",
+      "whereFeature": "Vychází z {{name}} a slučuje se zpět do něj.",
+      "whereService": "Stojí mimo pipeline; ostatní prostředí ho používají přes propojení.",
+      "nameHint": "Malá písmena, číslice a pomlčky.",
+      "nameTaken": "Pracovní prostor už prostředí s tímto názvem má.",
+      "branchOf": "Větev z",
+      "startFrom": "Začít z",
+      "copyOf": "Kopie {{name}}",
+      "empty": "Prázdné",
+      "emptyHint": "Bez aplikací, rolí a webů: nastavte je zde nebo je sem nasaďte.",
+      "deleteWhenMergedHint": "Smaže se, jakmile je vše vytvořené v něm nasazeno do prostředí, ze kterého vychází.",
+      "configurationComes": "Přijde vše, s čím je {{name}} nastaveno: role, aplikace a jejich nastavení, weby, připojení, modely Dynamic Apps, pravidla přihlašování a propojení. Data se kopírují jen zaškrtnutá.",
+      "create": "Vytvořit {{name}}"
+    },
+    "locks": {
+      "title": "Kdo zde co mění",
+      "description": "Zde i nasazením: upravuje se zde a nasazení to mohou změnit také. Jen zde: nasazení to nechávají být. Jen nasazením: zamčeno, mění se jen nasazením.",
+      "unlockAll": "Odemknout vše",
+      "exceptionsHint": "Jedna položka spravovaná jinak než její druh: například právní stránka ponechaná zde, zatímco zbytek obsahu přichází nasazením.",
+      "kinds": {
+        "roles": "Kdo smí co dělat v administraci.",
+        "plugins": "Nainstalované aplikace a jejich nastavení.",
+        "api-connections": "Připojení k vnějším API, bez jejich klíčů.",
+        "sites": "Weby a jejich vydaný kód.",
+        "user-auth": "Role uživatelů webu, pravidla stránek a přístup k API.",
+        "dynamic-apps": "Tabulky, formuláře a toky Dynamic Apps.",
+        "links": "Co toto prostředí používá z ostatních.",
+        "content": "Publikované příspěvky, stránky a další obsah."
+      },
+      "keyHints": {
+        "roles": "Název role, např. Editors",
+        "plugins": "Adresa aplikace, např. news",
+        "api-connections": "Adresa připojení, např. weather",
+        "sites": "Klíč webu",
+        "user-auth": "role:klíč nebo api:aplikace, např. role:members",
+        "dynamic-apps": "Adresa aplikace, např. crm",
+        "links": "druh/prostředí/adresa, např. app/billing/leads",
+        "content": "aplikace/typ/slug, např. news/post/legal"
+      }
+    },
+    "connect": {
+      "noOthers": "Pracovní prostor nemá jiné prostředí, ze kterého by se dalo něco použít.",
+      "fromWhich": "Z kterého prostředí",
+      "whichApp": "Která aplikace v {{name}}",
+      "alreadyLinked": "Už propojeno",
+      "ownApp": "Toto prostředí má vlastní aplikaci na {{address}}",
+      "readHint": "Weby zde ji čtou; cokoli, co by ji měnilo, je odmítnuto.",
+      "readWriteHint": "Weby zde ji čtou a odesílají do ní, jako by byla jejich.",
+      "appSummary": "Weby v {{here}} volají {{address}} a dostanou aplikaci z {{name}}.",
+      "usersSummary": "Weby v {{here}} budou přihlašovat lidi uživateli a skupinami z {{name}}. Co smějí dělat, nadále určuje {{here}} svými rolemi.",
+      "noUsers": "{{name}} nemá aplikaci User Auth, takže nemá uživatele webu k zapůjčení.",
+      "whichOperations": "Co smí volat",
+      "whichTables": "Co smí dělat s každou tabulkou",
+      "table": "Tabulka",
+      "remove": "Ukončit: {{what}}",
+      "rows": {
+        "users": "Weby přihlašují uživateli z {{name}}",
+        "app": "/api/{{address}} přichází z {{name}}",
+        "contracts": "Operace aplikace {{app}} v {{name}}",
+        "tables": "Tabulky aplikace {{app}} v {{name}}"
+      },
+      "kinds": {
+        "users": {
+          "title": "Přihlašování na webech",
+          "description": "Weby zde přihlašují lidi uživateli a skupinami jiného prostředí.",
+          "action": "Použít uživatele jiného prostředí",
+          "none": "Weby zde přihlašují vlastními uživateli tohoto prostředí.",
+          "submit": "Použít tyto uživatele"
+        },
+        "app": {
+          "title": "Aplikace",
+          "description": "Adresu zde (/api/…) obsluhuje aplikace jiného prostředí: její příspěvky, její formuláře.",
+          "action": "Použít aplikaci",
+          "none": "Každou adresu zde obsluhují vlastní aplikace tohoto prostředí.",
+          "submit": "Použít tuto aplikaci",
+          "nothingThere": "{{name}} nemá žádnou aplikaci k použití."
+        },
+        "contracts": {
+          "title": "Operace",
+          "description": "Toky a pluginy zde volají operace aplikace v jiném prostředí; běží tam.",
+          "action": "Použít operace",
+          "none": "Nic zde nevolá operace jiného prostředí.",
+          "submit": "Povolit tyto operace",
+          "nothingThere": "Žádná aplikace v {{name}} nenabízí operace jiným prostředím."
+        },
+        "tables": {
+          "title": "Tabulky",
+          "description": "Toky zde čtou a mění tabulky Dynamic Apps jiného prostředí.",
+          "action": "Použít tabulky",
+          "none": "Nic zde nepoužívá tabulky jiného prostředí.",
+          "submit": "Povolit tyto tabulky",
+          "nothingThere": "Žádná aplikace v {{name}} nemá tabulky."
+        }
+      }
+    },
+    "copyFailed": "Vytvoření {{name}} selhalo",
+    "dismiss": "Zavřít",
+    "settingUp": "Připravuje se",
+    "settingUpTitle": "Připravuje se",
+    "settingUpHint": "Kopíruje se jeho konfigurace a vybraná data. Nikdo ho nemůže otevřít, dokud není vše hotovo; tato stránka ukazuje každý krok, jak probíhá.",
+    "settingUpCount": "Připravuje se: {{done}} z {{count}} kroků",
+    "readyToast": "{{name}} je připraveno",
+    "setup": {
+      "waiting": "Čeká",
+      "copying": "Kopíruje se…",
+      "rows_one": "{{count}} řádek",
+      "rows_few": "{{count}} řádky",
+      "rows_other": "{{count}} řádků",
+      "item": "{{item}} ({{at}} z {{count}})",
+      "copied_one": "{{count}} zkopírováno",
+      "copied_few": "{{count}} zkopírovány",
+      "copied_other": "{{count}} zkopírováno",
+      "none": "Není co kopírovat",
+      "queued": "Čeká se na spuštění kopírování…"
+    },
+    "features": "Funkce",
+    "featuresHint": "Větve, každá pro jednu práci. Slučují se zpět do prostředí, ze kterého vzešly."
   },
   "deployments": {
     "title": "Nasazení",
     "description": "Změny konfigurace v prostředí {{name}}, nasazení čekající na příchod a jejich historie. Každá změna se zobrazí před použitím.",
     "off": "Tento pracovní prostor nemá prostředí",
-    "unpublished": "Změny, které ještě nejsou v migraci",
     "nothingChanged": "Od poslední migrace se nic nezměnilo.",
     "migrationName": "Název migrace",
     "migrationDescription": "Co dělá (nepovinné)",
@@ -2432,7 +2561,6 @@
     "deployUpTo_other": "Nasadit těchto {{count}} migrací",
     "resolveFirst": "Nejdřív u každého konfliktu zvolte, co s ním.",
     "queued": "Nasazení začalo. Během běhu je vidět v Úlohách.",
-    "history": "Historie",
     "noHistory": "Zatím žádné migrace.",
     "rolledBack": "Vráceno",
     "rollBack": "Vrátit",
@@ -2480,6 +2608,31 @@
       "dynamic-apps": "Dynamická aplikace",
       "content": "Publikovaný obsah",
       "links": "Propojení prostředí"
-    }
+    },
+    "tabs": {
+      "incoming": "Příchozí",
+      "changes": "Změny zde",
+      "history": "Historie"
+    },
+    "cannotDeploy": "Nasazování sem vyžaduje oprávnění povyšovat mezi prostředími.",
+    "noSources": "Do {{name}} se nic nenasazuje: nepřebírá žádná nasazení.",
+    "changesHint": "Co se zde změnilo od poslední migrace. Vložte požadované změny do migrace a {{names}} ji může nasadit.",
+    "changesHintNoTarget": "Co se zde změnilo od poslední migrace. Odsud zatím žádné prostředí nenasazuje.",
+    "waiting_one": "Čeká {{count}} migrace",
+    "waiting_few": "Čekají {{count}} migrace",
+    "waiting_other": "Čeká {{count}} migrací",
+    "deployAll_one": "Nasadit {{count}} migraci",
+    "deployAll_few": "Nasadit všechny {{count}} migrace",
+    "deployAll_other": "Nasadit všech {{count}} migrací",
+    "fullJson": "Zobrazit celé hodnoty",
+    "items_one": "{{count}} položka",
+    "items_few": "{{count}} položky",
+    "items_other": "{{count}} položek",
+    "fields_one": "{{count}} pole",
+    "fields_few": "{{count}} pole",
+    "fields_other": "{{count}} polí",
+    "moreFields_one": "a ještě {{count}} pole",
+    "moreFields_few": "a ještě {{count}} pole",
+    "moreFields_other": "a ještě {{count}} polí"
   }
 }

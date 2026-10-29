@@ -114,7 +114,10 @@ export function AppFrame({
       <div className="flex min-w-0 flex-1 flex-col">
         {banner}
         {topbar({ menuButton })}
-        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+        {/* Positioned, so what is absolutely positioned inside a page (Radix's hidden form inputs
+            beside each checkbox and select) is laid out within this scroller rather than against
+            the document, which it otherwise stretched past the page's end. */}
+        <main className="relative min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

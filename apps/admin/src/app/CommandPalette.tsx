@@ -150,7 +150,7 @@ export function CommandPalette({
   const environments = useEnvironments();
   const currentEnvironment = getCurrentEnvironment() ?? 'production';
   const switchable = open && environments.data?.enabled
-    ? environments.data.environments.filter((e) => e.name !== currentEnvironment && (e.isMember || me?.isSuperAdmin))
+    ? environments.data.environments.filter((e) => e.name !== currentEnvironment && e.ready !== false && (e.isMember || me?.isSuperAdmin))
     : [];
 
   const items = paletteItems(me, nav.data?.items, t, i18n.language, {

@@ -1,4 +1,5 @@
-import { ArrowDownToLine, GitCommitHorizontal, History, RotateCcw } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, GitCommitHorizontal, RotateCcw } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -20,11 +21,17 @@ import {
   LoadFailed,
   Page,
   PageHeader,
+  SectionHeader,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
   toastApiError,
   usePermissions,
 } from '@dcms/ui';
 import { can, Perm } from '../../lib/permissions';
+import { useTabParam } from '../../lib/useTabParam';
 import { getCurrentEnvironment } from '../../tenants';
 import {
   useApplyPending,
@@ -32,6 +39,7 @@ import {
   useEnvironments,
   useHistory,
   usePending,
+  pendingQuery,
   useRollback,
   useRollbackPlan,
   useUnpublished,
@@ -48,6 +56,8 @@ import {
  * change shown against what this environment holds now, conflicts decided before anything runs;
  * and the history, whose latest migration rolls back — reviewed the same way.
  */
+const TABS = ['incoming', 'changes', 'history'] as const;
+
 export function DeploymentsPage() {
   const { t } = useTranslation();
   const me = usePermissions();
@@ -57,6 +67,13 @@ export function DeploymentsPage() {
   const all = environments.data?.environments ?? [];
   const here = all.find((e) => e.name === current);
   const sources = all.filter((e) => here?.promotesFrom.includes(e.id));
+  const targets = all.filter((e) => here && e.promotesFrom.includes(here.id));
+  const canPromote = can(me, Perm.EnvironmentsPromote);
+  const canCut = can(me, Perm.EnvironmentsManage);
+  const unpublished = useUnpublished(canCut && !!environments.data?.enabled);
+  const [tab, setTab] = useTabParam('tab', TABS, 'incoming');
+  const pendings = useQueries({ queries: (canPromote ? sources : []).map((s) => pendingQuery(s.id)) });
+  const waiting = pendings.reduce((n, q) => n + (q.data?.length ?? 0), 0);
 
   if (environments.isLoading) return <CenteredSpinner />;
   if (environments.isError) return <LoadFailed onRetry={() => void environments.refetch()} />;
@@ -70,33 +87,77 @@ export function DeploymentsPage() {
       {!environments.data?.enabled ? (
         <EmptyState icon={GitCommitHorizontal} title={t('deployments.off')} description={t('environments.offHint')} />
       ) : (
-        <div className="flex flex-col gap-8">
-          {can(me, Perm.EnvironmentsManage) ? <Unpublished /> : null}
-          {can(me, Perm.EnvironmentsPromote)
-            ? sources.map((source) => <PendingFrom key={source.id} source={source} />)
-            : null}
-          <section className="flex flex-col gap-3">
-            <h2 className="flex items-center gap-2 text-base font-semibold">
-              <History className="h-4 w-4" aria-hidden /> {t('deployments.history')}
-            </h2>
-            {history.isError ? <LoadFailed onRetry={() => void history.refetch()} /> : null}
-            {history.data?.length === 0 ? <p className="text-sm text-muted-foreground">{t('deployments.noHistory')}</p> : null}
-            {(history.data ?? []).map((m, i) => (
-              <HistoryRow
-                key={m.migrationId + m.appliedAt}
-                migration={m}
-                latest={i === (history.data ?? []).findIndex((x) => !x.rolledBackAt) && !m.rolledBackAt}
-                canRollBack={can(me, Perm.EnvironmentsPromote)}
-              />
-            ))}
-          </section>
+        <div className="flex flex-col gap-4">
+          {/* Where this environment sits: what deploys in, and where its migrations go next. */}
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            {sources.length > 0 ? (
+              <>
+                <span className="text-muted-foreground">{sources.map((s) => s.name).join(', ')}</span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+              </>
+            ) : null}
+            <Badge tone={here?.isProduction ? 'destructive' : 'secondary'}>{here?.name}</Badge>
+            {targets.length > 0 ? (
+              <>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <span className="text-muted-foreground">{targets.map((s) => s.name).join(', ')}</span>
+              </>
+            ) : null}
+          </div>
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList>
+              <TabsTrigger value="incoming">
+                {t('deployments.tabs.incoming')}
+                {waiting > 0 ? (
+                  <Badge tone="secondary" className="ml-1.5">
+                    {waiting}
+                  </Badge>
+                ) : null}
+              </TabsTrigger>
+              {canCut ? (
+                <TabsTrigger value="changes">
+                  {t('deployments.tabs.changes')}
+                  {unpublished.data && unpublished.data.length > 0 ? (
+                    <Badge tone="secondary" className="ml-1.5">
+                      {unpublished.data.length}
+                    </Badge>
+                  ) : null}
+                </TabsTrigger>
+              ) : null}
+              <TabsTrigger value="history">{t('deployments.tabs.history')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="incoming" className="flex flex-col gap-8">
+              {!canPromote ? <p className="text-sm text-muted-foreground">{t('deployments.cannotDeploy')}</p> : null}
+              {canPromote && sources.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('deployments.noSources', { name: here?.name ?? '' })}</p>
+              ) : null}
+              {canPromote ? sources.map((source) => <PendingFrom key={source.id} source={source} />) : null}
+            </TabsContent>
+            {canCut ? (
+              <TabsContent value="changes">
+                <Unpublished targets={targets} />
+              </TabsContent>
+            ) : null}
+            <TabsContent value="history" className="flex flex-col gap-3">
+              {history.isError ? <LoadFailed onRetry={() => void history.refetch()} /> : null}
+              {history.data?.length === 0 ? <p className="text-sm text-muted-foreground">{t('deployments.noHistory')}</p> : null}
+              {(history.data ?? []).map((m, i) => (
+                <HistoryRow
+                  key={m.migrationId + m.appliedAt}
+                  migration={m}
+                  latest={i === (history.data ?? []).findIndex((x) => !x.rolledBackAt) && !m.rolledBackAt}
+                  canRollBack={canPromote}
+                />
+              ))}
+            </TabsContent>
+          </Tabs>
         </div>
       )}
     </Page>
   );
 }
 
-function Unpublished() {
+function Unpublished({ targets }: { targets: Environment[] }) {
   const { t } = useTranslation();
   const changes = useUnpublished(true);
   const cut = useCutMigration();
@@ -111,7 +172,11 @@ function Unpublished() {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-base font-semibold">{t('deployments.unpublished')}</h2>
+      <p className="text-sm text-muted-foreground">
+        {targets.length > 0
+          ? t('deployments.changesHint', { names: targets.map((e) => e.name).join(', ') })
+          : t('deployments.changesHintNoTarget')}
+      </p>
       {changes.isLoading ? <CenteredSpinner /> : null}
       {changes.isError ? <LoadFailed onRetry={() => void changes.refetch()} /> : null}
       {changes.data && list.length === 0 ? <p className="text-sm text-muted-foreground">{t('deployments.nothingChanged')}</p> : null}
@@ -193,7 +258,20 @@ function PendingFrom({ source }: { source: Environment }) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-base font-semibold">{t('deployments.pendingFrom', { name: source.name })}</h2>
+      <SectionHeader
+        title={t('deployments.pendingFrom', { name: source.name })}
+        description={list.length > 0 ? t('deployments.waiting', { count: list.length }) : undefined}
+        actions={
+          list.length > 1 ? (
+            <Button
+              onClick={() => deploy(list[list.length - 1].migration.migrationId)}
+              disabled={apply.isPending || list.some((p) => p.changes.some((c) => !isResolved(p.migration.migrationId, c, resolutions)))}
+            >
+              <ArrowDownToLine className="h-4 w-4" /> {t('deployments.deployAll', { count: list.length })}
+            </Button>
+          ) : undefined
+        }
+      />
       {pending.isLoading ? <CenteredSpinner /> : null}
       {pending.isError ? <LoadFailed onRetry={() => void pending.refetch()} /> : null}
       {pending.data && list.length === 0 ? <p className="text-sm text-muted-foreground">{t('deployments.upToDate')}</p> : null}
@@ -373,12 +451,17 @@ function ChangeRow({
           </Badge>
         ) : null}
       </summary>
-      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-        <Json label={t('deployments.before')} value={change.before} />
-        <Json label={t('deployments.after')} value={change.after} />
-        {merges ? <Json label={t('deployments.current')} value={change.current} /> : null}
-        {merges && change.merged !== undefined ? <Json label={t('deployments.merged')} value={change.merged} /> : null}
-      </div>
+      <FieldDiff before={change.before} after={change.after} />
+      {/* A conflict is decided against what is here now: its values open with it. */}
+      <details className="mt-2" open={conflict}>
+        <summary className="cursor-pointer text-xs text-muted-foreground">{t('deployments.fullJson')}</summary>
+        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+          <Json label={t('deployments.before')} value={change.before} />
+          <Json label={t('deployments.after')} value={change.after} />
+          {merges ? <Json label={t('deployments.current')} value={change.current} /> : null}
+          {merges && change.merged !== undefined ? <Json label={t('deployments.merged')} value={change.merged} /> : null}
+        </div>
+      </details>
       {change.outcome === 'merge' && onResolve && migrationId ? (
         // A merge can still clash where git lays a site's code on; leaving it out here is a choice.
         <label className="mt-2 flex items-center gap-2 text-sm">
@@ -426,6 +509,56 @@ function ChangeRow({
         </div>
       ) : null}
     </details>
+  );
+}
+
+/** A value in a few words: a short string as it is, anything bigger by its size. */
+function brief(value: unknown, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (value == null) return '—';
+  if (Array.isArray(value)) return t('deployments.items', { count: value.length });
+  if (typeof value === 'object') return t('deployments.fields', { count: Object.keys(value).length });
+  const text = String(value);
+  return text.length > 80 ? `${text.slice(0, 77)}…` : text;
+}
+
+/**
+ * What a change does, field by field: for an update the fields that differ, before and after;
+ * for an addition or a removal the fields it brings or takes. The JSON stays a click away.
+ */
+function FieldDiff({ before, after }: { before: unknown; after: unknown }) {
+  const { t } = useTranslation();
+  const asObject = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+  const b = asObject(before);
+  const a = asObject(after);
+  if (!b && !a) {
+    return (
+      <p className="mt-2 text-sm">
+        <span className="text-muted-foreground line-through">{brief(before, t)}</span> → {brief(after, t)}
+      </p>
+    );
+  }
+  const keys = [...new Set([...Object.keys(b ?? {}), ...Object.keys(a ?? {})])].filter(
+    (k) => JSON.stringify(b?.[k]) !== JSON.stringify(a?.[k]),
+  );
+  if (keys.length === 0) return null;
+  return (
+    <dl className="mt-2 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+      {keys.slice(0, 12).map((k) => (
+        <div key={k} className="contents">
+          <dt className="font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">{k}</dt>
+          <dd className="min-w-0 [overflow-wrap:anywhere]">
+            {b && a ? (
+              <>
+                <span className="text-muted-foreground line-through">{brief(b[k], t)}</span> → {brief(a[k], t)}
+              </>
+            ) : (
+              brief((a ?? b)?.[k], t)
+            )}
+          </dd>
+        </div>
+      ))}
+      {keys.length > 12 ? <p className="col-span-2 text-xs text-muted-foreground">{t('deployments.moreFields', { count: keys.length - 12 })}</p> : null}
+    </dl>
   );
 }
 

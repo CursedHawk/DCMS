@@ -73,7 +73,7 @@ export function AppShell() {
             }}
           >
             {focus ? (
-              <main className="h-dvh overflow-y-auto">
+              <main className="relative h-dvh overflow-y-auto">
                 <Suspense fallback={<CenteredSpinner />}>
                   <Outlet />
                 </Suspense>

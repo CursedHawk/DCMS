@@ -20,6 +20,20 @@ export interface Environment {
   deleteWhenMerged: boolean;
   /** Whether the caller holds a role there, and so can open it. */
   isMember: boolean;
+  /** False while the copy it starts as is being made: nothing may open it until then. */
+  ready: boolean;
+  /** The copy's steps as they go (and as they went, once it is ready). */
+  setup: SetupStep[] | null;
+}
+
+/** One step of making an environment: a kind of configuration (`kind:sites`) or a scope of data (`data:…`). */
+export interface SetupStep {
+  key: string;
+  state: 'waiting' | 'running' | 'done';
+  done: number;
+  total: number | null;
+  /** What it is copying right now. */
+  item: string | null;
 }
 
 export interface Environments {
@@ -59,7 +73,16 @@ function useEnvironmentMutation<TInput>(fn: (input: TInput) => Promise<unknown>)
 
 /** A new environment: a copy of `from`'s configuration (production when absent), and of the `copy` data scopes too. */
 export const useAddEnvironment = () =>
-  useEnvironmentMutation((body: { name: string; from?: string; copy?: string[]; feature?: boolean; deleteWhenMerged?: boolean; service?: boolean }) =>
+  useEnvironmentMutation((body: {
+    name: string;
+    from?: string;
+    copy?: string[];
+    feature?: boolean;
+    deleteWhenMerged?: boolean;
+    service?: boolean;
+    /** Without the source's configuration: apps, roles and sites are set up by hand or deployed in. */
+    empty?: boolean;
+  }) =>
     api.post<Environment>('/admin/environments', body),
   );
 
@@ -74,7 +97,17 @@ export const useCopyScopes = () =>
   useQuery({ queryKey: ['environments', 'copy-scopes'], queryFn: () => api.get<CopyScope[]>('/admin/environments/copy-scopes') });
 export const useUpdateEnvironment = () =>
   useEnvironmentMutation(
-    ({ id, ...body }: { id: string; name?: string; order?: number; promotesFrom?: string[] }) =>
+    ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      order?: number;
+      promotesFrom?: string[];
+      mergesOwnChangesOnly?: boolean;
+      deleteWhenMerged?: boolean;
+    }) =>
       api.patch<Environment>(`/admin/environments/${id}`, body),
   );
 export const useDeleteEnvironment = () =>
@@ -153,12 +186,13 @@ export const useHistory = () =>
     queryFn: () => api.get<Migration[]>('/admin/environments/migrations'),
   });
 
-export const usePending = (from: string, enabled: boolean) =>
-  useQuery({
-    queryKey: ['environments', 'pending', from],
-    enabled,
-    queryFn: () => api.get<Reviewed[]>(`/admin/environments/pending?from=${from}`),
-  });
+/** What `from` has waiting to deploy here; shared by the list and the Incoming tab's count. */
+export const pendingQuery = (from: string) => ({
+  queryKey: ['environments', 'pending', from],
+  queryFn: () => api.get<Reviewed[]>(`/admin/environments/pending?from=${from}`),
+});
+
+export const usePending = (from: string, enabled: boolean) => useQuery({ ...pendingQuery(from), enabled });
 
 export const useRollbackPlan = (migrationId: string | null) =>
   useQuery({
@@ -195,6 +229,12 @@ export const CONFIG_KINDS = ['roles', 'plugins', 'api-connections', 'sites', 'us
 
 /** Every kind a policy can name: configuration, and published content (ADR 0028), which a deployment carries only when ticked. */
 export const POLICY_KINDS = [...CONFIG_KINDS, 'links', 'content'] as const;
+
+/** How locked an environment is, in one word for its tile: none, some kinds, or everything. */
+export function lockState(policies: Policy[] | undefined): 'open' | 'partial' | 'locked' {
+  const managed = POLICY_KINDS.filter((k) => policies?.find((p) => p.kind === k && p.itemKey == null)?.mode === 'Managed').length;
+  return managed === 0 ? 'open' : managed >= CONFIG_KINDS.length ? 'locked' : 'partial';
+}
 
 export const usePolicies = (environmentId: string | undefined) =>
   useQuery({
@@ -249,10 +289,14 @@ export const useLinks = (environmentId: string) =>
     queryFn: () => api.get<EnvironmentLink[]>(`/admin/environments/${environmentId}/links`),
   });
 
-/** An app of an environment and what a link to it may grant: operations (contracts links) and tables (tables links). */
+/**
+ * An enabled app of an environment and what a link to it may use: its address (app links),
+ * operations (contracts links) and tables (tables links).
+ */
 export interface OfferedApp {
   slug: string;
   name: string;
+  pluginId: string;
   operations: { grant: string; risk: 'read' | 'safe' | 'dangerous'; description: string | null }[];
   tables: string[];
 }

@@ -1,89 +1,119 @@
-import { ArrowDown, ArrowUp, Link2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowDown, ArrowRight, ArrowUp, Check, ChevronRight, Circle, Layers, Link2, Loader2, Lock, LockOpen, Plus, Server, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
   Badge,
   Button,
+  Callout,
   Card,
   CardContent,
   CenteredSpinner,
   Checkbox,
+  EmptyState,
   Input,
   Label,
   LoadFailed,
   Page,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Progress,
+  SectionHeader,
+  Switch,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  cn,
   toastApiError,
   useConfirm,
 } from '@dcms/ui';
-import {
-  useAddEnvironment,
-  useCopyScopes,
-  useDeleteEnvironment,
-  useEnvironments,
-  useLinkMutations,
-  useLinks,
-  useOffers,
-  usePolicies,
-  useSavePolicies,
-  useUpdateEnvironment,
-  CONFIG_KINDS,
-  POLICY_KINDS,
-  type Environment,
-  type Ownership,
-  type Policy,
-} from './api';
+import { Breadcrumbs } from '../../app/Breadcrumbs';
+import { useJobs } from '../jobs/api';
+import { useTabParam } from '../../lib/useTabParam';
+import { LinksPanel } from './LinksPanel';
+import { LocksPanel } from './LocksPanel';
+import { ENVIRONMENT_NAME, NewEnvironmentDialog } from './NewEnvironmentDialog';
+import { lockState, useDeleteEnvironment, useEnvironments, useLinks, usePolicies, useUpdateEnvironment, type Environment, type SetupStep } from './api';
 
-// Typed as a plain string: the router's route union is built from routes.tsx, which imports this page.
+// Typed as plain strings: the router's route union is built from routes.tsx, which imports this page.
 const DEPLOYMENTS: string = '/deployments';
-const NAME = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
-const VERBS = ['read', 'create', 'update', 'delete'] as const;
+const SELF: string = '/settings/environments';
+const TABS = ['overview', 'locks', 'links'] as const;
+
+const COPY = 'environments.copy';
 
 /**
- * Settings → Environments (ADR 0028): adding them, their order and which of them may deploy
- * configuration into which. Each environment has its own configuration and content and shares the
- * workspace's members and media; the pill beside the workspace switcher moves between them.
+ * Copies that failed in the last day. A failed copy removes its environment again, so the reason is
+ * kept in its job and said here -- nowhere else would it show.
+ */
+function useFailedCopies() {
+  const jobs = useJobs('failed', 20);
+  const since = Date.now() - 24 * 3600 * 1000;
+  return (jobs.data?.items ?? []).filter((j) => j.kind === COPY && Date.parse(j.createdAt) > since);
+}
+
+/** Says so when an environment being set up opens. */
+function useReadyToasts(list: Environment[]) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const waiting = useRef(new Set<string>());
+  useEffect(() => {
+    for (const e of list) {
+      if (e.ready === false) waiting.current.add(e.id);
+      else if (waiting.current.delete(e.id)) {
+        toast.success(t('environments.readyToast', { name: e.name }));
+        void qc.invalidateQueries({ queryKey: ['me-tenants'] });
+      }
+    }
+  }, [list, t, qc]);
+}
+
+/** Steps finished of all of them, for a bar. */
+function setupProgress(steps: SetupStep[] | null | undefined) {
+  const all = steps ?? [];
+  return { done: all.filter((x) => x.state === 'done').length, count: all.length };
+}
+
+/**
+ * Settings → Environments (ADR 0028): the workspace's pipeline at a glance, and each environment on
+ * a page of its own (`?env=`) -- what it is, who may change what in it, and what it uses from the
+ * others. Creating one is a dialog of three decisions rather than a form under the list.
  */
 export function EnvironmentsPage() {
   const { t } = useTranslation();
   const environments = useEnvironments();
   const navigate = useNavigate();
-  const add = useAddEnvironment();
-  const [name, setName] = useState('');
-  const [from, setFrom] = useState('');
-  const [copy, setCopy] = useState<string[]>([]);
-  const [feature, setFeature] = useState(false);
-  const [deleteWhenMerged, setDeleteWhenMerged] = useState(true);
-  const [service, setService] = useState(false);
-  const scopes = useCopyScopes();
-  const data = environments.data;
-  const list = data?.environments ?? [];
+  const search = useSearch({ strict: false }) as { env?: string };
+  const [creating, setCreating] = useState(false);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const list = environments.data?.environments ?? [];
+  useReadyToasts(list);
+  // A copy that failed removed its environment again: what stopped it is said here.
+  const failed = useFailedCopies().filter((j) => !list.some((e) => e.name === j.params?.environment) && !dismissed.includes(j.id));
+  const open = (name: string | undefined) => void navigate({ to: SELF, search: (name ? { env: name } : {}) as never });
+  const selected = search.env ? list.find((e) => e.name === search.env) : undefined;
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    add.mutate(
-      {
-        name: name.trim(),
-        from: from || undefined,
-        copy: copy.length > 0 ? copy : undefined,
-        ...(feature ? { feature: true, deleteWhenMerged } : {}),
-        ...(service ? { service: true } : {}),
-      },
-      {
-        onSuccess: () => {
-          setName('');
-          setCopy([]);
-        },
-        onError: (err) => toastApiError(err, t),
-      },
+  const dialog = creating ? (
+    <NewEnvironmentDialog
+      all={list}
+      onClose={() => setCreating(false)}
+      onCreated={(env) => {
+        setCreating(false);
+        open(env.name);
+      }}
+    />
+  ) : null;
+
+  if (selected) {
+    return (
+      <>
+        <EnvironmentDetail env={selected} all={list} onDeleted={() => open(undefined)} />
+        {dialog}
+      </>
     );
-  };
+  }
 
   return (
     <Page>
@@ -91,129 +121,239 @@ export function EnvironmentsPage() {
         title={t('environments.title')}
         description={t('environments.description')}
         actions={
-          data?.enabled ? (
-            <Button variant="outline" onClick={() => void navigate({ to: DEPLOYMENTS })}>
-              {t('deployments.title')}
+          <>
+            {environments.data?.enabled ? (
+              <Button variant="outline" onClick={() => void navigate({ to: DEPLOYMENTS })}>
+                {t('deployments.title')}
+              </Button>
+            ) : null}
+            <Button onClick={() => setCreating(true)} disabled={!environments.data}>
+              <Plus className="h-4 w-4" /> {t('environments.new.title')}
             </Button>
-          ) : undefined
+          </>
         }
       />
       {environments.isLoading ? <CenteredSpinner /> : null}
       {environments.isError ? <LoadFailed onRetry={() => void environments.refetch()} /> : null}
-
-      {data ? (
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{t(data.enabled ? 'environments.pipelineHint' : 'environments.offHint')}</p>
-          {list.map((env, index) => (
-            <EnvironmentCard key={env.id} env={env} all={list} above={list[index - 1]} below={list[index + 1]} />
-          ))}
-
-          <form onSubmit={submit} className="flex flex-col gap-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <Label htmlFor="env-name">{t('environments.addLabel')}</Label>
-                <Input
-                  id="env-name"
-                  value={name}
-                  placeholder="development"
-                  onChange={(e) => setName(e.target.value.toLowerCase())}
-                />
-              </div>
-              <div className="sm:w-48">
-                <Label htmlFor="env-from">{t('environments.copyFrom')}</Label>
-                <Select value={from || (list.find((e) => e.isProduction)?.id ?? '')} onValueChange={setFrom}>
-                  <SelectTrigger id="env-from">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {list.map((e) => (
-                      <SelectItem key={e.id} value={e.id}>
-                        {e.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" disabled={!NAME.test(name.trim()) || add.isPending}>
-                <Plus className="h-4 w-4" /> {t('environments.add')}
-              </Button>
-            </div>
-            <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-6">
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={feature}
-                  onCheckedChange={(on) => {
-                    setFeature(on === true);
-                    if (on === true) setService(false);
-                  }}
-                />
-                {t('environments.featureBranch')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={service}
-                  onCheckedChange={(on) => {
-                    setService(on === true);
-                    if (on === true) setFeature(false);
-                  }}
-                />
-                {t('environments.serviceEnvironment')}
-              </label>
-              {feature ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={deleteWhenMerged} onCheckedChange={(on) => setDeleteWhenMerged(on === true)} />
-                  {t('environments.deleteWhenMerged')}
-                </label>
-              ) : null}
-            </div>
-            {feature ? <p className="text-xs text-muted-foreground">{t('environments.featureHint')}</p> : null}
-            {service ? <p className="text-xs text-muted-foreground">{t('environments.serviceHint')}</p> : null}
-            {scopes.data && scopes.data.length > 0 ? (
-              <fieldset className="flex flex-col gap-1.5">
-                <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.copyData')}</legend>
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                  {scopes.data.map(({ scope, personalData }) => (
-                    <label key={scope} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={copy.includes(scope)}
-                        onCheckedChange={(on) => setCopy((prev) => (on === true ? [...prev, scope] : prev.filter((x) => x !== scope)))}
-                      />
-                      <span className="min-w-0">{t(`environments.copyScopes.${scope}`, { defaultValue: scope })}</span>
-                      {personalData ? <Badge tone="warning">{t('environments.personalData')}</Badge> : null}
-                    </label>
-                  ))}
-                </div>
-                {copy.some((c) => scopes.data.find((x) => x.scope === c)?.personalData) ? (
-                  <p className="text-xs text-muted-foreground">{t('environments.personalDataHint')}</p>
-                ) : null}
-              </fieldset>
-            ) : null}
-          </form>
-          <p className="text-xs text-muted-foreground">{t('environments.addHint')}</p>
+      {failed.map((j) => (
+        <div key={j.id} className="mb-4">
+          <Callout tone="destructive" title={t('environments.copyFailed', { name: String(j.params?.environment ?? '') })}>
+            <p>{t(j.errorKey ?? 'jobs.error.failed')}</p>
+            {j.errorDetail ? <p className="mt-1 font-mono text-xs [overflow-wrap:anywhere]">{j.errorDetail}</p> : null}
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => setDismissed((d) => [...d, j.id])}>
+              {t('environments.dismiss')}
+            </Button>
+          </Callout>
         </div>
+      ))}
+      {environments.data && !environments.data.enabled ? (
+        <EmptyState
+          icon={Layers}
+          title={t('environments.emptyTitle')}
+          description={t('environments.offHint')}
+          action={
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="h-4 w-4" /> {t('environments.new.title')}
+            </Button>
+          }
+        />
+      ) : null}
+      {environments.data?.enabled ? <Overview all={list} onOpen={open} /> : null}
+      {dialog}
+    </Page>
+  );
+}
+
+/**
+ * The pipeline left to right, as configuration travels it; each stage's features beneath it, and
+ * the services, which sit outside it, apart.
+ */
+function Overview({ all, onOpen }: { all: Environment[]; onOpen: (name: string) => void }) {
+  const { t } = useTranslation();
+  const stages = all.filter((e) => e.purpose === 'stage').sort((a, b) => a.order - b.order);
+  const features = all.filter((e) => e.purpose === 'feature');
+  const services = all.filter((e) => e.purpose === 'service');
+
+  return (
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t('environments.pipeline')} description={t('environments.pipelineHint')} />
+        <ol aria-label={t('environments.pipeline')} className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
+          {stages.map((stage, i) => (
+            <li key={stage.id} className="flex flex-col gap-2 lg:flex-1 lg:flex-row lg:items-center">
+              <div className="min-w-0 flex-1 self-stretch">
+                <EnvironmentTile env={stage} all={all} onOpen={onOpen} />
+              </div>
+              {i < stages.length - 1 ? (
+                <span aria-hidden className="flex justify-center text-muted-foreground">
+                  <ArrowDown className="h-4 w-4 lg:hidden" />
+                  <ArrowRight className="hidden h-4 w-4 lg:block" />
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {features.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t('environments.features')} description={t('environments.featuresHint')} />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <EnvironmentTile key={f.id} env={f} all={all} onOpen={onOpen} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {services.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t('environments.services')} description={t('environments.servicesHint')} />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {services.map((s) => (
+              <EnvironmentTile key={s.id} env={s} all={all} onOpen={onOpen} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/** One environment as the overview shows it: what it is, how locked, what it uses -- and the way in. */
+function EnvironmentTile({ env, all, onOpen }: { env: Environment; all: Environment[]; onOpen: (name: string) => void }) {
+  const { t } = useTranslation();
+  const policies = usePolicies(env.id);
+  const links = useLinks(env.id);
+  const lock = policies.data ? lockState(policies.data) : null;
+  const sources = all.filter((e) => env.promotesFrom.includes(e.id)).map((e) => e.name);
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(env.name)}
+      className={cn(
+        'group flex h-full w-full items-start gap-3 rounded-lg border bg-card p-3 text-left',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring can-hover:hover:border-primary/50',
+        env.isProduction && 'border-primary/40',
+      )}
+    >
+      <span className="min-w-0 flex-1 space-y-1.5">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <span className="min-w-0 font-semibold [overflow-wrap:anywhere]">{env.name}</span>
+          <PurposeBadge env={env} />
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {env.purpose === 'service'
+            ? t('environments.tile.outside')
+            : env.purpose === 'feature'
+              ? t('environments.tile.branchOf', { name: all.find((e) => e.id === env.forkedFrom)?.name ?? '?' })
+              : sources.length > 0
+              ? t('environments.tile.takesFrom', { names: sources.join(', ') })
+              : t('environments.tile.takesNothing')}
+        </span>
+        <span className="flex flex-wrap gap-1.5">
+          {env.ready === false ? (
+            <Badge tone="warning">
+              <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden />
+              {t('environments.settingUpCount', setupProgress(env.setup))}
+            </Badge>
+          ) : null}
+          {lock ? (
+            <Badge tone={lock === 'locked' ? 'secondary' : 'outline'}>
+              {lock === 'open' ? <LockOpen className="h-3 w-3" aria-hidden /> : <Lock className="h-3 w-3" aria-hidden />}
+              {t(`environments.tile.lock.${lock}`)}
+            </Badge>
+          ) : null}
+          {links.data && links.data.length > 0 ? (
+            <Badge tone="outline">
+              <Link2 className="h-3 w-3" aria-hidden /> {t('environments.tile.links', { count: links.data.length })}
+            </Badge>
+          ) : null}
+        </span>
+      </span>
+      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+    </button>
+  );
+}
+
+function PurposeBadge({ env }: { env: Environment }) {
+  const { t } = useTranslation();
+  if (env.isProduction) return <Badge tone="destructive">{t('environments.root')}</Badge>;
+  if (env.purpose === 'feature') return <Badge tone="outline">{t('environments.purposes.feature')}</Badge>;
+  if (env.purpose === 'service') {
+    return (
+      <Badge tone="outline">
+        <Server className="h-3 w-3" aria-hidden /> {t('environments.purposes.service')}
+      </Badge>
+    );
+  }
+  return null;
+}
+
+/** One environment: its settings, its locks, its links -- each a tab, kept in the URL. */
+function EnvironmentDetail({ env, all, onDeleted }: { env: Environment; all: Environment[]; onDeleted: () => void }) {
+  const { t } = useTranslation();
+  const [tab, setTab] = useTabParam('tab', TABS, 'overview');
+  const deploysInto = all.filter((e) => e.promotesFrom.includes(env.id)).map((e) => e.name);
+  const takesFrom = all.filter((e) => env.promotesFrom.includes(e.id)).map((e) => e.name);
+  const summary =
+    env.purpose === 'service'
+      ? t('environments.detail.service')
+      : [
+          takesFrom.length > 0 ? t('environments.tile.takesFrom', { names: takesFrom.join(', ') }) : null,
+          deploysInto.length > 0 ? t('environments.detail.deploysInto', { names: deploysInto.join(', ') }) : null,
+        ]
+          .filter(Boolean)
+          .join('. ');
+
+  return (
+    <Page>
+      <PageHeader
+        crumbs={<Breadcrumbs items={[{ label: t('environments.title'), to: SELF }, { label: env.name }]} />}
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            {env.name}
+            <PurposeBadge env={env} />
+          </span>
+        }
+        description={summary || undefined}
+      />
+      {env.ready === false ? <SetupPanel env={env} /> : null}
+      {env.ready !== false ? (
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          {TABS.map((v) => (
+            <TabsTrigger key={v} value={v}>
+              {t(`environments.tabs.${v}`)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="overview">
+          <OverviewTab env={env} all={all} onDeleted={onDeleted} />
+        </TabsContent>
+        <TabsContent value="locks">
+          <LocksPanel environmentId={env.id} />
+        </TabsContent>
+        <TabsContent value="links">
+          <LinksPanel env={env} all={all} />
+        </TabsContent>
+      </Tabs>
       ) : null}
     </Page>
   );
 }
 
-function EnvironmentCard({
-  env,
-  all,
-  above,
-  below,
-}: {
-  env: Environment;
-  all: Environment[];
-  above?: Environment;
-  below?: Environment;
-}) {
+function OverviewTab({ env, all, onDeleted }: { env: Environment; all: Environment[]; onDeleted: () => void }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const confirm = useConfirm();
   const update = useUpdateEnvironment();
   const remove = useDeleteEnvironment();
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(env.name);
+  const [name, setName] = useState(env.name);
   const onError = (err: unknown) => toastApiError(err, t);
+  const stages = all.filter((e) => e.purpose === 'stage').sort((a, b) => a.order - b.order);
+  const at = stages.findIndex((e) => e.id === env.id);
+  const others = all.filter((e) => e.id !== env.id);
 
   // Swapping orders with a neighbour: the server keeps no positions of its own.
   const swap = (other: Environment) => {
@@ -222,10 +362,7 @@ function EnvironmentCard({
   };
   const toggleSource = (source: string, on: boolean) =>
     update.mutate(
-      {
-        id: env.id,
-        promotesFrom: on ? [...env.promotesFrom, source] : env.promotesFrom.filter((s) => s !== source),
-      },
+      { id: env.id, promotesFrom: on ? [...env.promotesFrom, source] : env.promotesFrom.filter((s) => s !== source) },
       { onError },
     );
   const destroy = async () => {
@@ -235,453 +372,166 @@ function EnvironmentCard({
       confirmLabel: t('actions.delete'),
       destructive: true,
     });
-    if (ok) remove.mutate(env.id, { onError });
+    if (ok) remove.mutate(env.id, { onSuccess: onDeleted, onError });
   };
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 pt-6">
-        <div className="flex flex-wrap items-center gap-2">
-          {renaming ? (
-            <form
-              className="flex min-w-0 flex-1 gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                update.mutate({ id: env.id, name: draft.trim() }, { onSuccess: () => setRenaming(false), onError });
-              }}
-            >
-              <Input aria-label={t('environments.name')} value={draft} onChange={(e) => setDraft(e.target.value.toLowerCase())} />
-              <Button type="submit" size="sm" disabled={!NAME.test(draft.trim())}>
-                {t('actions.save')}
-              </Button>
-            </form>
-          ) : (
-            <>
-              <h2 className="min-w-0 truncate text-base font-semibold">{env.name}</h2>
-              {env.isProduction ? <Badge tone="destructive">{t('environments.root')}</Badge> : null}
-              {env.purpose === 'service' ? <Badge tone="outline">{t('environments.service')}</Badge> : null}
-              {env.forkedFrom ? (
-                <Badge tone="outline">
-                  {t('environments.featureOf', { name: all.find((e) => e.id === env.forkedFrom)?.name ?? '?' })}
-                </Badge>
-              ) : null}
-            </>
-          )}
-          <div className="ml-auto flex gap-1">
-            <Button variant="ghost" size="icon" aria-label={t('environments.moveUp')} disabled={!above} onClick={() => above && swap(above)}>
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" aria-label={t('environments.moveDown')} disabled={!below} onClick={() => below && swap(below)}>
-              <ArrowDown className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" aria-label={t('environments.rename')} onClick={() => setRenaming((r) => !r)}>
-              <Pencil className="h-4 w-4" />
-            </Button>
-            {!env.isProduction ? (
-              <Button variant="ghost" size="icon" aria-label={t('actions.delete')} onClick={() => void destroy()}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            ) : null}
+    <div className="flex max-w-3xl flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t('environments.detail.name')} />
+        <form
+          className="flex flex-col gap-2 sm:flex-row sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update.mutate(
+              { id: env.id, name: name.trim() },
+              { onSuccess: () => void navigate({ to: SELF, search: { env: name.trim() } as never, replace: true }), onError },
+            );
+          }}
+        >
+          <div className="flex-1 space-y-1.5">
+            <Label htmlFor="env-name">{t('environments.name')}</Label>
+            <Input id="env-name" value={name} onChange={(e) => setName(e.target.value.toLowerCase())} />
           </div>
-        </div>
+          <Button type="submit" variant="outline" disabled={name.trim() === env.name || !ENVIRONMENT_NAME.test(name.trim()) || update.isPending}>
+            {t('environments.rename')}
+          </Button>
+        </form>
+      </section>
 
-        {all.length > 1 ? <OwnershipGrid environmentId={env.id} /> : null}
-        {all.length > 1 ? <Links env={env} all={all} /> : null}
-
-        {all.length > 1 ? (
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.receivesFrom')}</legend>
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {all
-                .filter((other) => other.id !== env.id)
-                .map((other) => {
-                  const id = `from-${env.id}-${other.id}`;
-                  return (
-                    <label key={other.id} htmlFor={id} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        id={id}
-                        checked={env.promotesFrom.includes(other.id)}
-                        onCheckedChange={(on) => toggleSource(other.id, on === true)}
-                      />
-                      {other.name}
-                    </label>
-                  );
-                })}
+      {env.purpose !== 'service' ? (
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t('environments.receivesFrom')} description={t('environments.detail.receivesHint')} />
+          <Card>
+            <CardContent className="grid grid-cols-1 gap-2 pt-6 sm:grid-cols-2">
+              {others.map((other) => {
+                const id = `from-${env.id}-${other.id}`;
+                return (
+                  <label key={other.id} htmlFor={id} className="flex items-center gap-2 text-sm">
+                    <Checkbox id={id} checked={env.promotesFrom.includes(other.id)} onCheckedChange={(on) => toggleSource(other.id, on === true)} />
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{other.name}</span>
+                  </label>
+                );
+              })}
+            </CardContent>
+          </Card>
+          {env.purpose === 'stage' && stages.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">{t('environments.detail.position', { at: at + 1, count: stages.length })}</span>
+              <Button variant="outline" size="sm" disabled={at <= 0} onClick={() => swap(stages[at - 1])}>
+                <ArrowUp className="h-4 w-4" /> {t('environments.moveUp')}
+              </Button>
+              <Button variant="outline" size="sm" disabled={at < 0 || at >= stages.length - 1} onClick={() => swap(stages[at + 1])}>
+                <ArrowDown className="h-4 w-4" /> {t('environments.moveDown')}
+              </Button>
             </div>
-          </fieldset>
+          ) : null}
+        </section>
+      ) : null}
+
+      {env.purpose === 'feature' ? (
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            title={t('environments.detail.feature')}
+            description={t('environments.featureOf', { name: all.find((e) => e.id === env.forkedFrom)?.name ?? '?' })}
+          />
+          <Card>
+            <CardContent className="flex flex-col gap-3 pt-6">
+              <label className="flex items-start gap-3">
+                <Switch
+                  className="mt-0.5"
+                  checked={env.mergesOwnChangesOnly}
+                  onCheckedChange={(on) => update.mutate({ id: env.id, mergesOwnChangesOnly: on }, { onError })}
+                />
+                <span className="text-sm">
+                  <span className="block font-medium">{t('environments.detail.ownOnly')}</span>
+                  <span className="block text-xs text-muted-foreground">{t('environments.detail.ownOnlyHint')}</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <Switch
+                  className="mt-0.5"
+                  checked={env.deleteWhenMerged}
+                  onCheckedChange={(on) => update.mutate({ id: env.id, deleteWhenMerged: on }, { onError })}
+                />
+                <span className="text-sm">
+                  <span className="block font-medium">{t('environments.deleteWhenMerged')}</span>
+                  <span className="block text-xs text-muted-foreground">{t('environments.new.deleteWhenMergedHint')}</span>
+                </span>
+              </label>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
+
+      {!env.isProduction ? (
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={t('environments.detail.danger')} />
+          <Card className="border-destructive/40">
+            <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center">
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground">{t('environments.deleteHint')}</p>
+              <Button variant="destructive" onClick={() => void destroy()}>
+                <Trash2 className="h-4 w-4" /> {t('environments.detail.delete', { name: env.name })}
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A new environment as it is being made: each step of the copy, what it is on now and how far it
+ * got. It opens -- and this page turns into its settings -- once every step is done.
+ */
+function SetupPanel({ env }: { env: Environment }) {
+  const { t } = useTranslation();
+  const steps = env.setup ?? [];
+  const { done, count } = setupProgress(steps);
+  const label = (key: string) => {
+    const [group, name] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+    return group === 'kind'
+      ? t(`deployments.kinds.${name}`, { defaultValue: name })
+      : t(`environments.copyScopes.${name}`, { defaultValue: name });
+  };
+  const detail = (step: SetupStep) => {
+    if (step.state === 'waiting') return t('environments.setup.waiting');
+    if (step.key.startsWith('data:')) {
+      return step.state === 'done' ? t('environments.setup.rows', { count: step.done }) : t('environments.setup.copying');
+    }
+    if (step.state === 'running') {
+      return t('environments.setup.item', { item: step.item ?? '', at: step.done + 1, count: step.total ?? 0 });
+    }
+    return step.total ? t('environments.setup.copied', { count: step.total }) : t('environments.setup.none');
+  };
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4 pt-6">
+        <div className="space-y-2">
+          <p className="font-medium">{t('environments.settingUpTitle')}</p>
+          <p className="text-sm text-muted-foreground">{t('environments.settingUpHint')}</p>
+          <Progress value={count > 0 ? (done / count) * 100 : 0} aria-label={t('environments.settingUpCount', { done, count })} />
+          <p className="text-xs text-muted-foreground">{steps.length > 0 ? t('environments.settingUpCount', { done, count }) : t('environments.setup.queued')}</p>
+        </div>
+        {steps.length > 0 ? (
+          <ol className="divide-y rounded-md border">
+            {steps.map((step) => (
+              <li key={step.key} className="flex items-center gap-3 px-3 py-2 text-sm">
+                {step.state === 'done' ? (
+                  <Check className="h-4 w-4 shrink-0 text-success-foreground" aria-hidden />
+                ) : step.state === 'running' ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden />
+                ) : (
+                  <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden />
+                )}
+                <span className={cn('min-w-0 flex-1', step.state === 'waiting' && 'text-muted-foreground')}>{label(step.key)}</span>
+                <span className="min-w-0 text-right text-xs text-muted-foreground [overflow-wrap:anywhere]">{detail(step)}</span>
+              </li>
+            ))}
+          </ol>
         ) : null}
       </CardContent>
     </Card>
-  );
-}
-
-/**
- * Who owns each kind of configuration here: edited here and deployed into (mixed), edited here
- * only (local), or deployments only (managed). Item-level exceptions override the kind for one item.
- */
-function OwnershipGrid({ environmentId }: { environmentId: string }) {
-  const { t } = useTranslation();
-  const policies = usePolicies(environmentId);
-  const save = useSavePolicies(environmentId);
-  const list = policies.data ?? [];
-  const modeOf = (kind: string): Ownership => list.find((p) => p.kind === kind && p.itemKey == null)?.mode ?? 'Mixed';
-  const write = (next: Policy[]) => save.mutate(next, { onError: (err) => toastApiError(err, t) });
-  const set = (kind: string, mode: Ownership) =>
-    write([...list.filter((p) => !(p.kind === kind && p.itemKey == null)), { kind, itemKey: null, mode }]);
-  const lockAll = () =>
-    write([
-      ...list.filter((p) => p.itemKey != null),
-      ...CONFIG_KINDS.map((kind): Policy => ({ kind, itemKey: null, mode: 'Managed' })),
-    ]);
-  // One item of a kind owned otherwise than the kind: production's legal page kept Local while
-  // the rest of its content comes from deployments, one role left to the pipeline.
-  const exceptions = list.filter((p) => p.itemKey != null);
-  const [exceptionKind, setExceptionKind] = useState<string>(POLICY_KINDS[0]);
-  const [exceptionKey, setExceptionKey] = useState('');
-  const [exceptionMode, setExceptionMode] = useState<Ownership>('Local');
-  const addException = () => {
-    const key = exceptionKey.trim();
-    write([...list.filter((p) => !(p.kind === exceptionKind && p.itemKey === key)), { kind: exceptionKind, itemKey: key, mode: exceptionMode }]);
-    setExceptionKey('');
-  };
-
-  if (policies.isError) return <LoadFailed onRetry={() => void policies.refetch()} />;
-  return (
-    <fieldset className="flex flex-col gap-1.5" disabled={!policies.data || save.isPending}>
-      <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.ownership')}</legend>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {POLICY_KINDS.map((kind) => (
-          <label key={kind} className="flex items-center justify-between gap-2 text-sm">
-            <span className="min-w-0 truncate">{t(`deployments.kinds.${kind}`)}</span>
-            <Select value={modeOf(kind)} onValueChange={(mode) => set(kind, mode as Ownership)}>
-              <SelectTrigger className="w-40" aria-label={t('environments.ownershipOf', { kind: t(`deployments.kinds.${kind}`) })}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(['Mixed', 'Local', 'Managed'] as const).map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {t(`environments.modes.${mode}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-        ))}
-      </div>
-      <div>
-        <Button variant="outline" size="sm" onClick={lockAll}>
-          <Lock className="h-4 w-4" /> {t('environments.lockToPipeline')}
-        </Button>
-      </div>
-      <p className="mt-2 text-xs font-medium text-muted-foreground">{t('environments.exceptions')}</p>
-      {exceptions.map((p) => (
-        <div key={`${p.kind}/${p.itemKey}`} className="flex items-center gap-2 text-sm">
-          <Badge tone="outline">{t(`deployments.kinds.${p.kind}`, { defaultValue: p.kind })}</Badge>
-          <span className="min-w-0 truncate font-mono text-xs">{p.itemKey}</span>
-          <span className="text-muted-foreground">{t(`environments.modes.${p.mode}`)}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={t('environments.removeException', { item: p.itemKey })}
-            onClick={() => write(list.filter((x) => !(x.kind === p.kind && x.itemKey === p.itemKey)))}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ))}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Select value={exceptionKind} onValueChange={setExceptionKind}>
-          <SelectTrigger className="sm:w-44" aria-label={t('environments.exceptionKind')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {POLICY_KINDS.map((kind) => (
-              <SelectItem key={kind} value={kind}>
-                {t(`deployments.kinds.${kind}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          aria-label={t('environments.exceptionKey')}
-          placeholder={t('environments.exceptionKeyHint')}
-          value={exceptionKey}
-          onChange={(e) => setExceptionKey(e.target.value)}
-        />
-        <Select value={exceptionMode} onValueChange={(m) => setExceptionMode(m as Ownership)}>
-          <SelectTrigger className="sm:w-40" aria-label={t('environments.exceptionMode')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(['Mixed', 'Local', 'Managed'] as const).map((mode) => (
-              <SelectItem key={mode} value={mode}>
-                {t(`environments.modes.${mode}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button variant="outline" size="sm" disabled={!exceptionKey.trim()} onClick={addException}>
-          <Plus className="h-4 w-4" /> {t('environments.addException')}
-        </Button>
-      </div>
-    </fieldset>
-  );
-}
-
-/**
- * What this environment uses from another one (ADR 0026): apps — its site's /api/{address} is
- * served by that environment's app, production's real articles in development, say — read only, or
- * read and write; and site users — its sites sign people in through that environment's users.
- */
-function Links({ env, all }: { env: Environment; all: Environment[] }) {
-  const { t } = useTranslation();
-  const links = useLinks(env.id);
-  const { add, remove } = useLinkMutations(env.id);
-  const others = all.filter((e) => e.id !== env.id);
-  const [target, setTarget] = useState(others[0]?.id ?? '');
-  const [address, setAddress] = useState('');
-  const [access, setAccess] = useState<'read' | 'readWrite'>('read');
-  const [usersFrom, setUsersFrom] = useState(others[0]?.id ?? '');
-  const nameOf = (id: string) => all.find((e) => e.id === id)?.name ?? id;
-  const onError = (err: unknown) => toastApiError(err, t);
-  const usersLink = (links.data ?? []).find((l) => l.kind === 'users');
-  const [useKind, setUseKind] = useState<'tables' | 'contracts'>('tables');
-  const [useTarget, setUseTarget] = useState(others[0]?.id ?? '');
-  const [instance, setInstance] = useState('');
-  // A link grants what the app there really has -- operations or tables -- picked from what it offers.
-  const offers = useOffers(useTarget);
-  const apps = (offers.data ?? []).filter((a) => (useKind === 'contracts' ? a.operations.length : a.tables.length) > 0);
-  const offered = apps.find((a) => a.slug === instance);
-  const [picked, setPicked] = useState<string[]>([]);
-  const toggle = (grant: string, on: boolean) => setPicked((p) => (on ? [...p, grant] : p.filter((g) => g !== grant)));
-  const pick = (next: () => void) => {
-    next();
-    setInstance('');
-    setPicked([]);
-  };
-
-  return (
-    <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.links')}</legend>
-      {usersLink ? (
-        <div className="flex items-center gap-2 text-sm">
-          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="min-w-0 truncate">{t('environments.usersLinkRow', { name: nameOf(usersLink.targetEnvironmentId) })}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={t('environments.usersUnlink')}
-            onClick={() => remove.mutate(usersLink.id, { onError })}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : (
-        <form
-          className="flex flex-col gap-2 sm:flex-row sm:items-center"
-          onSubmit={(e) => {
-            e.preventDefault();
-            add.mutate({ kind: 'users', targetEnvironmentId: usersFrom }, { onError });
-          }}
-        >
-          <span className="text-sm text-muted-foreground sm:flex-1">{t('environments.usersLinkHint')}</span>
-          <Select value={usersFrom} onValueChange={setUsersFrom}>
-            <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {others.map((o) => (
-                <SelectItem key={o.id} value={o.id}>
-                  {o.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" variant="outline" disabled={!usersFrom || add.isPending}>
-            <Link2 className="h-4 w-4" /> {t('environments.usersLink')}
-          </Button>
-        </form>
-      )}
-      {(links.data ?? []).filter((l) => l.kind === 'app').map((l) => (
-        <div key={l.id} className="flex items-center gap-2 text-sm">
-          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="min-w-0 truncate">
-            {t('environments.linkRow', { address: l.targetKey, name: nameOf(l.targetEnvironmentId) })}
-          </span>
-          <Badge tone="outline">{t(`environments.access.${l.access}`)}</Badge>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={t('environments.unlink', { address: l.targetKey })}
-            onClick={() => remove.mutate(l.id, { onError })}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ))}
-      <form
-        className="flex flex-col gap-2 sm:flex-row sm:items-center"
-        onSubmit={(e) => {
-          e.preventDefault();
-          add.mutate(
-            { kind: 'app', targetEnvironmentId: target, targetKey: address.trim(), access },
-            { onSuccess: () => setAddress(''), onError },
-          );
-        }}
-      >
-        <Input
-          aria-label={t('environments.linkAddress')}
-          placeholder={t('environments.linkAddress')}
-          value={address}
-          onChange={(e) => setAddress(e.target.value.toLowerCase())}
-        />
-        <Select value={target} onValueChange={setTarget}>
-          <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {others.map((o) => (
-              <SelectItem key={o.id} value={o.id}>
-                {o.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={access} onValueChange={(v) => setAccess(v as 'read' | 'readWrite')}>
-          <SelectTrigger className="sm:w-40" aria-label={t('environments.linkAccess')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="read">{t('environments.access.Read')}</SelectItem>
-            <SelectItem value="readWrite">{t('environments.access.ReadWrite')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button type="submit" variant="outline" disabled={!address.trim() || !target || add.isPending}>
-          <Link2 className="h-4 w-4" /> {t('environments.link')}
-        </Button>
-      </form>
-
-      {(links.data ?? []).filter((l) => l.kind === 'tables' || l.kind === 'contracts').map((l) => (
-        <div key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
-          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="min-w-0 truncate">
-            {t(`environments.useRow.${l.kind}`, { instance: l.targetKey, name: nameOf(l.targetEnvironmentId) })}
-          </span>
-          {l.grants.map((g) => (
-            <Badge key={g} tone="outline">
-              {g}
-            </Badge>
-          ))}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={t('environments.unlink', { address: l.targetKey })}
-            onClick={() => remove.mutate(l.id, { onError })}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ))}
-      <form
-        className="flex flex-col gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          add.mutate(
-            { kind: useKind, targetEnvironmentId: useTarget, targetKey: instance, grants: picked },
-            { onSuccess: () => pick(() => {}), onError },
-          );
-        }}
-      >
-        <span className="text-sm text-muted-foreground">{t('environments.useHint')}</span>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Select value={useKind} onValueChange={(v) => pick(() => setUseKind(v as 'tables' | 'contracts'))}>
-            <SelectTrigger className="sm:w-40" aria-label={t('environments.useKind')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="tables">{t('environments.useKinds.tables')}</SelectItem>
-              <SelectItem value="contracts">{t('environments.useKinds.contracts')}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={instance}
-            onValueChange={(v) => {
-              setInstance(v);
-              setPicked([]);
-            }}
-          >
-            <SelectTrigger className="sm:flex-1" aria-label={t('environments.useInstance')}>
-              <SelectValue placeholder={t('environments.useInstance')} />
-            </SelectTrigger>
-            <SelectContent>
-              {apps.map((a) => (
-                <SelectItem key={a.slug} value={a.slug}>
-                  {a.name} ({a.slug})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={useTarget} onValueChange={(v) => pick(() => setUseTarget(v))}>
-            <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {others.map((o) => (
-                <SelectItem key={o.id} value={o.id}>
-                  {o.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {offers.data && apps.length === 0 ? (
-          <span className="text-sm text-muted-foreground">{t(`environments.useNothing.${useKind}`, { name: nameOf(useTarget) })}</span>
-        ) : useKind === 'contracts' ? (
-          <div className="flex flex-col gap-1" role="group" aria-label={t('environments.useGrants')}>
-            {offered?.operations.map((o) => (
-              <label key={o.grant} className="flex items-start gap-2 text-sm">
-                <Checkbox className="mt-0.5" checked={picked.includes(o.grant)} onCheckedChange={(on) => toggle(o.grant, on === true)} />
-                <span className="min-w-0">
-                  <span className="font-mono text-xs break-all">{o.grant}</span>
-                  {o.risk !== 'read' && (
-                    <Badge tone="outline" className="ml-2">
-                      {t('environments.useWrites')}
-                    </Badge>
-                  )}
-                  {o.description && <span className="block text-muted-foreground">{o.description}</span>}
-                </span>
-              </label>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1" role="group" aria-label={t('environments.useGrants')}>
-            {offered?.tables.map((table) => (
-              <div key={table} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                <span className="min-w-0 basis-full font-mono text-xs break-all sm:basis-40">{table}</span>
-                {VERBS.map((verb) => (
-                  <label key={verb} className="flex items-center gap-1.5">
-                    <Checkbox
-                      checked={picked.includes(`${table}:${verb}`)}
-                      onCheckedChange={(on) => toggle(`${table}:${verb}`, on === true)}
-                      aria-label={`${table}:${verb}`}
-                    />
-                    {t(`environments.verbs.${verb}`)}
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-        <div>
-          <Button type="submit" variant="outline" disabled={!instance || !useTarget || picked.length === 0 || add.isPending}>
-            <Link2 className="h-4 w-4" /> {t('environments.useSubmit')}
-          </Button>
-        </div>
-      </form>
-    </fieldset>
   );
 }

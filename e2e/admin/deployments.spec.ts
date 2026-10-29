@@ -33,7 +33,7 @@ test.beforeEach(({ api }) => {
 test('unpublished changes become a named migration', async ({ page, api }) => {
   api.on('GET', '/api/admin/environments/changes', [change('roles/Editors', null, null, { System: false, Permissions: ['content:read'] })]);
   api.on('POST', '/api/admin/environments/migrations', migration('m1', 'Add editors', []));
-  await page.goto('/deployments');
+  await page.goto('/deployments?tab=changes');
 
   await expect(page.getByRole('heading', { name: 'Deployments', level: 1 })).toBeVisible();
   await expect(page.getByText('Editors')).toBeVisible();
@@ -49,7 +49,7 @@ test('a change left unticked stays out of the migration', async ({ page, api }) 
     change('roles/Reviewers', null, null, { System: false, Permissions: ['content:read'] }),
   ]);
   api.on('POST', '/api/admin/environments/migrations', migration('m1', 'Editors', []));
-  await page.goto('/deployments');
+  await page.goto('/deployments?tab=changes');
 
   await page.getByRole('checkbox', { name: 'Include Reviewers in the migration' }).click();
   await page.getByLabel('Migration name').fill('Editors');
@@ -64,7 +64,7 @@ test('published content goes into a migration only when ticked', async ({ page, 
     change('content/news/post/hello', null, null, { title: 'Hello' }),
   ]);
   api.on('POST', '/api/admin/environments/migrations', migration('m1', 'Editors', []));
-  await page.goto('/deployments');
+  await page.goto('/deployments?tab=changes');
 
   await expect(page.getByRole('checkbox', { name: 'Include news/post/hello in the migration' })).not.toBeChecked();
   await page.getByLabel('Migration name').fill('Editors');
@@ -138,7 +138,7 @@ test('the latest migration rolls back after its plan is shown', async ({ page, a
     changes: [change('roles/Editors', 'apply', { Permissions: [] }, null, { Permissions: [] })],
   });
   api.on('POST', '/api/admin/environments/migrations/:id/rollback', { jobId: 'j2' });
-  await page.goto('/deployments');
+  await page.goto('/deployments?tab=history');
 
   await page.getByRole('button', { name: 'Roll back' }).click();
   const dialog = page.getByRole('dialog');

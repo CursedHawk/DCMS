@@ -60,11 +60,14 @@ export function EnvironmentSwitcher() {
           <button
             key={env.id}
             type="button"
+            // Not until its copy is complete: whatever changed there now, the copy would write over.
+            disabled={env.ready === false}
+            title={env.ready === false ? t('environments.settingUp') : undefined}
             onClick={() => {
               setOpen(false);
               if (env.name !== current) switchEnvironment(env.name);
             }}
-            className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+            className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="flex min-w-0 items-center gap-2">
               <span
@@ -74,6 +77,7 @@ export function EnvironmentSwitcher() {
               <span className="truncate">{env.name}</span>
             </span>
             {env.name === current ? <Check className="h-4 w-4 text-primary" /> : null}
+            {env.ready === false ? <span className="shrink-0 text-xs text-muted-foreground">{t('environments.settingUp')}</span> : null}
           </button>
         ))}
         <div className="mt-1 border-t pt-1">
