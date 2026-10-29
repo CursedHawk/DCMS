@@ -146,6 +146,8 @@ public sealed class ConfigurationService(
     /// <summary>Opens the draft from the published revision; returns the open one if there is one already.</summary>
     public async Task<RevisionInfo> CreateDraftAsync(string? description, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
+        // A draft here could never be published, and would hold up the next deployment.
+        await EnsureNotManagedAsync(ct);
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
         await using var _ = tx;
@@ -169,6 +171,8 @@ public sealed class ConfigurationService(
     /// <exception cref="ContractValidationException">An operation is malformed or names something that does not exist.</exception>
     public async Task<ApplyChangesResult> ApplyAsync(ApplyChangesRequest request, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
+        // A draft here could never be published, and would hold up the next deployment.
+        await EnsureNotManagedAsync(ct);
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
         await using var _ = tx;
@@ -266,11 +270,33 @@ public sealed class ConfigurationService(
         {
             throw new ContractConflictException("A draft is open here. Publish or discard it before deploying this application.");
         }
-        var config = ConfigJson.Parse(snapshot);
+        // copyFrom carries a live field's values into the member that replaced it. Deployed or
+        // copied in, it applies where that field exists here; where it does not -- a new environment
+        // -- there are no values to carry, and the instruction is dropped rather than refusing the app.
+        var config = WithoutUnmetCopies(ConfigJson.Parse(snapshot), await PublishedConfigAsync(app, ct));
         var draft = await OpenDraftAsync(app, description, AppChangeSource.Import, ct);
         draft.Snapshot = ConfigJson.Canonical(config);
         draft.Hash = ConfigJson.Hash(config);
         return await GoLiveAsync(app, draft, tx, ct, null);
+    }
+
+    /// <summary><paramref name="config"/> without the copyFrom of a member whose source field <paramref name="live"/> does not have.</summary>
+    internal static AppConfig WithoutUnmetCopies(AppConfig config, AppConfig? live)
+    {
+        bool Met(Guid tableId, Guid memberId, string? copyFrom) =>
+            copyFrom is null
+            || live?.Tables.Any(t => t.Fields.Any(f => f.Id == memberId)) == true
+            || live?.Relationships.Any(r => r.Id == memberId) == true
+            || live?.Tables.FirstOrDefault(t => t.Id == tableId)?.Fields.Any(f => f.ApiName == copyFrom) == true;
+        return config with
+        {
+            Tables = config.Tables
+                .Select(t => t with { Fields = t.Fields.Select(f => Met(t.Id, f.Id, f.CopyFrom) ? f : f with { CopyFrom = null }).ToList() })
+                .ToList(),
+            Relationships = config.Relationships
+                .Select(r => Met(r.SourceTableId, r.Id, r.CopyFrom) ? r : r with { CopyFrom = null })
+                .ToList(),
+        };
     }
 
     /// <summary>Checks the draft against what is live and, when nothing is an error, makes it live.</summary>
@@ -841,8 +867,8 @@ public sealed class ConfigurationService(
     /// flow): there the policy does not exist, and nobody holds it.
     /// </summary>
     /// <summary>
-    /// Refuses making a configuration live here when this environment leaves the application to
-    /// deployments (ADR 0026): it changes in the environment that deploys here, and arrives by
+    /// Refuses changing a configuration here -- drafting it or making it live -- when this environment
+    /// leaves the application to deployments (ADR 0026): it changes in the environment that deploys here, and arrives by
     /// <see cref="ImportAsync"/>. Here, not on the routes, so the assistant's contract is held to it too.
     /// </summary>
     private async Task EnsureNotManagedAsync(CancellationToken ct)

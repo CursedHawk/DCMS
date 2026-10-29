@@ -85,6 +85,23 @@ public static class EnvironmentResolution
                 await context.Response.WriteAsJsonAsync(new { error = "This workspace has no environment of that name." }, context.RequestAborted);
                 return;
             }
+            if (environment is { IsReady: false })
+            {
+                // Still being copied: what anyone changed there now, the copy would write over. This
+                // process's cache may predate the copy finishing on the worker, so ask once more.
+                store.Evict(tenantId);
+                environment = await store.FindAsync(tenantId, name, context.RequestAborted);
+                if (environment is { IsReady: false })
+                {
+                    context.Response.StatusCode = StatusCodes.Status409Conflict;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "This environment is still being set up. It opens once its copy is complete.",
+                        code = "environment_setting_up",
+                    }, context.RequestAborted);
+                    return;
+                }
+            }
             if (environment is not null) context.Items[Item] = environment.Id;
         }
         if (tenant is { } current)

@@ -160,6 +160,7 @@ public sealed class PluginOwnedRoutesTests(ContentFlowFixture fixture)
             .StatusCode.Should().Be(HttpStatusCode.Created);
         (await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, tenant, body: new { name = "development" }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
+        await Environments.EnvironmentTarget.OpenAsync(fixture.Admin.Services, tenant);
 
         HttpRequestMessage Dev(HttpMethod method, string url, object? body = null)
         {

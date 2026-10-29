@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dcms.AdminApi.Environments;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
@@ -134,6 +135,8 @@ public static class EnvironmentEndpoints
                 PromotesFrom = feature ? [source.Id] : [],
                 MergesOwnChangesOnly = body.MergesOwnChangesOnly ?? feature,
                 DeleteWhenMerged = feature && body.DeleteWhenMerged == true,
+                // A copy is closed until it is complete; an empty one is ready now.
+                ReadyAt = body.Empty == true ? DateTimeOffset.UtcNow : null,
             };
             audit.Declared?.For("environment", created.Id, name).With("from", source.Name).With("copy", scopes);
             using (RlsScope.Tenant(tenantId))
@@ -322,8 +325,9 @@ public static class EnvironmentEndpoints
                 .ToListAsync(ct));
         }).RequireAuthorization();
 
-        // What another environment can use from this one through a link: each enabled app's
-        // operations (contracts links) and tables (tables links), as the grants that name them.
+        // What another environment can use from this one through a link: every enabled app -- its
+        // address (app links), operations (contracts links) and tables (tables links), as the grants
+        // that name them -- so a link is picked from what is really there.
         app.MapGet("/api/admin/environments/{id:guid}/offers", async (
             Guid id, ITenantContext tenant, EnvironmentStore environments, Dcms.Shared.Data.Cms.CmsDbContext cms,
             Dcms.PluginSdk.Runtime.PluginRegistry registry, IEnumerable<IEnvironmentLinkTables> linkTables, CancellationToken ct) =>
@@ -341,10 +345,7 @@ public static class EnvironmentEndpoints
                 var tables = linkTables.FirstOrDefault(t => t.PluginId == i.PluginId) is { } provider
                     ? await provider.TablesAsync(target.TenantId, i.Id, ct)
                     : [];
-                if (operations.Count > 0 || tables.Count > 0)
-                {
-                    offers.Add(new { slug = i.Slug, name = i.Name, operations, tables });
-                }
+                offers.Add(new { slug = i.Slug, name = i.Name, pluginId = i.PluginId, operations, tables });
             }
             return Results.Ok(offers);
         }).RequireAuthorization();
@@ -414,6 +415,8 @@ public static class EnvironmentEndpoints
         isProduction = e.IsProduction,
         promotesFrom = e.PromotesFrom,
         forkedFrom = e.ForkedFrom,
+        ready = e.IsReady,
+        setup = e.SetupJson is { } setup ? JsonSerializer.Deserialize<List<SetupStep>>(setup, EnvironmentSetupLog.Json) : null,
         mergesOwnChangesOnly = e.MergesOwnChangesOnly,
         deleteWhenMerged = e.DeleteWhenMerged,
         isMember,

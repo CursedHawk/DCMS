@@ -81,6 +81,7 @@ public class EnvironmentMembersTests(AdminApiFixture fixture)
 
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, slug, new { name = "development" }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
+        await EnvironmentTarget.OpenAsync(fixture.Factory.Services, slug);
         var dev = $"{slug}/development";
 
         // Seeded with the Member role they hold in production: they can work there.
@@ -192,6 +193,7 @@ public class EnvironmentMembersTests(AdminApiFixture fixture)
         // The owner may; the branch's people hold what they hold in staging, so the manager has no way in.
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", owner, slug,
             new { name = "staging-hotfix", from = stagingId, feature = true }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+        await EnvironmentTarget.OpenAsync(fixture.Factory.Services, slug);
         (await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", manager, $"{slug}/staging-hotfix"), ct))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -210,6 +212,7 @@ public class EnvironmentMembersTests(AdminApiFixture fixture)
 
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", manager, slug, new { name = "test" }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
+        await EnvironmentTarget.OpenAsync(fixture.Factory.Services, slug);
 
         // They hold in "test" what they hold in the root -- not Owner, so no roles:manage.
         var permissions = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/me/permissions", manager, $"{slug}/test"), ct), ct);

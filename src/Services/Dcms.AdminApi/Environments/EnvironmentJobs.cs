@@ -20,7 +20,7 @@ public sealed record EnvironmentCopyPayload(Guid Source, List<string>? Data = nu
 /// </summary>
 public sealed class EnvironmentCopyJob(
     EnvironmentMigrator migrator, EnvironmentDuplicator duplicator, TenancyDbContext db, EnvironmentStore environments,
-    Tenancy.TenantDeleter deleter, ILogger<EnvironmentCopyJob> logger)
+    Tenancy.TenantDeleter deleter, Dcms.Shared.Audit.AuditScope audit, ILogger<EnvironmentCopyJob> logger)
     : IJobHandler<EnvironmentCopyPayload>
 {
     public const string Kind = "environments.copy";
@@ -30,18 +30,19 @@ public sealed class EnvironmentCopyJob(
         var (target, source) = await environments.JobPairAsync(context, payload.Source);
         var scopes = payload.Data ?? [];
         Dictionary<string, int> copied = [];
+        var log = EnvironmentSetupLog.Start(db, audit, target, context, migrator.KindNames, scopes);
         try
         {
+            await log.WriteAsync(ready: false);
             await EnvironmentLock.RunAsync(db, target.Id, context.Cancellation, async () =>
             {
-                await context.ReportAsync(0, scopes.Count + 1, "jobs.stages.environmentCopy.configuration");
-                await migrator.CopyAsync(target, source, context.Cancellation);
-                var done = 1;
-                copied = await duplicator.CopyAsync(target, source, scopes,
-                    async scope => await context.ReportAsync(done++, scopes.Count + 1, $"jobs.stages.environmentCopy.{scope}"),
-                    context.Cancellation);
+                await migrator.CopyAsync(target, source, context.Cancellation, log.KindAsync);
+                copied = await duplicator.CopyAsync(target, source, scopes, log.ScopeAsync, context.Cancellation);
                 return true;
             });
+            // Everything is in: the environment opens.
+            await log.WriteAsync(ready: true);
+            environments.Evict(target.TenantId);
         }
         catch (Exception failure) when (failure is not OperationCanceledException)
         {

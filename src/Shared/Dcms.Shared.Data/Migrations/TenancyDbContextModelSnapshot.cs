@@ -540,6 +540,12 @@ namespace Dcms.Shared.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<DateTimeOffset?>("ReadyAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SetupJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 

@@ -64,6 +64,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         };
         // The copy job, as jobs-worker would run it.
         await Engine(m => m.CopyAsync(ws.DevEnv, ws.ProdEnv, ct));
+        await EnvironmentTarget.OpenAsync(fixture.Factory.Services, slug);
         return ws;
     }
 
@@ -302,6 +303,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         feature.GetProperty("mergesOwnChangesOnly").GetBoolean().Should().BeTrue("a feature merges only what it cut");
         var featureEnv = await EnvironmentTarget.LoadAsync(fixture.Factory.Services, ws.ProdId, featureId);
         await Engine(m => m.CopyAsync(featureEnv, ws.DevEnv, ct));
+        await EnvironmentTarget.OpenAsync(fixture.Factory.Services, ws.Prod);
         var featureTarget = $"{ws.Prod}/development-feature1";
         await Role(client, ws.Owner, featureTarget, "Feature", ["media:read"]);
         var featureCut = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/migrations", ws.Owner, featureTarget,
@@ -341,6 +343,39 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var environments = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", ws.Owner, ws.Prod), ct), ct);
         environments.GetProperty("environments").EnumerateArray().Select(e => e.GetProperty("name").GetString())
             .Should().NotContain("development-feature1", "merged, and set to go once it was");
+    }
+
+    [DockerFact]
+    public async Task A_new_environment_stays_closed_until_its_copy_is_complete_and_shows_each_step()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        await Role(client, ws.Owner, ws.Prod, "Editors", ["content:read"]);
+        var qa = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", ws.Owner, ws.Prod,
+            new { name = "qa" }), ct), ct)).GetProperty("id").GetGuid();
+
+        // Nothing opens it while the copy is being made: what changed there now, the copy would write over.
+        var refused = await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, $"{ws.Prod}/qa"), ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("code").GetString().Should().Be("environment_setting_up");
+        JsonElement Listed(JsonElement list) => list.GetProperty("environments").EnumerateArray().Single(e => e.GetProperty("id").GetGuid() == qa);
+        Listed(await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", ws.Owner, ws.Prod), ct), ct))
+            .GetProperty("ready").GetBoolean().Should().BeFalse();
+
+        // The copy job, as jobs-worker runs it, opens it when everything is in.
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var job = ActivatorUtilities.CreateInstance<EnvironmentCopyJob>(scope.ServiceProvider);
+            using var rls = RlsScope.Environment(ws.ProdId, qa);
+            await job.RunAsync(new EnvironmentCopyPayload(ws.ProdId, []), new JobRun(ws.ProdId, qa, ct));
+        }
+        var listed = Listed(await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/environments", ws.Owner, ws.Prod), ct), ct));
+        listed.GetProperty("ready").GetBoolean().Should().BeTrue();
+        var steps = listed.GetProperty("setup").EnumerateArray().ToList();
+        steps.Select(x => x.GetProperty("state").GetString()).Should().AllBe("done");
+        steps.Single(x => x.GetProperty("key").GetString() == "kind:roles").GetProperty("done").GetInt32().Should().BeGreaterThan(0);
+        (await RolePermissionsAsync(client, ws.Owner, $"{ws.Prod}/qa", "Editors", ct)).Should().Equal("content:read");
     }
 
     private sealed class JobRun(Guid tenantId, Guid environmentId, CancellationToken ct) : Dcms.Shared.Jobs.IJobContext
@@ -466,6 +501,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { name = "development-f", from = ws.DevId, feature = true }), ct), ct)).GetProperty("id").GetGuid();
         var featureEnv = await EnvironmentTarget.LoadAsync(fixture.Factory.Services, ws.ProdId, feature);
         await Engine(m => m.CopyAsync(featureEnv, ws.DevEnv, ct));
+        await EnvironmentTarget.OpenAsync(fixture.Factory.Services, ws.Prod);
         var inFeature = $"{ws.Prod}/development-f";
         await Role(client, ws.Owner, inFeature, "Kept", ["content:read"]);
         await Role(client, ws.Owner, inFeature, "Left out", ["media:read"]);

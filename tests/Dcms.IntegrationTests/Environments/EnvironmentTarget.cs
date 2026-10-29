@@ -1,4 +1,7 @@
+using Dcms.Shared.Data;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Environments;
@@ -24,5 +27,20 @@ internal static class EnvironmentTarget
         store.Evict(tenantId);
         return await store.GetAsync(tenantId, environmentId, default)
                ?? throw new InvalidOperationException($"No environment {environmentId} in tenant {tenantId}.");
+    }
+
+    /// <summary>
+    /// Opens the tenant's environments as the copy job does once it is done: for tests that copy
+    /// into a new environment by hand, or work in it without waiting for the job.
+    /// </summary>
+    public static async Task OpenAsync(IServiceProvider services, string tenantSlug)
+    {
+        using var scope = services.CreateScope();
+        using var rls = RlsScope.Platform();
+        var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        var tenantId = Guid.Parse(await db.Tenants.IgnoreQueryFilters().Where(t => t.Identifier == tenantSlug).Select(t => t.Id).SingleAsync());
+        await db.Environments.IgnoreQueryFilters().Where(e => e.TenantId == tenantId && e.ReadyAt == null)
+            .ExecuteUpdateAsync(u => u.SetProperty(e => e.ReadyAt, DateTimeOffset.UtcNow));
+        scope.ServiceProvider.GetRequiredService<EnvironmentStore>().Evict(tenantId);
     }
 }

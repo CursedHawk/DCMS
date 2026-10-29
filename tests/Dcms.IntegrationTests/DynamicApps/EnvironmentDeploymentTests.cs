@@ -76,17 +76,56 @@ public sealed class EnvironmentDeploymentTests(ContentFlowFixture fixture)
             .Select(t => t.GetProperty("apiName").GetString()).Should().Equal("companies");
         published.GetProperty("revision").GetProperty("source").GetString().Should().BeEquivalentTo("import");
 
-        // Once production leaves the application to deployments, it is not published there directly.
+        // Once production leaves the application to deployments, it is not changed there directly --
+        // not even as a draft, which could never be published and would hold up the next deployment.
         await As(HttpMethod.Put, $"/api/admin/environments/{prod}/policies", app.Tenant,
             new[] { new { kind = "dynamic-apps", itemKey = (string?)null, mode = "managed" } });
         var prodHash = (await As(HttpMethod.Get, "/api/admin/plugins/crm/_model", app.Tenant)).GetProperty("hash").GetString();
-        var prodDraft = await As(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", app.Tenant, new
+        var change = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", app.Owner, app.Tenant,
+            body: new
+            {
+                expectedHash = prodHash,
+                operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "companies", "value": { "displayName": "Firm" } } ]"""),
+            }), ct);
+        change.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft", app.Owner, app.Tenant, body: new { }), ct))
+            .StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+    }
+
+    /// <summary>
+    /// A field that took over another's values (copyFrom) keeps the instruction in its published
+    /// model; a new environment has no such field to copy from, and is made all the same.
+    /// </summary>
+    [DockerFact]
+    public async Task An_application_whose_field_took_over_anothers_values_copies_into_a_new_environment()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "table", "value": { "apiName": "accounts", "displayName": "Account", "primaryFieldId": "name",
+                  "fields": [ { "apiName": "name", "displayName": "Name", "required": true }, { "apiName": "rating", "displayName": "Rating" } ] } } ]
+            """, ct);
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "field", "target": "accounts", "value": { "apiName": "account_rating", "displayName": "Rating", "copyFrom": "rating" } },
+              { "op": "delete", "type": "field", "target": "accounts.rating" } ]
+            """, ct);
+
+        var created = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/environments", app.Owner, app.Tenant,
+            body: new { name = "development" }), ct);
+        created.StatusCode.Should().Be(System.Net.HttpStatusCode.Created, await created.Content.ReadAsStringAsync(ct));
+        JsonElement job = default;
+        for (var i = 0; i < 200; i++)
         {
-            expectedHash = prodHash,
-            operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "companies", "value": { "displayName": "Firm" } } ]"""),
-        });
-        var publish = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", app.Owner, app.Tenant,
-            body: new { expectedHash = prodDraft.GetProperty("draft").GetProperty("hash").GetString() }), ct);
-        publish.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+            var jobs = await (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/jobs?pageSize=20", app.Owner, app.Tenant), ct))
+                .Content.ReadFromJsonAsync<JsonElement>(ct);
+            job = jobs.GetProperty("items").EnumerateArray().FirstOrDefault(j => j.GetProperty("kind").GetString() == "environments.copy");
+            if (job.ValueKind == JsonValueKind.Object && job.GetProperty("status").GetString() is "Succeeded" or "Failed") break;
+            await Task.Delay(100, ct);
+        }
+        job.GetProperty("status").GetString().Should().Be("Succeeded", job.ToString());
+        var published = await (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/plugins/crm/_model/published", app.Owner,
+            $"{app.Tenant}/development"), ct)).Content.ReadFromJsonAsync<JsonElement>(ct);
+        published.GetProperty("config").GetProperty("tables")[0].GetProperty("fields").EnumerateArray()
+            .Select(f => f.GetProperty("apiName").GetString()).Should().Contain("account_rating").And.NotContain("rating");
     }
 }

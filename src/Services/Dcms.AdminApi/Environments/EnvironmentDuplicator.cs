@@ -18,10 +18,11 @@ public sealed class EnvironmentDuplicator(IEnumerable<IEnvironmentDataCopier> co
     /// <summary>Every scope that can be copied, in order.</summary>
     public IEnumerable<(string Scope, bool PersonalData)> Scopes => _copiers.Select(c => (c.Scope, c.PersonalData));
 
+    /// <param name="onScope">Told each scope as it starts (no count) and as it ends (rows copied).</param>
     /// <returns>Rows copied, by scope.</returns>
     public async Task<Dictionary<string, int>> CopyAsync(
         TenantEnvironment target, TenantEnvironment source, IReadOnlyCollection<string> scopes,
-        Func<string, Task> onScope, CancellationToken ct)
+        Func<string, int?, Task> onScope, CancellationToken ct)
     {
         var copied = new Dictionary<string, int>(StringComparer.Ordinal);
         var chosen = _copiers.Where(c => scopes.Contains(c.Scope)).ToList();
@@ -38,8 +39,9 @@ public sealed class EnvironmentDuplicator(IEnumerable<IEnvironmentDataCopier> co
         };
         foreach (var copier in chosen)
         {
-            await onScope(copier.Scope);
+            await onScope(copier.Scope, null);
             copied[copier.Scope] = await copier.CopyAsync(copy, ct);
+            await onScope(copier.Scope, copied[copier.Scope]);
         }
         return copied;
     }

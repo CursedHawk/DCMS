@@ -219,6 +219,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.PromotesFrom).HasDefaultValueSql("'{}'::uuid[]");
             e.Ignore(x => x.IsProduction);
+            e.Ignore(x => x.IsReady);
+            e.Property(x => x.SetupJson).HasColumnType("jsonb");
             e.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
             e.HasQueryFilter(QueryFilters.Tenant, x => x.TenantId == CurrentTenantId);
         });

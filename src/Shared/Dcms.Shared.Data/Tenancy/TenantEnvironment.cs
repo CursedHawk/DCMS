@@ -34,6 +34,17 @@ public sealed class TenantEnvironment : TenantEntity
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// When it could first be worked in; null while the copy it starts as is still being made, when
+    /// nothing may open it -- what someone changed there meanwhile, the copy would write over.
+    /// </summary>
+    public DateTimeOffset? ReadyAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>The copy's steps as it makes them (<c>EnvironmentSetup</c>), for whoever waits on it.</summary>
+    public string? SetupJson { get; set; }
+
+    public bool IsReady => ReadyAt is not null;
+
     public bool IsProduction => Id == TenantId;
 
     /// <summary>Act as this environment until disposed (<see cref="Rls.RlsScope.Environment"/>).</summary>

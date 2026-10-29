@@ -137,13 +137,21 @@ public sealed class EnvironmentMigrator(
     /// source, the source's history adopted as its own (what it applied is in the copy, so none of
     /// it is pending), and the copy as its baseline.
     /// </summary>
-    public async Task CopyAsync(TenantEnvironment target, TenantEnvironment sourceEnvironment, CancellationToken ct)
+    /// <summary>The kinds of configuration, in the order they are applied (and copied).</summary>
+    public IEnumerable<string> KindNames => _kinds.Select(k => k.Kind);
+
+    /// <param name="progress">Told (kind, items done, items of the kind, the item about to be copied) as the copy goes.</param>
+    public async Task CopyAsync(TenantEnvironment target, TenantEnvironment sourceEnvironment, CancellationToken ct,
+        Func<string, int, int, string?, Task>? progress = null)
     {
         var source = await ExportAsync(sourceEnvironment, ct);
         foreach (var kind in _kinds)
         {
-            foreach (var item in source[kind.Kind].Values.OrderBy(i => i.Key, StringComparer.Ordinal))
+            var ofKind = source[kind.Kind].Values.OrderBy(i => i.Key, StringComparer.Ordinal).ToList();
+            var done = 0;
+            foreach (var item in ofKind)
             {
+                if (progress is not null) await progress(kind.Kind, done++, ofKind.Count, item.Label ?? item.Key);
                 using var scope = target.Scope();
                 try
                 {
@@ -155,6 +163,7 @@ public sealed class EnvironmentMigrator(
                     throw new EnvironmentMigrationException("environments.errors.copyRemoved", $"{kind.Kind} '{item.Key}': {e.Message}");
                 }
             }
+            if (progress is not null) await progress(kind.Kind, ofKind.Count, ofKind.Count, null);
         }
 
         List<EnvironmentMigration> history;
