@@ -160,7 +160,7 @@ public sealed class EnvironmentMigrator(
                 catch (Exception e) when (e is not OperationCanceledException)
                 {
                     // Which item, in words the job can show: the source has something this one refuses.
-                    throw new EnvironmentMigrationException("environments.errors.copyRemoved", $"{kind.Kind} '{item.Key}': {e.Message}");
+                    throw new EnvironmentMigrationException("environments.errors.copyRemoved", $"{kind.Kind} '{item.Key}': {e.GetBaseException().Message}");
                 }
             }
             if (progress is not null) await progress(kind.Kind, ofKind.Count, ofKind.Count, null);

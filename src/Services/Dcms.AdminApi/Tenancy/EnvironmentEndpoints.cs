@@ -416,7 +416,8 @@ public static class EnvironmentEndpoints
         promotesFrom = e.PromotesFrom,
         forkedFrom = e.ForkedFrom,
         ready = e.IsReady,
-        setup = e.SetupJson is { } setup ? JsonSerializer.Deserialize<List<SetupStep>>(setup, EnvironmentSetupLog.Json) : null,
+        // The steps name what is being copied (roles, sites): only for someone who can open it.
+        setup = isMember && e.SetupJson is { } setup ? JsonSerializer.Deserialize<List<SetupStep>>(setup, EnvironmentSetupLog.Json) : null,
         mergesOwnChangesOnly = e.MergesOwnChangesOnly,
         deleteWhenMerged = e.DeleteWhenMerged,
         isMember,

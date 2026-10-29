@@ -46,7 +46,9 @@ public sealed class EnvironmentCopyJob(
         }
         catch (Exception failure) when (failure is not OperationCanceledException)
         {
-            var reason = failure is JobFailedException f ? f.Detail ?? f.ErrorKey : failure.Message;
+            // The innermost error: a database layer wraps the real one ("No space left on device")
+            // in "an exception ... likely due to a transient failure", which says nothing.
+            var reason = failure is JobFailedException f ? f.Detail ?? f.ErrorKey : failure.GetBaseException().Message;
             try
             {
                 await deleter.DeleteEnvironmentAsync(target.TenantId, target.Id, CancellationToken.None);

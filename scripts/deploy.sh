@@ -372,7 +372,33 @@ fi
 # Images
 # ---------------------------------------------------------------------------
 
+# Every deploy pulls each service by digest and nothing removed the previous one's: on vps1 653
+# images filled the disk (2026-10-29) and Postgres stopped writing in the middle of an environment
+# copy ("could not extend file: No space left on device"). So before pulling, every image no
+# container uses goes -- except the Mode B build sandbox, which no container holds between builds
+# and whose loss breaks every Mode B publish. A rollback re-pulls its digests from the registry.
+free_disk() {
+  local sandbox used id removed=0
+  sandbox=$(docker image inspect --format '{{.Id}}' "${DCMS_BUILD_SANDBOX_IMAGE:-dcms/site-build-sandbox:latest}" 2>/dev/null || true)
+  used=$(docker ps -a --format '{{.Image}}' | sort -u | while read -r ref; do
+    docker image inspect --format '{{.Id}}' "$ref" 2>/dev/null
+  done | sort -u)
+  for id in $(docker images -q --no-trunc | sort -u); do
+    [ -n "$sandbox" ] && [ "$id" = "$sandbox" ] && continue
+    grep -qxF "$id" <<<"$used" && continue
+    docker rmi -f "$id" >/dev/null 2>&1 && removed=$((removed + 1))
+  done
+  docker builder prune -f >/dev/null 2>&1 || true
+  echo "  removed $removed unused image(s); $(df -h / | awk 'NR==2 {print $4 " free of " $2}')"
+  # Less than 5 GB left after that is not images: say so where the deploy is read.
+  [ "$(df --output=avail -k / | tail -1)" -lt 5242880 ] && warn "under 5 GB free on / after removing unused images"
+  return 0
+}
+
 if [ "$DO_PULL" = 1 ]; then
+  log "Freeing disk"
+  free_disk
+
   log "Pulling images"
   if [ "$ROLL_ALL" = 1 ]; then
     compose pull --ignore-buildable
