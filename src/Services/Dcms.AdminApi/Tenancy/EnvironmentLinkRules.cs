@@ -129,12 +129,13 @@ public static class EnvironmentLinkRules
         db.EnvironmentLinks.IgnoreTenantFilter()
             .AnyAsync(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.App && l.TargetKey == slug, ct);
 
-    /// <summary>What a contracts link to an instance of <paramref name="pluginId"/> may grant: every operation of every contract it provides.</summary>
+    /// <summary>What a contracts link to an instance of <paramref name="pluginId"/> may grant: the operations its contracts offer to other environments (<see cref="OpExposure.Link"/>).</summary>
     public static IEnumerable<(string Grant, OpRisk Risk, string? Description)> Operations(PluginRegistry registry, string pluginId) =>
         registry.Contracts
             .Where(c => !c.Descriptor.IsPlatform && c.ProvidedBy(pluginId) is not null)
             .OrderBy(c => c.Descriptor.Name, StringComparer.Ordinal)
-            .SelectMany(c => c.Descriptor.Operations.Select(o => ($"{c.Descriptor.Name}/{o.Name}", o.Risk, o.Description)));
+            .SelectMany(c => c.Descriptor.Operations.Where(o => o.Expose.HasFlag(OpExposure.Link))
+                .Select(o => ($"{c.Descriptor.Name}/{o.Name}", o.Risk, o.Description)));
 
     /// <summary>A grant of the link's kind: <c>contract/Operation</c>, or <c>table:verb</c>.</summary>
     public static bool Grant(string kind, string grant)

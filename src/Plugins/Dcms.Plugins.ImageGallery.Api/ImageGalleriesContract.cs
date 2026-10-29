@@ -19,11 +19,11 @@ public sealed record GalleryUnpublished(Guid InstanceId, Guid ItemId, string Con
     Events = [typeof(GalleryPublished), typeof(GalleryUnpublished)])]
 public interface IImageGalleries
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published gallerys, newest first.")]
     Task<ContentPage<Gallery>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published gallery by slug.")]
     Task<ContentEntry<Gallery>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

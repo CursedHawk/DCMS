@@ -29,11 +29,11 @@ public sealed record FacebookPostUnpublished(Guid InstanceId, Guid ItemId, strin
 [DcmsContract("facebook.posts", 1, Description = "Posts mirrored from a connected Facebook Page.", Events = [typeof(FacebookPostPublished), typeof(FacebookPostUnpublished)])]
 public interface IFacebookPosts
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "Mirrored posts, newest first.")]
     Task<ContentPage<FacebookPost>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "One mirrored post by its Meta id.")]
     Task<ContentEntry<FacebookPost>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

@@ -129,6 +129,7 @@ public static class PluginReference
         if (expose.HasFlag(OpExposure.Site)) planes.Add("site");
         if (expose.HasFlag(OpExposure.Admin)) planes.Add("admin");
         if (expose.HasFlag(OpExposure.Ai)) planes.Add("ai");
+        if (expose.HasFlag(OpExposure.Link)) planes.Add("environments");
         return planes;
     }
 

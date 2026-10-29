@@ -18,11 +18,11 @@ public sealed record AudioTrackUnpublished(Guid InstanceId, Guid ItemId, string 
     Events = [typeof(AudioTrackPublished), typeof(AudioTrackUnpublished)])]
 public interface IAudioTracks
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published tracks, newest first.")]
     Task<ContentPage<AudioTrack>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published track by slug.")]
     Task<ContentEntry<AudioTrack>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

@@ -19,11 +19,11 @@ public sealed record RosterMemberUnpublished(Guid InstanceId, Guid ItemId, strin
     Events = [typeof(RosterMemberPublished), typeof(RosterMemberUnpublished)])]
 public interface IRosterMembers
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published members, newest first.")]
     Task<ContentPage<RosterMember>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published member by slug.")]
     Task<ContentEntry<RosterMember>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

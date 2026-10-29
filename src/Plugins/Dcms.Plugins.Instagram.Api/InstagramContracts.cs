@@ -29,11 +29,11 @@ public sealed record InstagramPostUnpublished(Guid InstanceId, Guid ItemId, stri
 [DcmsContract("instagram.posts", 1, Description = "Posts mirrored from a connected Instagram account.", Events = [typeof(InstagramPostPublished), typeof(InstagramPostUnpublished)])]
 public interface IInstagramPosts
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "Mirrored posts, newest first.")]
     Task<ContentPage<InstagramPost>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "One mirrored post by its Meta id.")]
     Task<ContentEntry<InstagramPost>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }
@@ -64,11 +64,11 @@ public sealed record InstagramReelUnpublished(Guid InstanceId, Guid ItemId, stri
 [DcmsContract("instagram.reels", 1, Description = "Reels mirrored from a connected Instagram account.", Events = [typeof(InstagramReelPublished), typeof(InstagramReelUnpublished)])]
 public interface IInstagramReels
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "Mirrored reels, newest first.")]
     Task<ContentPage<InstagramReel>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "One mirrored reel by its Meta id.")]
     Task<ContentEntry<InstagramReel>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

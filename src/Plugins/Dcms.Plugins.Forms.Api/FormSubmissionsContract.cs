@@ -37,11 +37,11 @@ public sealed record FormSubmitted(Guid SubmissionId, Guid InstanceId, string Fo
     Hooks = [typeof(FormSubmitting)])]
 public interface IFormSubmissions
 {
-    [Operation(OpRisk.Read, Permission = FormsPermissions.SubmissionsRead, Expose = OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Permission = FormsPermissions.SubmissionsRead, Expose = OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "Newest-first page of submissions, optionally for one form.")]
     Task<SubmissionPage> ListAsync(SubmissionQuery input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Permission = FormsPermissions.SubmissionsRead, Expose = OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Permission = FormsPermissions.SubmissionsRead, Expose = OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "One submission by id.")]
     Task<SubmissionSummary?> GetAsync(SubmissionRef input, CancellationToken ct);
 }

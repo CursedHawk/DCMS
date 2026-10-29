@@ -18,11 +18,11 @@ public sealed record DownloadFileUnpublished(Guid InstanceId, Guid ItemId, strin
     Events = [typeof(DownloadFilePublished), typeof(DownloadFileUnpublished)])]
 public interface IDownloadFiles
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published files, newest first.")]
     Task<ContentPage<DownloadFile>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published file by slug.")]
     Task<ContentEntry<DownloadFile>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

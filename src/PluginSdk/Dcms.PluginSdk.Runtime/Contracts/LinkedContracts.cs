@@ -88,6 +88,12 @@ public class LinkedContractProxy : DispatchProxy
         {
             throw new ContractAccessDeniedException("A call through an environment link cannot call through another.");
         }
+        // A grant made before the provider stopped offering the operation (or carried in by a
+        // deployment) still reaches only what it offers today.
+        if (_link.Kind == EnvironmentLinkKinds.Contracts && !op.Expose.HasFlag(OpExposure.Link))
+        {
+            throw new ContractAccessDeniedException($"{_descriptor.Name}/{op.Name} is not offered to other environments.");
+        }
         if (Grant(op.Name, args) is not { } grant || !_link.Grants.Contains(grant))
         {
             throw new ContractAccessDeniedException(

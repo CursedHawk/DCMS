@@ -36,6 +36,13 @@ public enum OpExposure
 
     /// <summary>Offered to AI agents as a tool (admin assistant; the site chatbot for read ops).</summary>
     Ai = 4,
+
+    /// <summary>
+    /// Callable from another environment of the workspace through a contracts link (ADR 0028).
+    /// Opt-in: what changes an environment's configuration belongs to deployments, and records to
+    /// tables links, so a provider offers here only what it means other environments to use.
+    /// </summary>
+    Link = 8,
 }
 
 /// <summary>

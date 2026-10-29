@@ -18,11 +18,11 @@ public sealed record VideoStreamUnpublished(Guid InstanceId, Guid ItemId, string
     Events = [typeof(VideoStreamPublished), typeof(VideoStreamUnpublished)])]
 public interface IVideoStreams
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published streams, newest first.")]
     Task<ContentPage<VideoStream>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published stream by slug.")]
     Task<ContentEntry<VideoStream>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

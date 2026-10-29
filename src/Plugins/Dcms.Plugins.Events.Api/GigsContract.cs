@@ -19,11 +19,11 @@ public sealed record GigUnpublished(Guid InstanceId, Guid ItemId, string Content
     Events = [typeof(GigPublished), typeof(GigUnpublished)])]
 public interface IGigs
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published gigs, newest first.")]
     Task<ContentPage<Gig>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published gig by slug.")]
     Task<ContentEntry<Gig>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

@@ -137,8 +137,12 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
         refused.GetProperty("run").GetProperty("status").GetString().Should().Be("failed");
         refused.GetProperty("run").GetProperty("error").GetString().Should().Contain("no link");
 
-        // Only operations billing's app really has.
+        // Only operations billing's app really has, and offers to other environments: never a
+        // Dynamic Apps model change or an all-table record write (production's crm, from billing).
         (await Link("blog.posts/Delete")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{billing}/links", app.Owner, app.Tenant,
+            body: new { kind = "contracts", targetEnvironmentId = production, targetKey = "crm", grants = new[] { "dynamic-apps.records/DeleteRecord" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await Link("forms.submissions/List")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         // A link granting List does not grant Get.

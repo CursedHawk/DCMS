@@ -18,11 +18,11 @@ public sealed record ArticleUnpublished(Guid InstanceId, Guid ItemId, string Con
     Events = [typeof(ArticlePublished), typeof(ArticleUnpublished)])]
 public interface IArticles
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published articles, newest first.")]
     Task<ContentPage<Article>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published article by slug.")]
     Task<ContentEntry<Article>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

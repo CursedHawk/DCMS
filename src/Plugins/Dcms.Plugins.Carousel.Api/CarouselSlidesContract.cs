@@ -18,11 +18,11 @@ public sealed record CarouselSlideUnpublished(Guid InstanceId, Guid ItemId, stri
     Events = [typeof(CarouselSlidePublished), typeof(CarouselSlideUnpublished)])]
 public interface ICarouselSlides
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "Published slides, newest first.")]
     Task<ContentPage<CarouselSlide>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         Description = "One published slide by slug.")]
     Task<ContentEntry<CarouselSlide>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }

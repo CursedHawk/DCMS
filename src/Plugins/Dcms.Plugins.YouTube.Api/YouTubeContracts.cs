@@ -33,11 +33,11 @@ public sealed record YouTubeVideoUnpublished(Guid InstanceId, Guid ItemId, strin
 [DcmsContract("youtube.videos", 1, Description = "Videos synced from a YouTube channel or playlist.", Events = [typeof(YouTubeVideoPublished), typeof(YouTubeVideoUnpublished)])]
 public interface IYouTubeVideos
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "Synced videos, newest first.")]
     Task<ContentPage<YouTubeVideo>> ListAsync(ContentPageRequest input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Admin | OpExposure.Ai | OpExposure.Link,
         ReturnsExternalText = true, Description = "One synced video by its YouTube id.")]
     Task<ContentEntry<YouTubeVideo>?> GetAsync(ContentSlugRequest input, CancellationToken ct);
 }
