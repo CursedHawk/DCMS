@@ -25,6 +25,10 @@ public static class PlatformContracts
         builder.AddPlatformContract<IPluginAi, PluginAi>();
         builder.AddPlatformContract<IPluginEvents, PluginEvents>();
         builder.AddPlatformContract<IPluginJobs, PluginJobs>();
+        // Git lives in admin-api, which registers the real dcms.repos@1 first (first registration
+        // wins); every other host keeps the id, so manifests and their RepoPushed subscriptions
+        // validate the same everywhere, and refuses the calls.
+        builder.AddPlatformContract<IPluginRepos, NoRepos>();
 
         if (plane == PluginPlane.Admin)
         {
@@ -37,6 +41,17 @@ public static class PlatformContracts
             builder.AddPlatformContract<IPluginSecrets, SitePlaneSecrets>();
         }
         return builder;
+    }
+
+    private sealed class NoRepos : IPluginRepos
+    {
+        private static InvalidOperationException Refused() =>
+            new("dcms.repos@1 is available in admin-api only, where git is.");
+
+        public Task<RepoInfo> EnsureAsync(RepoSetup input, CancellationToken ct) => throw Refused();
+        public Task<RepoInfo?> GetAsync(RepoQuery input, CancellationToken ct) => throw Refused();
+        public Task<RepoFiles> ReadFilesAsync(RepoFilesQuery input, CancellationToken ct) => throw Refused();
+        public Task<RepoHead> HeadAsync(RepoHeadQuery input, CancellationToken ct) => throw Refused();
     }
 
     private sealed class SitePlaneSecrets : IPluginSecrets

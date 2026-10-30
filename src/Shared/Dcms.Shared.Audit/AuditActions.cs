@@ -152,6 +152,14 @@ public static class AuditActions
     public const string GitMerged = "git.merged";
     public const string GitMergeResolved = "git.merge.resolved";
     public const string GitRestored = "git.restored";
+
+    // A plugin's repository in the IDE (ADR 0029): the same operations as a site's, told apart.
+    public const string RepoFilesChanged = "repo.files.changed";
+    public const string RepoCommitted = "repo.committed";
+    public const string RepoBranchCreated = "repo.branch.created";
+    public const string RepoMerged = "repo.merged";
+    public const string RepoMergeResolved = "repo.merge.resolved";
+    public const string RepoRestored = "repo.restored";
     public const string GitPushReceived = "git.push.received";
     public const string GitRepoDeleted = "git.repo.deleted";
     public const string GitCollaboratorChanged = "git.collaborator.changed";

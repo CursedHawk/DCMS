@@ -1,5 +1,7 @@
 using Dcms.Plugins.Functions.Api;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 
 namespace Dcms.Plugins.Functions;
 
@@ -53,6 +55,11 @@ public sealed class FunctionsPlugin : IPlugin
                 "Create and revoke the keys outside callers use to invoke functions."),
             new PermissionDefinition("secrets", "Manage secrets",
                 "Set the secret values functions read. A value can be replaced, never read back."),
+        ],
+        consumes:
+        [
+            // The instance's code: one repository per environment, edited in the web IDE.
+            ContractRequirement.Of<IPluginRepos>(),
         ],
         adminScreens:
         [

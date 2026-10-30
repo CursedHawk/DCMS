@@ -20,6 +20,7 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
     public DbSet<SiteBuild> Builds => Set<SiteBuild>();
     public DbSet<SiteDraft> Drafts => Set<SiteDraft>();
     public DbSet<SitePublishBranch> PublishBranches => Set<SitePublishBranch>();
+    public DbSet<RepoBinding> RepoBindings => Set<RepoBinding>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -61,6 +62,23 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.HasIndex(b => new { b.SiteId, b.CreatedAt });
             e.HasQueryFilter(QueryFilters.Tenant, b => b.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, b => CurrentEnvironmentId == null || b.EnvironmentId == CurrentEnvironmentId);
+        });
+
+        builder.Entity<RepoBinding>(e =>
+        {
+            e.ToTable("repo_bindings");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.PluginId).HasMaxLength(64);
+            e.Property(r => r.RepoFullName).HasMaxLength(256);
+            e.Property(r => r.DefaultBranch).HasMaxLength(256);
+            e.Property(r => r.ReadPermission).HasMaxLength(128);
+            e.Property(r => r.EditPermission).HasMaxLength(128);
+            e.Property(r => r.PublishPermission).HasMaxLength(128);
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId }).IsUnique();
+            // The webhook finds a push's owner by repository, across tenants.
+            e.HasIndex(r => r.RepoFullName).IsUnique();
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<SiteDraft>(e =>

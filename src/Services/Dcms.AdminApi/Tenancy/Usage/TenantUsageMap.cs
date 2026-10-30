@@ -60,6 +60,7 @@ public static class TenantUsageMap
             [("sites", "sites")] = new("sites", "definitions"),
             [("sites", "site_builds")] = new("sites", "definitions"),
             [("sites", "site_drafts")] = new("sites", "definitions"),
+            [("sites", "repo_bindings")] = new("plugins", "", Group: "x.\"PluginId\""),
             [("sites", "site_publish_branches")] = new("sites", "definitions"),
             [("ai", "tenant_ai_settings")] = new("ai", "assistant"),
             [("ai", "user_ai_settings")] = new("ai", "assistant"),

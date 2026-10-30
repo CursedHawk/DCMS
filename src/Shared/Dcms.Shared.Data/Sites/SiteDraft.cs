@@ -10,6 +10,7 @@ namespace Dcms.Shared.Data.Sites;
 /// </summary>
 public sealed class SiteDraft : EnvironmentEntity
 {
+    /// <summary>The workspace: a site's id, or a plugin repository's <see cref="RepoBinding"/> id (ADR 0029).</summary>
     public Guid SiteId { get; set; }
 
     /// <summary>The editing user (<c>CurrentUser.UserId</c>). Each user has their own draft.</summary>

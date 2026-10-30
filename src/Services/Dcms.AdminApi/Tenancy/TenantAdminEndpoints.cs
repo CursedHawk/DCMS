@@ -493,6 +493,20 @@ public sealed class TenantDeleter(
             await siteDeleter.DeleteAsync(siteId, ct);
         }
 
+        // Plugin repositories (ADR 0029): the environment's own, its drafts, then the bindings.
+        // Forgejo first and best effort, as for sites: a leaked repository is recoverable by
+        // hand, a binding pointing at nothing is not.
+        var bindings = await sites.RepoBindings.IgnoreTenantFilter().AsNoTracking()
+            .Where(r => r.TenantId == tenantId).Select(r => new { r.Id, r.RepoFullName }).ToListAsync(ct);
+        foreach (var binding in bindings)
+        {
+            try { await git.DeleteRepoAsync(binding.RepoFullName, ct); } catch { /* best effort, as above */ }
+        }
+        var bindingIds = bindings.Select(b => b.Id).ToList();
+        await SweepAsync(sites, manifest, ct,
+            ("sites.RepoDrafts", () => sites.Drafts.IgnoreTenantFilter().Where(d => d.TenantId == tenantId && bindingIds.Contains(d.SiteId)).ExecuteDeleteAsync(ct)),
+            ("sites.RepoBindings", () => sites.RepoBindings.IgnoreTenantFilter().Where(r => r.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+
         // Children before parents within each schema: these are ExecuteDelete calls
         // issued straight to the database, so EF's cascade ordering does not apply.
         // Each schema gets its own transaction — they are separate DbContexts and

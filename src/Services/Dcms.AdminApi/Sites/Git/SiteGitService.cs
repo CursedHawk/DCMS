@@ -29,12 +29,17 @@ public sealed partial class SiteGitService(
 
     /// <summary>Ensure the tenant org and site repo exist, seeding <paramref name="files"/>
     /// as the initial commit when the repo is freshly created. Returns the repo mapping.</summary>
-    public async Task<SiteRepoInfo> EnsureRepoAsync(
+    public Task<SiteRepoInfo> EnsureRepoAsync(
         string tenantSlug, Guid siteId, IReadOnlyDictionary<string, string> files,
+        string? authorName, string? authorEmail, CancellationToken ct) =>
+        EnsureRepoAsync(tenantSlug, RepoFor(siteId), files, authorName, authorEmail, ct);
+
+    /// <summary>The same for any repository in the tenant's org: a plugin's (ADR 0029) as much as a site's.</summary>
+    public async Task<SiteRepoInfo> EnsureRepoAsync(
+        string tenantSlug, string repo, IReadOnlyDictionary<string, string> files,
         string? authorName, string? authorEmail, CancellationToken ct)
     {
         var org = OrgFor(tenantSlug);
-        var repo = RepoFor(siteId);
 
         await forgejo.EnsureOrgAsync(org, ct);
 
@@ -59,7 +64,7 @@ public sealed partial class SiteGitService(
         catch (Exception ex) { logger.LogWarning(ex, "Webhook registration failed for {Repo}", $"{org}/{repo}"); }
 
         var head = await forgejo.GetBranchHeadAsync(org, repo, DefaultBranch, ct);
-        logger.LogInformation("Provisioned site repo {Repo} (head {Head})", $"{org}/{repo}", head);
+        logger.LogInformation("Provisioned repo {Repo} (head {Head})", $"{org}/{repo}", head);
         return new SiteRepoInfo(
             $"{org}/{repo}", DefaultBranch, head,
             forgejo.HttpCloneUrl(org, repo), forgejo.SshCloneUrl(org, repo));
