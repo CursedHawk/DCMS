@@ -54,6 +54,11 @@ export function defineFunction(spec) {
   return spec;
 }
 
+/** An HTTP answer of the function's own; anything else it returns is sent as JSON with 200. */
+export function respond(status, body, headers) {
+  return { $response: { status, body: body ?? null, headers: headers ?? {} } };
+}
+
 const rowEvent = (table, event) => (options = {}) => ({ kind: "row", table, event, ...options });
 
 /** Triggers, as data: the build reads them, the host routes on them. */

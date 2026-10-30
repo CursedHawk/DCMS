@@ -66,6 +66,13 @@ public static class DcmsOAuth
         public const string Social = "dcms.social";
 
         /// <summary>
+        /// content-api → admin-api, to invoke a tenant's HTTP functions (ADR 0029). The admin-api
+        /// resource and its own scope, as <see cref="Social"/>: the broker runs where secrets
+        /// can be decrypted, and this token opens that one endpoint and nothing else.
+        /// </summary>
+        public const string Functions = "dcms.functions";
+
+        /// <summary>
         /// The platform console → platform-api. Its own resource, so a console token is not
         /// interchangeable with an admin SPA token: the console holds the platform's delete
         /// buttons, and a scope that also validated against admin-api would make "this token

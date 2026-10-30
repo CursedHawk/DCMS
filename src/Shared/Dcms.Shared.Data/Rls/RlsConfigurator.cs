@@ -132,6 +132,7 @@ public static class RlsConfigurator
         // Functions (ADR 0029): each instance's builds and what runs.
         ("functions", "deployments"),
         ("functions", "runs"),
+        ("functions", "api_keys"),
         // User Authentication (ADR 0022): the access policy over each tenant's realm.
         ("userauth", "roles"),
         ("userauth", "grants"),
@@ -195,6 +196,7 @@ public static class RlsConfigurator
         ("apps", "site_view_defaults"),
         ("functions", "deployments"),
         ("functions", "runs"),
+        ("functions", "api_keys"),
         ("userauth", "roles"),
         ("userauth", "grants"),
         ("userauth", "gates"),

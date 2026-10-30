@@ -9,6 +9,7 @@ using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.Forms.Api;
 using Dcms.Plugins.UserAuth.Api;
 using Dcms.Plugins.VisitorAuth.Api;
+using Dcms.Plugins.Functions.Http;
 using Dcms.Plugins.Functions.Runtime;
 using Dcms.Shared.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -80,9 +81,18 @@ public sealed class FunctionsPlugin : IPlugin
             ContractRequirement.Of<IFormSubmissions>(optional: true),
             ContractRequirement.Of<IVisitorProfiles>(optional: true),
             ContractRequirement.Of<IUserDirectory>(optional: true),
+            // HTTP: who the signed-in site user is, whether a role grants them a function, and the throttle.
+            ContractRequirement.Of<IUserIdentity>(optional: true),
+            ContractRequirement.Of<IUserAccess>(optional: true),
+            ContractRequirement.Of<IPluginCache>(),
         ],
-        // Every app's committed row and relation events reach the functions triggered by them.
-        provides: [ContractProvision.Of<IAppEventSink, AppEventSink>()],
+        provides:
+        [
+            // Every app's committed row and relation events reach the functions triggered by them.
+            ContractProvision.Of<IAppEventSink, AppEventSink>(),
+            // Functions whose access names "role", for the roles screen to grant.
+            ContractProvision.Of<IUserResources, FunctionUserResources>(),
+        ],
         jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name), JobDeclaration.Of<RunJob>(RunJob.Name)],
         subscribes:
         [
@@ -106,8 +116,16 @@ public sealed class FunctionsPlugin : IPlugin
     {
         if (!host.IsAdmin)
         {
+            // The site plane forwards HTTP calls to admin-api, where the broker runs.
+            services.AddHttpClient(SiteEndpoints.HttpClientName, client =>
+            {
+                client.BaseAddress = new Uri(host.Configuration["Services:AdminApi"] ?? "http://localhost:5002");
+                // An HTTP run is at most 30 s; the rest is the hop.
+                client.Timeout = TimeSpan.FromSeconds(40);
+            });
             return;
         }
+        services.AddScoped<ApiKeyService>();
         services.AddScoped<DeploymentService>();
         // Builds: the files go to script-runner, which type-checks and bundles them (ADR 0029).
         // Reachable only from the brokers' own network; a cold type check takes seconds.
@@ -146,6 +164,18 @@ public sealed class FunctionsPlugin : IPlugin
                 handler.AllowAutoRedirect = false;
                 return handler;
             });
+    }
+
+    /// <summary>Site plane: <c>/api/{slug}/fn/{function}</c>.</summary>
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) => SiteEndpoints.Map(endpoints);
+
+    /// <summary>Admin plane, the one route content-api forwards HTTP calls to.</summary>
+    public void MapHostEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder app, PluginHost host)
+    {
+        if (host.IsAdmin)
+        {
+            InvokeEndpoint.Map(app);
+        }
     }
 
     /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/_functions/…</c>.</summary>

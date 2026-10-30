@@ -149,6 +149,8 @@ public sealed class IdentitySeeder(
         await EnsureScopeAsync(
             manager, DcmsOAuth.Scopes.Social, "DCMS Social (service)", DcmsOAuth.Resources.AdminApi, ct);
         await EnsureScopeAsync(
+            manager, DcmsOAuth.Scopes.Functions, "DCMS Functions (service)", DcmsOAuth.Resources.AdminApi, ct);
+        await EnsureScopeAsync(
             manager, DcmsOAuth.Scopes.Platform, "DCMS Platform Console", DcmsOAuth.Resources.PlatformApi, ct);
         // Same resource as dcms.admin -- admin-api answers -- and its own scope, so the token
         // platform-api carries is only good for the endpoints that named it.
@@ -236,7 +238,7 @@ public sealed class IdentitySeeder(
             DcmsOAuth.Clients.AdminApiService,
             "DCMS Admin API (service)",
             configuration["Identity:AdminApiService:Secret"] ?? "dcms-admin-api-dev-secret",
-            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social],
+            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social, DcmsOAuth.Scopes.Functions],
             ct);
 
         // admin-api → the realm admin API. Its own client, so the scope is not in the hands of

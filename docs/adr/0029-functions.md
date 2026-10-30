@@ -121,6 +121,15 @@ Functions are called at `GET|POST /api/{instance}/fn/{function}` on the site pla
 - API keys are scoped to the instance, stored hashed, per environment, and shown once.
 - content-api authenticates the caller and rate-limits the request, then forwards it to admin-api's internal invoke, where the broker runs. Secrets and Transit decryption stay out of the internet-facing service.
 
+As built (F7):
+- `access.http` takes `public`, `user` (anyone signed in to the realm), `role` and `apiKey`. `role` follows Dynamic Apps' manual flows: Functions offers each such function to the roles screen as resource `fn:{name}`, action `invoke` (`users.resources@1`). content-api asks `users.access@1` whether the user holds it.
+- content-api throttles (120 calls a minute per address, 3,000 per app), caps the body at 1 MiB, and passes on only safe headers. It forwards the caller as it found them, the raw `X-Api-Key` included, to `/api/internal/functions/invoke`. That route accepts only a client-credentials token with the `dcms.functions` scope (`ServicePrincipalGuard`). The access decision and the key check happen there, against the live deployment.
+- Keys are `dfk_` plus 32 random bytes. They are found by a 12-character prefix and compared by SHA-256 in constant time, and may be limited to named functions.
+- A function's input is a POST's body, else the query. It answers with any JSON (200), or with `respond(status, body, headers)`, whose headers are limited to an allowlist (no cookies or CORS). A function that fails answers 500 with no detail, and its run is recorded. Successful HTTP runs are not recorded, so a public endpoint cannot flood the history.
+- `?async=1` enqueues the run as a tracked job and answers 202 with its id.
+- At most 4 HTTP runs per tenant at once on a replica; past that, 503.
+- Not yet: HTTP functions in the tenant's OpenAPI document. content-api cannot read deployments, so this needs its own read path.
+
 ### No third-party imports in v1
 
 A function imports only:

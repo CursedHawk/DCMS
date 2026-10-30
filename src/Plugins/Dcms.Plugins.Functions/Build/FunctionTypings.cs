@@ -38,9 +38,13 @@ public static class FunctionTypings
           event(name: "form.submitted" | "visitor.registered" | "user.invited" | "user.activated"): Trigger;
         };
 
-        /** Who may call it over HTTP, GET or POST /api/{app}/fn/{name}. Without it, it is not callable over HTTP. */
+        /**
+         * Who may call it over HTTP, GET or POST /api/{app}/fn/{name}. Without it, it is not callable over HTTP.
+         * "public": anyone. "user": anyone signed in to the site. "role": site users a role grants
+         * "invoke" on this function (Users → Roles). "apiKey": callers presenting one of this app's keys in X-Api-Key.
+         */
         export interface Access {
-          http?: Array<"public" | "user" | "apiKey" | `role:${string}`>;
+          http?: Array<"public" | "user" | "role" | "apiKey">;
         }
 
         /** Everything the function may reach. Whatever is not here is refused at run time. */
@@ -176,6 +180,9 @@ public static class FunctionTypings
         }
 
         export declare function defineFunction<I = Json, O = unknown>(spec: FunctionSpec<I, O>): FunctionSpec<I, O>;
+
+        /** An HTTP answer of your own: return respond(201, body, headers). Any other return value is sent as JSON with 200. */
+        export declare function respond(status: number, body?: Json | string, headers?: Record<string, string>): HttpResponse;
 
         """;
 

@@ -1,5 +1,6 @@
 using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Deploy;
+using Dcms.Plugins.Functions.Http;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using System.Text.Json.Nodes;
@@ -70,6 +71,23 @@ internal static class AdminEndpoints
                     ? Results.Ok(run)
                     : Results.NotFound(new { error = $"There is no run {id}." })))
             .RequirePluginPermission("logs");
+
+        // API keys: the secret is in the answer to the create, once, and stored only as its hash.
+        endpoints.MapGet("/_functions/keys", (ApiKeyService keys, CancellationToken ct) =>
+                Run(async () => Results.Ok(await keys.ListAsync(ct))))
+            .RequirePluginPermission("keys");
+
+        endpoints.MapPost("/_functions/keys", (CreateApiKey body, ApiKeyService keys, CancellationToken ct) =>
+                Run(async () => Results.Ok(await keys.CreateAsync(body, ct))))
+            .RequirePluginPermission("keys")
+            .AuditAs("key.created");
+
+        endpoints.MapDelete("/_functions/keys/{id:guid}", (Guid id, ApiKeyService keys, CancellationToken ct) =>
+                Run(async () => await keys.RevokeAsync(id, ct)
+                    ? Results.NoContent()
+                    : Results.NotFound(new { error = $"There is no key {id}." })))
+            .RequirePluginPermission("keys")
+            .AuditAs("key.revoked");
 
         // Runs a function now: the live deployment, or a built one tried before deploying it,
         // which needs what deploying it would. Either way it acts, so only deployers may.

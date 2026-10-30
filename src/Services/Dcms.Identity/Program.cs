@@ -215,7 +215,7 @@ builder.Services
         // is trying to sign in. dcms.platform shipped in the seeder and not here once already.
         options.RegisterScopes(
             Scopes.Email, Scopes.Profile, Scopes.Roles,
-            DcmsOAuth.Scopes.Admin, DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social,
+            DcmsOAuth.Scopes.Admin, DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social, DcmsOAuth.Scopes.Functions,
             DcmsOAuth.Scopes.Platform, DcmsOAuth.Scopes.Console, DcmsOAuth.Scopes.Realms);
 
         // A fixed issuer keeps tokens valid regardless of which host reaches the

@@ -154,6 +154,31 @@ public sealed class FunctionRun : EnvironmentEntity
     public DateTimeOffset? FinishedAt { get; set; }
 }
 
+/// <summary>
+/// A key outside callers present to invoke an instance's HTTP functions (<c>X-Api-Key</c>), in
+/// one environment. Only its hash is kept: the key itself is shown once, when it is made.
+/// </summary>
+[Audited("function_api_key", LabelProperty = nameof(Name))]
+public sealed class FunctionApiKey : EnvironmentEntity
+{
+    public Guid InstanceId { get; set; }
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The key's first characters, to find it by and to recognise it in a list.</summary>
+    public string Prefix { get; set; } = string.Empty;
+
+    /// <summary>SHA-256 of the whole key, hex.</summary>
+    [AuditSensitive]
+    public string Hash { get; set; } = string.Empty;
+
+    /// <summary>The functions it may invoke; empty for every HTTP function that accepts keys.</summary>
+    public List<string> Functions { get; set; } = [];
+
+    public string? CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
 /// <summary>Owns the "functions" schema: the Functions plugin's deployments and runs (ADR 0029).</summary>
 public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : ScopedDbContext(options)
 {
@@ -164,6 +189,7 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
 
     public DbSet<FunctionDeployment> Deployments => Set<FunctionDeployment>();
     public DbSet<FunctionRun> Runs => Set<FunctionRun>();
+    public DbSet<FunctionApiKey> ApiKeys => Set<FunctionApiKey>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -192,6 +218,20 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
                 .HasDatabaseName("IX_deployments_active");
             e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
+        });
+
+        builder.Entity<FunctionApiKey>(e =>
+        {
+            e.ToTable("api_keys");
+            e.HasKey(k => k.Id);
+            e.Property(k => k.Name).HasMaxLength(100).IsRequired();
+            e.Property(k => k.Prefix).HasMaxLength(16).IsRequired();
+            e.Property(k => k.Hash).HasMaxLength(64).IsRequired();
+            e.Property(k => k.CreatedBy).HasMaxLength(128);
+            e.HasIndex(k => k.Prefix).IsUnique();
+            e.HasIndex(k => new { k.TenantId, k.EnvironmentId, k.InstanceId });
+            e.HasQueryFilter(QueryFilters.Tenant, k => k.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, k => CurrentEnvironmentId == null || k.EnvironmentId == CurrentEnvironmentId);
         });
 
         builder.Entity<FunctionRun>(e =>

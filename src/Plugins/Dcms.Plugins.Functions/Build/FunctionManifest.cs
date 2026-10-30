@@ -56,9 +56,6 @@ public static partial class FunctionManifest
     [GeneratedRegex(@"^[A-Z_][A-Z0-9_]{0,63}$")]
     private static partial Regex SecretName();
 
-    [GeneratedRegex(@"^role:[A-Za-z0-9 _.-]{1,64}$")]
-    private static partial Regex Role();
-
     [GeneratedRegex(@"^(\d{1,4})(m|h|d)$")]
     private static partial Regex Interval();
 
@@ -167,13 +164,13 @@ public static partial class FunctionManifest
             Known(access, problems, "access.", "http");
             foreach (var who in Strings(access["http"], 10, "access.http", problems))
             {
-                if (who is "public" or "user" or "apiKey" || Role().IsMatch(who))
+                if (who is "public" or "user" or "role" or "apiKey")
                 {
                     http.Add(who);
                 }
                 else
                 {
-                    problems.Add($"access.http: '{who}' is not \"public\", \"user\", \"apiKey\" or \"role:<name>\".");
+                    problems.Add($"access.http: '{who}' is not \"public\", \"user\", \"role\" or \"apiKey\".");
                 }
             }
         }
