@@ -15,13 +15,20 @@ namespace Dcms.Plugins.DynamicApps.Ai;
 internal sealed class AutomationRecords : IDynamicAppsAutomation
 {
     private readonly RecordService _records;
+    private readonly ConfigurationService _config;
 
     public AutomationRecords(IServiceProvider services, IPluginContext context)
     {
         var events = ActivatorUtilities.CreateInstance<AppEventLog>(services, context);
         var models = ActivatorUtilities.CreateInstance<RuntimeModelProvider>(services, context);
         _records = ActivatorUtilities.CreateInstance<RecordService>(services, context, models, events);
+        _config = ActivatorUtilities.CreateInstance<ConfigurationService>(services, context, events);
     }
+
+    public async Task<AppModel?> ModelAsync(CancellationToken ct) =>
+        await _config.GetPublishedAsync(ct) is { Config: var c }
+            ? new AppModel(c.Tables.Where(t => t.Enabled).ToList(), c.Relationships, c.ChoiceSets)
+            : null;
 
     public Task<RecordPage> QueryAsync(TableQuery input, CancellationToken ct) =>
         Guarded(() => _records.QueryAsync(input.Table, input.Query ?? new RecordQuery(), RecordPlane.System, ct));

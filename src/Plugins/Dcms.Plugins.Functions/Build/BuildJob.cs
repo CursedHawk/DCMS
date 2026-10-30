@@ -20,7 +20,7 @@ public sealed record BuildPayload(string Sha);
 /// who holds what it uses to deploy it; a bad one is <c>Failed</c> with every problem's file and
 /// line. Either way the job succeeds: the outcome is the deployment's, not the worker's.
 /// </summary>
-public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, ILogger<BuildJob> logger) : IPluginJobHandler
+public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, SdkTypings sdk, ILogger<BuildJob> logger) : IPluginJobHandler
 {
     public const string Name = "build";
     public const string HttpClientName = "functions-script-runner";
@@ -71,7 +71,7 @@ public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, ILo
         try
         {
             var files = await context.Contracts.Get<IPluginRepos>().ReadFilesAsync(new RepoFilesQuery(sha, instance.InstanceId), ct);
-            var built = await BuildAsync(files.Files, FunctionTypings.Generate(), ct);
+            var built = await BuildAsync(files.Files, await sdk.GenerateAsync(ct), ct);
             if (!built.Ok)
             {
                 Fail(deployment, built.Diagnostics);

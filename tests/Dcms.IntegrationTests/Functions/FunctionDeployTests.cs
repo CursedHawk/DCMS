@@ -180,13 +180,23 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
                 [{ "op": "create", "type": "table", "value": { "apiName": "companies", "displayName": "Company", "primaryFieldId": "name",
                    "fields": [ { "apiName": "name", "displayName": "Name", "required": true } ] } },
                  { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal",
-                   "fields": [ { "apiName": "title", "displayName": "Title" } ] } }]
+                   "fields": [ { "apiName": "title", "displayName": "Title" } ] } },
+                 { "op": "create", "type": "relationship", "value": { "apiName": "deal", "sourceTableId": "companies",
+                   "targetTableId": "deals", "inverseApiName": "companies", "onDelete": "restrict" } }]
                 """).RootElement,
         }), ct), ct);
         await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", slug, owner,
             new { expectedHash = draft.GetProperty("draft").GetProperty("hash").GetString() }), ct), ct);
         (await host.Services.GetRequiredService<PluginHandlerRunner>().RunAsync(tenantId, "functions", instanceId, (ctx, _) =>
             ctx.Contracts.Get<IPluginSecrets>().SetAsync(new SetSecret("STRIPE_KEY", "sk_test_1", instanceId), ct), ct)).Should().BeTrue();
+
+        // The SDK the editor and the build check against: this environment's tables, typed.
+        var sdk = await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk.d.ts", slug, owner), ct);
+        var typings = await sdk.Content.ReadAsStringAsync(ct);
+        typings.Should().Contain("export interface CrmCompaniesRow").And.Contain("companies: Table<CrmCompaniesRow>");
+        var unchanged = Req(HttpMethod.Get, $"{api}/sdk.d.ts", slug, owner);
+        unchanged.Headers.TryAddWithoutValidation("If-None-Match", sdk.Headers.ETag!.ToString());
+        (await client.SendAsync(unchanged, ct)).StatusCode.Should().Be(HttpStatusCode.NotModified);
 
         var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
         var at = $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}";
@@ -195,22 +205,28 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
             ["functions/onboard.ts"] = """
                 import { defineFunction } from "@dcms/functions";
                 export default defineFunction({
-                  uses: { tables: { "crm.companies": ["read", "create"] }, secrets: ["STRIPE_KEY"], egress: ["api.example.com"] },
+                  uses: { tables: { "crm.companies": ["read", "create"] }, secrets: ["STRIPE_KEY"], egress: ["api.example.com"],
+                          contracts: ["dynamic-apps.records@1"] },
                   async handler(input: { name: string }, ctx) {
-                    const db = ctx.db as any; // typed tables arrive with the generated SDK
+                    const db = ctx.db; // generated: crm.companies and crm.deals, typed
                     const created = await db.crm.companies.create({ name: input.name });
+                    const typed: string | null = created.name;
                     const count = await db.crm.companies.count();
                     const key = await ctx.secrets.get("STRIPE_KEY");
                     const reply = await ctx.http.fetch("https://api.example.com/ping", { headers: { authorization: `Bearer ${key}` } });
                     const doubled = await ctx.functions.invoke<number>("double", { n: count });
                     const job = await ctx.jobs.enqueue("double", { n: 1 }, { dedupeKey: "once" });
+                    const viaContract = await ctx.plugins.crm.dynamicAppsRecords.getRecord({ table: "companies", id: created.id });
                     const refusals: string[] = [];
                     for (const attempt of [() => db.crm.deals.find(), () => db.crm.companies.delete(created.id),
-                                           () => ctx.http.fetch("https://evil.example.org/"), () => ctx.secrets.get("OTHER")]) {
+                                           () => ctx.http.fetch("https://evil.example.org/"), () => ctx.secrets.get("OTHER"),
+                                           () => db.crm.companies.find({ expand: ["deal"] }),
+                                           () => db.crm.companies.count({ field: "deal.title", op: "eq", value: "x" }),
+                                           () => ctx.plugins.crm.dynamicAppsConfig.getSummary({})]) {
                       try { await attempt(); refusals.push("allowed"); } catch (e) { refusals.push((e as Error).message); }
                     }
                     ctx.log.info("created", created.name);
-                    return { name: created.name, count, status: reply.status, pong: await reply.text(), doubled, job: job.id, refusals };
+                    return { name: created.name, count, status: reply.status, pong: await reply.text(), doubled, job: job.id, viaContract: viaContract?.name ?? null, refusals };
                   },
                 });
                 """,
@@ -245,8 +261,18 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         refusals[1].Should().Contain("\"delete\"");
         refusals[2].Should().Contain("uses.egress");
         refusals[3].Should().Contain("uses.secrets");
+        refusals[4].Should().Contain("Following companies.deal reads deals", "a lookup leads into another table");
+        refusals[5].Should().Contain("Following companies.deal reads deals");
+        refusals[6].Should().Contain("uses.contracts: [\"dynamic-apps.config@1\"]");
+        result.GetProperty("viaContract").GetString().Should().Be("Acme", "a declared contract runs with the vouched permissions");
         run.GetProperty("logs").GetString().Should().Contain("[info] created Acme");
         _egress.Requests.Should().ContainSingle().Which.Should().Be("https://api.example.com/ping");
+
+        // Running it acts with what it was vouched for, which the deploy permission alone is not.
+        var deployer = await SeedRoleAsync(tenantId, ["plugin:functions:read", "plugin:functions:deploy"], ct);
+        var refused = await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, deployer, new { function = "double", input = new { n = 1 } }), ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await refused.Content.ReadAsStringAsync(ct)).Should().Contain("plugin:dynamic-apps:data-read");
 
         // jobs.enqueue: a tracked run of the live deployment, once per dedupe key.
         await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
@@ -363,6 +389,35 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         var res = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", slug, Guid.Empty,
             new { pluginId = "functions", slug = "fn", name = "Functions" }, superAdmin: true), ct);
         return (await Json(res, ct)).GetProperty("id").GetGuid();
+    }
+
+    /// <summary>A member of a custom role holding exactly <paramref name="permissions"/>.</summary>
+    private async Task<Guid> SeedRoleAsync(Guid tenantId, string[] permissions, CancellationToken ct)
+    {
+        var userId = Guid.NewGuid();
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var insert = conn.CreateCommand();
+        insert.CommandText = """
+            WITH role AS (
+                INSERT INTO tenancy.tenant_roles ("Id", "TenantId", "EnvironmentId", "Name", "IsSystem")
+                VALUES (gen_random_uuid(), @tenant, @tenant, @name, false) RETURNING "Id"),
+            grants AS (
+                INSERT INTO tenancy.tenant_role_permissions ("Id", "TenantId", "EnvironmentId", "TenantRoleId", "Permission")
+                SELECT gen_random_uuid(), @tenant, @tenant, role."Id", p FROM role, unnest(@permissions) AS p),
+            membership AS (
+                INSERT INTO tenancy.tenant_memberships ("Id", "TenantId", "UserId", "Email", "CreatedAt")
+                VALUES (gen_random_uuid(), @tenant, @user, @email, now()) RETURNING "Id")
+            INSERT INTO tenancy.member_roles ("Id", "TenantId", "EnvironmentId", "MembershipId", "TenantRoleId")
+            SELECT gen_random_uuid(), @tenant, @tenant, membership."Id", role."Id" FROM membership, role;
+            """;
+        insert.Parameters.AddWithValue("tenant", tenantId);
+        insert.Parameters.AddWithValue("name", "Custom " + userId.ToString("N")[..6]);
+        insert.Parameters.AddWithValue("permissions", permissions);
+        insert.Parameters.AddWithValue("user", userId);
+        insert.Parameters.AddWithValue("email", $"custom-{userId:N}@dcms.test");
+        await insert.ExecuteNonQueryAsync(ct);
+        return userId;
     }
 
     private async Task<Guid> SeedMemberAsync(Guid tenantId, string roleName, CancellationToken ct)

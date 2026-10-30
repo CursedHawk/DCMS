@@ -11,7 +11,8 @@ public static class FunctionTypings
 {
     /// <param name="database">The members of <c>Database</c>; empty until the workspace's tables are generated in.</param>
     /// <param name="plugins">The members of <c>Plugins</c>, likewise.</param>
-    public static string Generate(string database = "", string plugins = "") => $$"""
+    /// <param name="declarations">Top-level declarations those members use: each table's record interface.</param>
+    public static string Generate(string database = "", string plugins = "", string declarations = "") => $$"""
         // @dcms/functions — generated for this workspace's environment. Do not edit: it is rebuilt.
 
         export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -83,6 +84,57 @@ public static class FunctionTypings
           body?: Json | string;
         }
 
+        /** A condition on records: a field (or one lookup away, "company.name") compared, or conditions combined. */
+        export type Filter<R> =
+          | { field: (keyof R & string) | `${string}.${string}`; op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "nin" | "contains" | "startsWith" | "isNull"; value?: Json }
+          | { and: Filter<R>[] }
+          | { or: Filter<R>[] }
+          | { not: Filter<R> };
+
+        export interface Query<R> {
+          filter?: Filter<R>;
+          sort?: Array<{ field: keyof R & string; direction?: "asc" | "desc" }>;
+          /** Free text over the table's searchable fields. */
+          search?: string;
+          /** The fields to return; id and version always come back. */
+          select?: Array<keyof R & string>;
+          /** Lookups to return as the record they point at; the target table must be in uses.tables too. */
+          expand?: string[];
+          page?: number;
+          /** At most 200. */
+          pageSize?: number;
+        }
+
+        export interface Page<R> {
+          items: R[];
+          /** Counted up to 5,000; totalCapped says when it stopped. */
+          total: number;
+          page: number;
+          pageSize: number;
+          totalCapped: boolean;
+        }
+
+        type Values<R> = Partial<Omit<R, "id" | "version" | "created_at" | "updated_at" | "created_by" | "updated_by">>;
+
+        /** One table's records. Each method needs its verb in uses.tables: read, create, update or delete. */
+        export interface Table<R> {
+          find(query?: Query<R>): Promise<Page<R>>;
+          get(id: string, options?: { expand?: string[] }): Promise<R | null>;
+          count(filter?: Filter<R>): Promise<number>;
+          create(values: Values<R>): Promise<R>;
+          /** Only the fields to change; pass `version` to refuse a write over someone else's. Null when there is no such record. */
+          update(id: string, values: Values<R> & { version?: number }): Promise<R | null>;
+          /** False when there was no such record. */
+          delete(id: string): Promise<boolean>;
+          /** Many-to-many: false unless both records exist. Needs update. */
+          link(id: string, relationship: string, targetId: string): Promise<boolean>;
+          unlink(id: string, relationship: string, targetId: string): Promise<boolean>;
+          /** Up to 500 records. */
+          bulkUpdate(ids: string[], values: Values<R>): Promise<{ affected: number }>;
+          bulkDelete(ids: string[]): Promise<{ affected: number }>;
+        }
+
+        {{declarations}}
         export interface Database {
         {{Indent(database)}}
         }

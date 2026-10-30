@@ -79,11 +79,15 @@ Outbound HTTP:
 - has fixed time and size caps.
 
 What each call needs, as the broker (`Runtime/HostCalls.cs`) checks it:
-- `db.<app>.<table>.<method>`: the table and verb in `uses.tables`, and the matching `plugin:dynamic-apps:data-*`. It goes through `dynamic-apps.automation@1`, an in-process contract on the system plane flows used, which checks no member permission itself: the broker does.
+- `db.<app>.<table>.<method>`: the table and verb in `uses.tables`, and the matching `plugin:dynamic-apps:data-*`. Following a lookup (`expand`, or a filter, sort or select on `company.name`) needs `read` on the target table too. It goes through `dynamic-apps.automation@1`, an in-process contract on the system plane flows used, which checks no member permission itself: the broker does.
 - `plugins.<instance>.<contract>.<operation>`: the contract in `uses.contracts`, called through the contract dispatcher on the admin plane with the vouched set as the caller's permissions. Deploying vouches for every admin operation's permission of each declared contract. Platform (`dcms.*`) contracts are never callable.
 - `secrets.get`: the name in `uses.secrets`, and `plugin:functions:secrets`.
 - `functions.invoke`: a function of the same deployment, at most 5 deep.
 - `jobs.enqueue`: a tracked job that runs the *live* deployment when it starts. At most 100 per run, and a chain of jobs enqueuing jobs stops at 10.
+
+A run and every function it invokes share one budget (fetches, enqueues, 50 invokes). A manual run from the admin requires the caller to hold the whole vouched set: running code lends nobody the deployer's rights; only triggers do.
+
+The generated declarations (`Build/SdkTypings.cs`) are served at `GET …/_functions/sdk.d.ts` with an ETag, and every build checks against them, so code using a table that no longer exists fails to build. Tables appear as `db.<app>.<table>` typed from the published model; contracts as `plugins.<app>.<contractName>` in camelCase (`dynamicAppsRecords`), each operation camelCased, which the broker matches loosely.
 
 ### The SDK is generated per instance and environment; only its types
 

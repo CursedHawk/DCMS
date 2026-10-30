@@ -1,3 +1,4 @@
+using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Deploy;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -17,6 +18,19 @@ internal static class AdminEndpoints
         // The repository, created with the starter the first time anyone opens the code.
         endpoints.MapGet("/_functions/repo", (DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.RepoAsync(ct))))
+            .RequirePluginPermission("read");
+
+        // @dcms/functions as the editor's type checker sees it: what a build checks against now.
+        endpoints.MapGet("/_functions/sdk.d.ts", async (HttpContext http, SdkTypings sdk, CancellationToken ct) =>
+            {
+                var typings = await sdk.GenerateAsync(ct);
+                var etag = SdkTypings.ETag(typings);
+                http.Response.Headers.ETag = etag;
+                http.Response.Headers.CacheControl = "private, no-cache";
+                return http.Request.Headers.IfNoneMatch == etag
+                    ? Results.StatusCode(StatusCodes.Status304NotModified)
+                    : Results.Text(typings, "application/typescript; charset=utf-8");
+            })
             .RequirePluginPermission("read");
 
         endpoints.MapGet("/_functions/deployments", (DeploymentService deployments, CancellationToken ct) =>

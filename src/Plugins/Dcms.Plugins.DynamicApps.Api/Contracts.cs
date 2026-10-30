@@ -281,9 +281,16 @@ public interface IDynamicAppsRecords
 /// deployer vouched for. Writes may set read-only fields, as flows could, and fire the table's
 /// row events like any other write.
 /// </summary>
+/// <summary>The published tables of an application: what a function's typed SDK is generated from.</summary>
+public sealed record AppModel(IReadOnlyList<TableDef> Tables, IReadOnlyList<RelationshipDef> Relationships, IReadOnlyList<ChoiceSetDef> ChoiceSets);
+
 [DcmsContract("dynamic-apps.automation", 1, Description = "An application's records for automations (system plane).")]
 public interface IDynamicAppsAutomation
 {
+    /// <summary>The published model; null until something is published.</summary>
+    [Operation(OpRisk.Read)]
+    Task<AppModel?> ModelAsync(CancellationToken ct);
+
     [Operation(OpRisk.Read)]
     Task<RecordPage> QueryAsync(TableQuery input, CancellationToken ct);
 

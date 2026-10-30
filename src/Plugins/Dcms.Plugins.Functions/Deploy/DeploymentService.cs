@@ -139,7 +139,8 @@ public sealed class DeploymentService(
 
     /// <summary>
     /// Runs one function now with an input (the editor's Run): the live deployment, or a built one
-    /// being tried before it goes live, which runs under the caller's permissions as a deploy would.
+    /// being tried before it goes live. Either way the caller must hold everything it was or would
+    /// be vouched for, as deploying it takes.
     /// </summary>
     public async Task<RunOutcome> RunAsync(string function, JsonNode? input, Guid? deploymentId, CancellationToken ct)
     {
@@ -157,7 +158,8 @@ public sealed class DeploymentService(
         {
             throw new ContractConflictException($"Deployment {deployment.Number} is {deployment.Status.ToString().ToLowerInvariant()}; only a built or live one runs.");
         }
-        var vouched = deployment.Status == FunctionDeploymentStatus.Active ? deployment.VouchedPermissions : await VouchAsync(deployment);
+        // The caller holds whatever the run may do: a manual run lends nobody the deployer's rights.
+        var vouched = await VouchAsync(deployment);
         var target = RunTargets.Of(deployment, function, vouched) ?? throw RunTargets.NoSuchFunction(function);
         return await runner.RunAsync(target, input, new RunTrigger("manual"), ct);
     }

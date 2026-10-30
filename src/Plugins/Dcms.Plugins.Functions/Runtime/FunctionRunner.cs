@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Dcms.Plugins.Functions.Build;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Data.Functions;
+using Dcms.Shared.Data.Rls;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Functions.Runtime;
@@ -44,11 +45,13 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
 
     public async Task<RunOutcome> RunAsync(
         RunTarget target, JsonNode? input, RunTrigger trigger, CancellationToken ct,
-        JsonObject? request = null, JsonObject? user = null, int depth = 0)
+        JsonObject? request = null, JsonObject? user = null, int depth = 0, RunBudget? budget = null)
     {
+        // Every call the run makes resolves in the deployment's own environment, however it was started.
+        using var rls = RlsScope.Environment(target.Deployment.TenantId, target.Deployment.EnvironmentId);
         var clock = Stopwatch.StartNew();
         var timeout = Math.Min(target.Function.TimeoutMs ?? trigger.MaxTimeoutMs, trigger.MaxTimeoutMs);
-        var calls = ActivatorUtilities.CreateInstance<HostCalls>(services, target, trigger, depth);
+        var calls = ActivatorUtilities.CreateInstance<HostCalls>(services, target, trigger, depth, budget ?? new RunBudget());
         var logs = new StringBuilder();
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);

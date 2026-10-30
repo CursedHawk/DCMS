@@ -16,6 +16,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Dcms.Plugins.Functions.Runtime;
 
+/// <summary>What a run and every function it invokes share: one tree, one set of caps.</summary>
+public sealed class RunBudget
+{
+    public int Fetches { get; set; }
+    public int Enqueues { get; set; }
+    public int Invokes { get; set; }
+}
+
 /// <summary>
 /// The broker (ADR 0029): answers one run's host calls. Every call is checked twice before it
 /// does anything — the function declared it in <c>uses</c>, and the permission it needs is one
@@ -26,6 +34,7 @@ public sealed class HostCalls(
     RunTarget target,
     RunTrigger trigger,
     int depth,
+    RunBudget budget,
     IPluginContext context,
     PluginRegistry registry,
     ContractDispatcher dispatcher,
@@ -39,14 +48,13 @@ public sealed class HostCalls(
     public const int MaxFetchBytes = 5 * 1024 * 1024;
     public const int MaxFetchBodyChars = 1024 * 1024;
     public const int MaxEnqueues = 100;
+    public const int MaxInvokes = 50;
 
     /// <summary>A job that enqueues a job that enqueues…: how long such a chain may grow.</summary>
     public const int MaxGenerations = 10;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> Methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
 
-    private int _fetches;
-    private int _enqueues;
 
     private FunctionUses Uses => target.Function.Uses;
 
@@ -113,11 +121,25 @@ public sealed class HostCalls(
             ?? throw new HostCallException($"There is no Dynamic Apps app '{app}' here.");
         var records = context.Contracts.Get<IDynamicAppsAutomation>(provider.InstanceId);
 
+        // A read may follow a lookup into another table (expand, or a filter or sort on
+        // company.name): that table must be declared readable too.
+        var query = method == "find" ? Arg<RecordQuery>(a, 0) ?? new RecordQuery() : null;
+        var filter = method == "count" ? Arg<RecordFilter>(a, 0) : query?.Filter;
+        var expand = method == "get" ? Arg<GetOptions>(a, 1)?.Expand ?? [] : query?.Expand ?? [];
+        var lookups = expand
+            .Concat(Fields(filter).Concat(query?.Sort.Select(s => s.Field) ?? []).Concat(query?.Select ?? [])
+                .Where(f => f.Contains('.')).Select(f => f[..f.IndexOf('.')]))
+            .Distinct().ToList();
+        if (lookups.Count > 0)
+        {
+            await ReadableThroughAsync(records, app, table, lookups, ct);
+        }
+
         return method switch
         {
-            "find" => Node(await records.QueryAsync(new TableQuery(table, Arg<RecordQuery>(a, 0)), ct)),
-            "get" => await records.GetAsync(new RecordRequest(table, Id(a, 0), Arg<GetOptions>(a, 1)?.Expand), ct),
-            "count" => (await records.QueryAsync(new TableQuery(table, new RecordQuery { Filter = Arg<RecordFilter>(a, 0), PageSize = 1 }), ct)).Total,
+            "find" => Node(await records.QueryAsync(new TableQuery(table, query), ct)),
+            "get" => await records.GetAsync(new RecordRequest(table, Id(a, 0), expand), ct),
+            "count" => (await records.QueryAsync(new TableQuery(table, new RecordQuery { Filter = filter, PageSize = 1 }), ct)).Total,
             "create" => await records.CreateAsync(new RecordCreate(table, Values(a, 0)), ct),
             "update" => await records.UpdateAsync(new RecordUpdate(table, Id(a, 0), Values(a, 1)), ct),
             "delete" => await records.DeleteAsync(new RecordRequest(table, Id(a, 0)), ct),
@@ -130,6 +152,32 @@ public sealed class HostCalls(
 
     private sealed record GetOptions(List<string>? Expand);
 
+    private async Task ReadableThroughAsync(IDynamicAppsAutomation records, string app, string table, IReadOnlyList<string> lookups, CancellationToken ct)
+    {
+        var model = await records.ModelAsync(ct) ?? throw new HostCallException($"The app '{app}' has nothing published.");
+        var source = model.Tables.FirstOrDefault(t => t.ApiName == table) ?? throw new HostCallException($"The app '{app}' has no table '{table}'.");
+        foreach (var lookup in lookups)
+        {
+            var target = model.Relationships.FirstOrDefault(r => r.SourceTableId == source.Id && r.ApiName == lookup) is { } relationship
+                ? model.Tables.FirstOrDefault(t => t.Id == relationship.TargetTableId)
+                : null;
+            if (target is null)
+            {
+                throw new HostCallException($"{table} has no lookup '{lookup}'.");
+            }
+            if (!Uses.Tables.TryGetValue($"{app}.{target.ApiName}", out var verbs) || !verbs.Contains("read"))
+            {
+                throw new HostCallException($"Following {table}.{lookup} reads {target.ApiName}: declare uses.tables[\"{app}.{target.ApiName}\"]: [\"read\"].");
+            }
+        }
+    }
+
+    private static IEnumerable<string> Fields(RecordFilter? filter) =>
+        filter is null
+            ? []
+            : (filter.Field is { } field ? [field] : Enumerable.Empty<string>())
+                .Concat((filter.And ?? []).Concat(filter.Or ?? []).Append(filter.Not).SelectMany(Fields));
+
     // ------------------------------------------------------------------ plugins.<instance>.<contract>.<operation>(input)
 
     private async Task<JsonNode?> ContractAsync(JsonNode? args, CancellationToken ct)
@@ -137,11 +185,11 @@ public sealed class HostCalls(
         var (path, a) = PathAndArgs(args, 3, "plugins.<instance>.<contract>.<operation>(input)");
         // forms.submissions, formsSubmissions or forms-submissions: the same contract.
         var contract = registry.Contracts.Select(c => c.Descriptor)
-            .FirstOrDefault(d => !d.IsPlatform && Loose(d.Id) == Loose(path[1]))
+            .FirstOrDefault(d => !d.IsPlatform && Loose(d.Name) == Loose(path[1]))
             ?? throw new HostCallException($"There is no contract '{path[1]}' a function can call.");
-        if (!Uses.Contracts.Contains($"{contract.Id}@{contract.Major}"))
+        if (!Uses.Contracts.Contains(contract.Id))
         {
-            throw new HostCallException($"This function does not declare uses.contracts: [\"{contract.Id}@{contract.Major}\"].");
+            throw new HostCallException($"This function does not declare uses.contracts: [\"{contract.Id}\"].");
         }
         var operation = contract.Operations.FirstOrDefault(o => Loose(o.Name) == Loose(path[2]))
             ?? throw new HostCallException($"{contract.Id} has no operation '{path[2]}'.");
@@ -162,9 +210,8 @@ public sealed class HostCalls(
     /// <summary>The permission set a contract's admin operations need, for vouching at deploy time.</summary>
     public static IEnumerable<string> ContractPermissions(PluginRegistry registry, string declared)
     {
-        var at = declared.LastIndexOf('@');
-        var descriptor = at > 0 ? registry.FindContract(declared[..at])?.Descriptor : null;
-        return descriptor is null || descriptor.IsPlatform || $"{descriptor.Major}" != declared[(at + 1)..]
+        var descriptor = registry.FindContract(declared)?.Descriptor;
+        return descriptor is null || descriptor.IsPlatform
             ? []
             : descriptor.Operations.Where(o => o.Expose.HasFlag(OpExposure.Admin) && o.Permission is not null).Select(o => o.Permission!);
     }
@@ -196,9 +243,9 @@ public sealed class HostCalls(
         {
             throw new HostCallException($"This function does not declare uses.egress: [\"{host}\"].");
         }
-        if (++_fetches > MaxFetches)
+        if (++budget.Fetches > MaxFetches)
         {
-            throw new HostCallException($"A run makes at most {MaxFetches} requests.");
+            throw new HostCallException($"A run, with the functions it invokes, makes at most {MaxFetches} requests.");
         }
         var method = (args?["method"]?.GetValue<string>() ?? "GET").ToUpperInvariant();
         if (!Methods.Contains(method))
@@ -277,10 +324,14 @@ public sealed class HostCalls(
         {
             throw new HostCallException($"Functions call each other at most {FunctionRunner.MaxDepth} deep.");
         }
+        if (++budget.Invokes > MaxInvokes)
+        {
+            throw new HostCallException($"A run, with the functions it invokes, invokes at most {MaxInvokes} functions.");
+        }
         var callee = RunTargets.Of(target.Deployment, name, target.Vouched)
                      ?? throw new HostCallException($"There is no function '{name}' in this deployment.");
         var outcome = await services.GetRequiredService<FunctionRunner>()
-            .RunAsync(callee, args?["input"], new RunTrigger("invoke", Generation: trigger.Generation), ct, depth: depth + 1);
+            .RunAsync(callee, args?["input"], new RunTrigger("invoke", Generation: trigger.Generation), ct, depth: depth + 1, budget: budget);
         return outcome.Succeeded ? outcome.Result : throw new HostCallException($"{name}: {outcome.Error}");
     }
 
@@ -295,9 +346,9 @@ public sealed class HostCalls(
         {
             throw new HostCallException($"Jobs enqueued by jobs chain at most {MaxGenerations} deep.");
         }
-        if (++_enqueues > MaxEnqueues)
+        if (++budget.Enqueues > MaxEnqueues)
         {
-            throw new HostCallException($"A run enqueues at most {MaxEnqueues} jobs.");
+            throw new HostCallException($"A run, with the functions it invokes, enqueues at most {MaxEnqueues} jobs.");
         }
         var dedupe = args?["options"]?["dedupeKey"]?.GetValue<string>();
         if (dedupe?.Length > 200)

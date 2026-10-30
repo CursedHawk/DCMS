@@ -114,6 +114,7 @@ public sealed class FunctionsPlugin : IPlugin
             };
         });
         services.AddScoped<FunctionRunner>();
+        services.AddScoped<SdkTypings>();
         // http.fetch: public addresses only, checked at connect time (redirects and DNS
         // rebinding included), and no redirects followed: the function sees the 3xx and decides.
         services.AddHttpClient(HostCalls.EgressClientName)
