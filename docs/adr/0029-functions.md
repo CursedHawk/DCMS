@@ -33,7 +33,9 @@ A new first-party plugin, `functions`, works like this:
 - The code is edited in the Mode B web IDE, which is generalised from "a site" to "a repository target", together with its agent harness.
 
 A push to the `release` branch builds a **deployment**:
-- The build type-checks the code against the generated SDK, bundles each function, and records what each function declares.
+- The build type-checks the code against the generated SDK (`deno check`), bundles each function (esbuild, pinned in the runner's image), and records what each function declares (each bundle is imported once in the sandbox).
+  - `deno bundle` is not used: it fetches esbuild from npm at run time, and the runner has no network.
+  - Neither tool runs tenant code, but both read files, and a specifier is a path. So a specifier may only be `@dcms/functions` or a relative path inside the repository; it is checked before either tool starts, and esbuild's metafile is checked afterwards.
 - A row in `functions.deployments` holds the result.
 - The row is frozen by a trigger once it leaves `Building`.
 - At most one deployment per instance and environment is `Active`. A rollback activates an older row and never rewrites one.

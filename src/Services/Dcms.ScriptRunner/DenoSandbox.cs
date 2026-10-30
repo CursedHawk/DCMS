@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
@@ -26,6 +25,38 @@ public sealed class ScriptRunnerOptions
     public int MaxTimeoutMs { get; set; } = 5_000;
     public int MaxCodeChars { get; set; } = 64_000;
     public int MaxOutputChars { get; set; } = 64_000;
+
+    // Functions (ADR 0029): sessions and builds.
+
+    public string SessionHarnessPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "session-harness.js");
+
+    /// <summary>The static <c>@dcms/functions</c> runtime every bundle imports in place of the SDK.</summary>
+    public string RuntimePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "sdk-runtime.js");
+    public string EsbuildPath { get; set; } = "esbuild";
+
+    /// <summary>Functions running at once, apart from flow scripts. Callers cap each tenant below this.</summary>
+    public int MaxSessions { get; set; } = 4;
+    public int MaxSessionTimeoutMs { get; set; } = 300_000;
+    public int DefaultSessionHeapMegabytes { get; set; } = 128;
+    public int MaxSessionHeapMegabytes { get; set; } = 256;
+    public int MaxBundleChars { get; set; } = 2_000_000;
+    public int MaxCalls { get; set; } = 1_000;
+
+    /// <summary>Host-call arguments and replies together, per run.</summary>
+    public long MaxIoBytes { get; set; } = 5 * 1024 * 1024;
+    public int MaxLogChars { get; set; } = 64_000;
+    public int MaxResultChars { get; set; } = 1_000_000;
+
+    /// <summary>One line from Deno, or one message from the caller.</summary>
+    public int MaxMessageBytes { get; set; } = 2 * 1024 * 1024;
+
+    public int MaxBuildFiles { get; set; } = 500;
+    public int MaxBuildBytes { get; set; } = 5 * 1024 * 1024;
+    public int BuildTimeoutMs { get; set; } = 120_000;
+
+    /// <summary>The type checker needs far more than a function: tsc's heap plus Deno's ~600 MB reservation.</summary>
+    public int BuildDataLimitMegabytes { get; set; } = 2_048;
+    public int BuildHeapMegabytes { get; set; } = 768;
 }
 
 /// <param name="Code">The module source; TypeScript or JavaScript, its default export is <c>main(ctx)</c>.</param>
@@ -67,40 +98,22 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
         Process? process = null;
         try
         {
-            var start = new ProcessStartInfo("choom")
-            {
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            // choom and prlimit each exec the next, so the process is Deno itself, with both applied.
-            foreach (var arg in (string[])["-n", "1000", "--",
-                         "prlimit", "--core=0", $"--data={_o.DataLimitMegabytes * 1024L * 1024}", "--",
-                         _o.DenoPath, "run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
-                         $"--v8-flags=--max-old-space-size={_o.HeapMegabytes}", _o.HarnessPath])
-            {
-                start.ArgumentList.Add(arg);
-            }
-            // Nothing of this process's environment reaches the script's — except PATH, for choom to find prlimit.
-            var path = Environment.GetEnvironmentVariable("PATH");
-            start.Environment.Clear();
-            start.Environment["PATH"] = path ?? "/usr/bin:/bin";
-            start.Environment["DENO_DIR"] = cache.FullName;
-            start.Environment["NO_COLOR"] = "1";
-
-            process = Process.Start(start) ?? throw new InvalidOperationException("deno did not start.");
+            process = Confined.Start(_o.DenoPath,
+                ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
+                 $"--v8-flags=--max-old-space-size={_o.HeapMegabytes}", _o.HarnessPath],
+                _o.DataLimitMegabytes * 1024L * 1024,
+                new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName });
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(timeout);
 
             var running = process;
             var overflowed = false;
-            var stdout = ReadBoundedAsync(process.StandardOutput, _o.MaxOutputChars + 256, () =>
+            var stdout = Confined.ReadBoundedAsync(process.StandardOutput, _o.MaxOutputChars + 256, () =>
             {
                 overflowed = true;
-                Kill(running);
+                Confined.Kill(running);
             });
-            var stderr = ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null);
+            var stderr = Confined.ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null);
 
             try
             {
@@ -117,7 +130,7 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                Kill(process);
+                Confined.Kill(process);
                 return RunResult.Limit($"The script ran longer than {timeout.TotalSeconds:0.#} s.");
             }
 
@@ -153,7 +166,7 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
         {
             if (process is { HasExited: false })
             {
-                Kill(process);
+                Confined.Kill(process);
             }
             process?.Dispose();
             try
@@ -165,40 +178,6 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
                 logger.LogWarning(e, "Could not delete {Cache}", cache.FullName);
             }
             _gate.Release();
-        }
-    }
-
-    /// <summary>Reads a stream to its end, keeping at most <paramref name="max"/> characters; past that, <paramref name="onOverflow"/> once.</summary>
-    private static async Task<string> ReadBoundedAsync(StreamReader reader, int max, Action? onOverflow)
-    {
-        var text = new StringBuilder();
-        var buffer = new char[8_192];
-        int read;
-        while ((read = await reader.ReadAsync(buffer)) > 0)
-        {
-            if (text.Length + read > max)
-            {
-                if (onOverflow is not null)
-                {
-                    onOverflow();
-                    return text.ToString();
-                }
-                continue;
-            }
-            text.Append(buffer, 0, read);
-        }
-        return text.ToString();
-    }
-
-    private static void Kill(Process process)
-    {
-        try
-        {
-            process.Kill(entireProcessTree: true);
-        }
-        catch (InvalidOperationException)
-        {
-            // Already gone.
         }
     }
 }

@@ -606,8 +606,9 @@ services:
       <<: *otel-env
       Nats__Url: "nats://nats:4222"
 
-  # Dynamic Apps flow scripts (ADR 0025): tenant TypeScript, one zero-permission Deno process
-  # per run. Telemetry and NOTHING else -- no *service-env, no Vault address, no broker or
+  # Dynamic Apps flow scripts (ADR 0025) and Functions (ADR 0029): tenant TypeScript, one
+  # zero-permission Deno process per run; a function's host calls go back over its caller's
+  # socket, never out of here. Telemetry and NOTHING else -- no *service-env, no Vault address, no broker or
   # database -- and only the `scripts` network, which has no egress: a script that got out of
   # Deno would find no credential to take and no route to send anything. Everything below
   # the environment is that same argument applied to the container.
@@ -616,16 +617,17 @@ services:
       context: .
       dockerfile: src/Services/Dcms.ScriptRunner/Dockerfile
     <<: *service-defaults
-    # Two concurrent scripts (ScriptRunner__MaxConcurrency) at ~150 MB each under their RLIMIT_DATA,
-    # plus the host. Raise both together.
-    mem_limit: "${SCRIPT_RUNNER_MEM_LIMIT:-640m}"
+    # Two concurrent flow scripts (ScriptRunner__MaxConcurrency) and four functions
+    # (ScriptRunner__MaxSessions) at ~100-300 MB each under their RLIMIT_DATA, one build (the type
+    # checker, up to ~900 MB), plus the host. Raise them together.
+    mem_limit: "${SCRIPT_RUNNER_MEM_LIMIT:-1536m}"
     read_only: true
     tmpfs:
       # Each run's DENO_DIR, deleted when it ends.
       - /tmp:size=256m
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    pids_limit: 128
+    pids_limit: 256
     environment:
       <<: *otel-env
     networks:
