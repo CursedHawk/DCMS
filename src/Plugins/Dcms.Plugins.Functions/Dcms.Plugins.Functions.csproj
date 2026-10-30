@@ -9,6 +9,7 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Functions.Api\Dcms.Plugins.Functions.Api.csproj" />
     <!-- First-party: owns the functions schema (ADR 0029). -->
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
   </ItemGroup>
 
 </Project>

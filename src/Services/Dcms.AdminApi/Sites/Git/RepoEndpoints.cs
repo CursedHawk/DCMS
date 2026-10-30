@@ -1,4 +1,7 @@
+using Dcms.AdminApi.Environments;
 using Dcms.AdminApi.Tenancy;
+using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Sites;
@@ -27,8 +30,8 @@ public static class RepoEndpoints
             // it: which one depends on the row, so the endpoint table cannot carry it.
             .PermissionExempt("Gated by the permission the repository's binding names (RepoEndpoints.WithAsync).");
 
-        repo.MapGet("/git", (Guid id, HttpContext http, SitesDbContext db, SiteGitService git, IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, db, authz, ct, (binding, _) =>
+        repo.MapGet("/git", (Guid id, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, IAuthorizationService authz, CancellationToken ct) =>
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (binding, _) =>
             {
                 var (httpUrl, ssh) = git.CloneUrls(binding.RepoFullName);
                 return Task.FromResult(Results.Ok(new
@@ -43,60 +46,60 @@ public static class RepoEndpoints
                 }));
             }));
 
-        repo.MapGet("/ide", (Guid id, string? branch, HttpContext http, SitesDbContext db, SiteGitService git, CurrentUser user,
+        repo.MapGet("/ide", (Guid id, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Edit, http, db, authz, ct,
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.LoadDraftAsync(ws, branch, fallbackSeed: null, db, git, user, ct)));
 
-        repo.MapPatch("/ide/files", (Guid id, string? branch, SaveFilesRequest body, HttpContext http, SitesDbContext db, CurrentUser user,
+        repo.MapPatch("/ide/files", (Guid id, string? branch, SaveFilesRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Edit, http, db, authz, ct,
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.SaveFilesAsync(ws, branch, body, db, user, ct)))
             .WithAudit(AuditActions.RepoFilesChanged, Resource);
 
-        repo.MapGet("/git/branches", (Guid id, HttpContext http, SitesDbContext db, SiteGitService git, IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, db, authz, ct, (_, ws) => GitWorkspaces.BranchesAsync(ws, git, ct)));
+        repo.MapGet("/git/branches", (Guid id, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, IAuthorizationService authz, CancellationToken ct) =>
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.BranchesAsync(ws, git, ct)));
 
-        repo.MapGet("/git/history", (Guid id, string? branch, int? limit, HttpContext http, SitesDbContext db, SiteGitService git,
+        repo.MapGet("/git/history", (Guid id, string? branch, int? limit, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, db, authz, ct, (_, ws) => GitWorkspaces.HistoryAsync(ws, branch, limit, git, ct)));
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.HistoryAsync(ws, branch, limit, git, ct)));
 
-        repo.MapGet("/git/changes", (Guid id, string? branch, HttpContext http, SitesDbContext db, SiteGitService git, CurrentUser user,
+        repo.MapGet("/git/changes", (Guid id, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Edit, http, db, authz, ct, (_, ws) => GitWorkspaces.ChangesAsync(ws, branch, db, user, git, ct)));
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.ChangesAsync(ws, branch, db, user, git, ct)));
 
-        repo.MapGet("/git/compare", (Guid id, string head, string? @base, HttpContext http, SitesDbContext db, SiteGitService git,
+        repo.MapGet("/git/compare", (Guid id, string head, string? @base, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, db, authz, ct, (_, ws) => GitWorkspaces.CompareAsync(ws, head, @base, git, ct)));
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.CompareAsync(ws, head, @base, git, ct)));
 
-        repo.MapPost("/git/commit", (Guid id, CommitRequest body, HttpContext http, SitesDbContext db, SiteGitService git, CurrentUser user,
+        repo.MapPost("/git/commit", (Guid id, CommitRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
             // A commit straight onto release ships it, as a merge into release does: the workspace's
             // RefuseRelease asks for the publish permission on the branch the handler itself resolves.
-            WithAsync(id, Need.Edit, http, db, authz, ct,
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.CommitAsync(ws, body, db, user, git, ct)))
             .WithAudit(AuditActions.RepoCommitted, Resource);
 
-        repo.MapPost("/git/branches", (Guid id, CreateBranchRequest body, HttpContext http, SitesDbContext db, SiteGitService git,
+        repo.MapPost("/git/branches", (Guid id, CreateBranchRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Edit, http, db, authz, ct, (_, ws) => GitWorkspaces.CreateBranchAsync(ws, body, git, ct)))
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.CreateBranchAsync(ws, body, git, ct)))
             .WithAudit(AuditActions.RepoBranchCreated, Resource);
 
-        repo.MapPost("/git/merge", (Guid id, MergeRequest body, HttpContext http, SitesDbContext db, SiteGitService git, CurrentUser user,
+        repo.MapPost("/git/merge", (Guid id, MergeRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, IsRelease(body.Base, emptyIsRelease: true) ? Need.Publish : Need.Edit, http, db, authz, ct,
+            WithAsync(id, IsRelease(body.Base, emptyIsRelease: true) ? Need.Publish : Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.MergeAsync(ws, body, user, git, ct)))
             .WithAudit(AuditActions.RepoMerged, Resource);
 
-        repo.MapPost("/git/merge/resolve", (Guid id, ResolveMergeRequest body, HttpContext http, SitesDbContext db, SiteGitService git,
+        repo.MapPost("/git/merge/resolve", (Guid id, ResolveMergeRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 CurrentUser user, IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, IsRelease(body.Base, emptyIsRelease: true) ? Need.Publish : Need.Edit, http, db, authz, ct,
+            WithAsync(id, IsRelease(body.Base, emptyIsRelease: true) ? Need.Publish : Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.ResolveMergeAsync(ws, body, user, git, ct)))
             .WithAudit(AuditActions.RepoMergeResolved, Resource);
 
-        repo.MapPost("/git/restore", (Guid id, GitRestoreRequest body, string? branch, HttpContext http, SitesDbContext db, SiteGitService git,
+        repo.MapPost("/git/restore", (Guid id, GitRestoreRequest body, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 CurrentUser user, IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Edit, http, db, authz, ct, (_, ws) => GitWorkspaces.RestoreAsync(ws, body, branch, db, user, git, ct)))
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.RestoreAsync(ws, body, branch, db, user, git, ct)))
             .WithAudit(AuditActions.RepoRestored, Resource);
 
         return app;
@@ -114,7 +117,7 @@ public static class RepoEndpoints
 
     /// <summary>The binding in the request's tenant and environment, if the caller holds the permission it names for <paramref name="need"/>.</summary>
     private static async Task<IResult> WithAsync(
-        Guid id, Need need, HttpContext http, SitesDbContext db, IAuthorizationService authz, CancellationToken ct,
+        Guid id, Need need, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, IAuthorizationService authz, CancellationToken ct,
         Func<RepoBinding, GitWorkspace, Task<IResult>> handle)
     {
         var binding = await db.RepoBindings.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -135,10 +138,21 @@ public static class RepoEndpoints
         // No live channel for plugin repositories yet: the IDE learns of moves on its next load.
         var workspace = new GitWorkspace(binding.Id, binding.TenantId, binding.RepoFullName, binding.DefaultBranch,
             Announce: (_, _, _, _, _, _) => Task.CompletedTask,
-            RefuseRelease: async _ =>
-                (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(binding.PublishPermission))).Succeeded
+            RefuseRelease: async token =>
+            {
+                // Release is what builds: an environment that leaves this instance to deployments
+                // takes its code from them too, as a site's release is.
+                var slug = await services.GetRequiredService<CmsDbContext>().PluginInstances.AsNoTracking()
+                    .Where(p => p.Id == binding.InstanceId).Select(p => p.Slug).FirstOrDefaultAsync(token);
+                if (slug is not null
+                    && await EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "plugins", slug, token) is { } managed)
+                {
+                    return managed;
+                }
+                return (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(binding.PublishPermission))).Succeeded
                     ? null
-                    : Results.Forbid());
+                    : Results.Forbid();
+            });
         return await handle(binding, workspace);
     }
 }

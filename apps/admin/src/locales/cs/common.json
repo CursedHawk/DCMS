@@ -1412,6 +1412,9 @@
       },
       "environmentCopy": {
         "title": "Příprava prostředí {{environment}}"
+      },
+      "functionsBuild": {
+        "title": "Sestavení funkcí z {{commit}}"
       }
     },
     "stages": {

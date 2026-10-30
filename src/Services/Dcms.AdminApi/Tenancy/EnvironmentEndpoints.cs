@@ -250,7 +250,7 @@ public static class EnvironmentEndpoints
         app.MapPut("/api/admin/environments/{id:guid}/policies", async (
             Guid id, List<PolicyRequest> body, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CurrentUser me,
             IPermissionResolver permissions, Dcms.AdminApi.Sites.Git.SiteGitService git, Dcms.Shared.Data.Sites.SitesDbContext sites,
-            IAuditRecorder audit, ILoggerFactory logs, CancellationToken ct) =>
+            Dcms.Shared.Data.Cms.CmsDbContext cms, IAuditRecorder audit, ILoggerFactory logs, CancellationToken ct) =>
         {
             if (await TargetAsync(environments, tenant, id, ct) is not { } target) return Results.NotFound();
             if (!await CanManageAsync(target.TenantId, me, permissions, ct)) return Results.Forbid();
@@ -283,19 +283,30 @@ public static class EnvironmentEndpoints
                 var unprotected = new List<string>();
                 if (git.Enabled)
                 {
-                    var repos = await sites.Sites.IgnoreTenantFilter().AsNoTracking()
-                        .Where(s => s.TenantId == target.TenantId && s.GitRepoFullName != null).ToListAsync(ct);
-                    foreach (var site in repos)
+                    var repos = (await sites.Sites.IgnoreTenantFilter().AsNoTracking()
+                            .Where(s => s.TenantId == target.TenantId && s.GitRepoFullName != null).ToListAsync(ct))
+                        .Select(s => (Repo: s.GitRepoFullName!, Kind: "sites", Key: s.KeyAcrossEnvironments))
+                        .ToList();
+                    // A plugin's repository (ADR 0029) is its instance's, which the "plugins" kind keys by slug.
+                    var bindings = await sites.RepoBindings.IgnoreTenantFilter().AsNoTracking()
+                        .Where(b => b.TenantId == target.TenantId).ToListAsync(ct);
+                    var instanceIds = bindings.Select(b => b.InstanceId).ToList();
+                    var slugs = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                        .Where(p => p.TenantId == target.TenantId && instanceIds.Contains(p.Id))
+                        .ToDictionaryAsync(p => p.Id, p => p.Slug, ct);
+                    repos.AddRange(bindings.Where(b => slugs.ContainsKey(b.InstanceId))
+                        .Select(b => (Repo: b.RepoFullName, Kind: "plugins", Key: slugs[b.InstanceId])));
+                    foreach (var (repo, kind, key) in repos)
                     {
-                        var locked = EnvironmentPolicies.Ownership(wanted, "sites", site.KeyAcrossEnvironments) == EnvironmentOwnership.Managed;
+                        var locked = EnvironmentPolicies.Ownership(wanted, kind, key) == EnvironmentOwnership.Managed;
                         try
                         {
-                            await git.LockReleaseAsync(site.GitRepoFullName!, locked, ct);
+                            await git.LockReleaseAsync(repo, locked, ct);
                         }
                         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
                         {
-                            logs.CreateLogger("Environments").LogWarning(ex, "Could not set release protection on {Repo}.", site.GitRepoFullName);
-                            unprotected.Add(site.GitRepoFullName!);
+                            logs.CreateLogger("Environments").LogWarning(ex, "Could not set release protection on {Repo}.", repo);
+                            unprotected.Add(repo);
                         }
                     }
                 }

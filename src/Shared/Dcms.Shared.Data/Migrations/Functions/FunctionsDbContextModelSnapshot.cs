@@ -68,6 +68,10 @@ namespace Dcms.Shared.Data.Migrations.Functions
                     b.Property<DateTimeOffset?>("ActivatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ActivatedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("Bundles")
                         .IsRequired()
                         .HasColumnType("jsonb");
@@ -83,6 +87,9 @@ namespace Dcms.Shared.Data.Migrations.Functions
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Diagnostics")
+                        .HasColumnType("jsonb");
 
                     b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");

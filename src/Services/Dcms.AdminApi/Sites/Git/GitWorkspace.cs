@@ -14,7 +14,7 @@ namespace Dcms.AdminApi.Sites.Git;
 /// <param name="Id">What drafts are keyed by (<see cref="SiteDraft.SiteId"/>).</param>
 /// <param name="Announce">Tells whoever has the workspace open that a branch moved: (branch, sha, message, author, actor).</param>
 /// <param name="AnnounceDraft">Tells the same account's other tabs that its draft moved; null where nobody listens.</param>
-/// <param name="RefuseRelease">Whether a commit to <c>release</c> is refused here (a deployment-managed environment).</param>
+/// <param name="RefuseRelease">Whether a commit or merge onto <c>release</c> is refused here (a deployment-managed environment, a missing permission).</param>
 public sealed record GitWorkspace(
     Guid Id,
     Guid TenantId,
@@ -404,6 +404,8 @@ public static class GitWorkspaces
             return Results.BadRequest(new { error = "This workspace has no git repository." });
 
         var @base = string.IsNullOrWhiteSpace(body.Base) ? SiteGitService.ReleaseBranch : body.Base!.Trim();
+        if (@base == SiteGitService.ReleaseBranch && ws.RefuseRelease is { } refuse && await refuse(ct) is { } refused)
+            return refused;
         // Re-assert the webhook when shipping to release (recovers a repo whose initial hook
         // registration failed — otherwise the merge would never build).
         if (@base == SiteGitService.ReleaseBranch)
@@ -444,6 +446,8 @@ public static class GitWorkspaces
             return Results.BadRequest(new { error = "This workspace has no git repository." });
 
         var @base = string.IsNullOrWhiteSpace(body.Base) ? SiteGitService.ReleaseBranch : body.Base!.Trim();
+        if (@base == SiteGitService.ReleaseBranch && ws.RefuseRelease is { } refuse && await refuse(ct) is { } refused)
+            return refused;
         var sha = await git.ResolveMergeAsync(
             ws.RepoFullName, @base, body.Head!.Trim(), body.Resolutions ?? new Dictionary<string, string?>(), user.Name, user.Email, ct);
         await ws.Announce(@base, sha, $"Merge {body.Head!.Trim()} into {@base}", user.Name ?? user.Email, user.UserId, ct);

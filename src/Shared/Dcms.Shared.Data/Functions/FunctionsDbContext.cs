@@ -14,8 +14,14 @@ public enum FunctionDeploymentStatus
     /// <summary>Its commit is being checked and bundled; nothing runs it yet.</summary>
     Building,
 
-    /// <summary>The build refused it; <see cref="FunctionDeployment.Error"/> says why.</summary>
+    /// <summary>The build refused it; <see cref="FunctionDeployment.Diagnostics"/> say why.</summary>
     Failed,
+
+    /// <summary>
+    /// Built and waiting for someone to deploy it: a push proves nothing about who pushed, so a
+    /// person holding what the functions use makes it live (definer's rights).
+    /// </summary>
+    Ready,
 
     /// <summary>What runs. At most one per instance and environment.</summary>
     Active,
@@ -30,8 +36,9 @@ public enum FunctionDeploymentStatus
 /// <summary>
 /// One build of a Functions instance's repository at one commit (ADR 0029): what the build made
 /// of it (<see cref="Manifest"/>, <see cref="Bundles"/>) and the permissions the person who
-/// deployed it held (<see cref="VouchedPermissions"/>). Frozen once it leaves
-/// <see cref="FunctionDeploymentStatus.Building"/>; a rollback activates an older row, never
+/// deployed it held (<see cref="VouchedPermissions"/>). The build is frozen once it leaves
+/// <see cref="FunctionDeploymentStatus.Building"/>, the vouched permissions once it leaves
+/// <see cref="FunctionDeploymentStatus.Ready"/>; a rollback activates an older row, never
 /// rewrites one.
 /// </summary>
 public sealed class FunctionDeployment : EnvironmentEntity
@@ -61,12 +68,19 @@ public sealed class FunctionDeployment : EnvironmentEntity
     /// </summary>
     public List<string> VouchedPermissions { get; set; } = [];
 
-    /// <summary>Why the build failed, for the console.</summary>
+    /// <summary>Why the build failed, in a sentence, for lists.</summary>
     public string? Error { get; set; }
+
+    /// <summary>The build's problems, each with its file and line (JSON array), for the editor.</summary>
+    [AuditIgnore]
+    public string? Diagnostics { get; set; }
 
     public string? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ActivatedAt { get; set; }
+
+    /// <summary>Who last made it live: who vouched, or who rolled back to it.</summary>
+    public string? ActivatedBy { get; set; }
 }
 
 /// <summary>Owns the "functions" schema: the Functions plugin's deployments and runs (ADR 0029).</summary>
@@ -95,7 +109,9 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
             e.Property(d => d.Manifest).HasColumnType("jsonb");
             e.Property(d => d.Bundles).HasColumnType("jsonb");
             e.Property(d => d.Error).HasMaxLength(4000);
+            e.Property(d => d.Diagnostics).HasColumnType("jsonb");
             e.Property(d => d.CreatedBy).HasMaxLength(128);
+            e.Property(d => d.ActivatedBy).HasMaxLength(128);
             e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.InstanceId, d.Number }).IsUnique();
             // One live deployment per instance and environment.
             e.HasIndex(d => new { d.TenantId, d.EnvironmentId, d.InstanceId })

@@ -2,6 +2,9 @@ using Dcms.Plugins.Functions.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Plugins.Functions.Build;
+using Dcms.Plugins.Functions.Deploy;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Functions;
 
@@ -60,7 +63,12 @@ public sealed class FunctionsPlugin : IPlugin
         [
             // The instance's code: one repository per environment, edited in the web IDE.
             ContractRequirement.Of<IPluginRepos>(),
+            // Builds run as tracked jobs, on the workspace's jobs page.
+            ContractRequirement.Of<IPluginTrackedJobs>(),
         ],
+        jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name)],
+        // A push to release builds a deployment.
+        subscribes: [EventSubscription.Of<RepoPushed, RepoPushedHandler>()],
         adminScreens:
         [
             AdminScreen.Settings,
@@ -69,4 +77,23 @@ public sealed class FunctionsPlugin : IPlugin
         summary: "TypeScript functions on HTTP, data changes, messages and schedules.",
         iconName: "SquareFunction",
         tags: ["functions", "serverless", "automation", "api", "typescript"]);
+
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
+    {
+        if (!host.IsAdmin)
+        {
+            return;
+        }
+        services.AddScoped<DeploymentService>();
+        // Builds: the files go to script-runner, which type-checks and bundles them (ADR 0029).
+        // Reachable only from the brokers' own network; a cold type check takes seconds.
+        services.AddHttpClient(BuildJob.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(host.Configuration["Services:ScriptRunner"] ?? "http://localhost:5095");
+            client.Timeout = TimeSpan.FromMinutes(3);
+        });
+    }
+
+    /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/_functions/…</c>.</summary>
+    public void MapAdminEndpoints(IPluginEndpointBuilder endpoints) => Endpoints.AdminEndpoints.Map(endpoints);
 }

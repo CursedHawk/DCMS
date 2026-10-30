@@ -110,6 +110,17 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
         var merged = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/merge", slug, owner, new { head = "main" }), ct), ct);
         merged.GetProperty("merged").GetBoolean().Should().BeTrue();
 
+        // Where deployments manage the instance, its release takes code from them only.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", slug, owner, new { name = "staging", empty = true }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{tenantId}/policies", slug, owner,
+            new[] { new { kind = "plugins", itemKey = (string?)null, mode = "managed" } }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var locked = await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/merge", slug, owner, new { head = "main" }), ct);
+        locked.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await locked.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("code").GetString().Should().Be("environment_managed");
+        (await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/merge", slug, owner, new { head = "release", @base = "main" }), ct))
+            .IsSuccessStatusCode.Should().BeTrue("only release is left to deployments");
+
         // Another tenant cannot see it.
         var (_, otherSlug) = await CreateTenantAsync(client, ct);
         (await client.SendAsync(Req(HttpMethod.Get, $"{at}/git", otherSlug, Guid.Empty, superAdmin: true), ct))

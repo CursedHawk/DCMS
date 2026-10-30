@@ -1381,6 +1381,9 @@
       },
       "environmentCopy": {
         "title": "Setting up {{environment}}"
+      },
+      "functionsBuild": {
+        "title": "Building functions at {{commit}}"
       }
     },
     "stages": {
