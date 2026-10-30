@@ -142,8 +142,9 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
             }
             if (process.ExitCode != 0)
             {
-                // 133: V8 aborted (SIGTRAP) at its heap limit; 137: the kernel's OOM killer.
-                if (process.ExitCode is 133 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
+                // 133: V8 aborted (SIGTRAP) at its heap limit; 134: V8's fatal out-of-memory abort (SIGABRT), seen
+                // when the box itself is short of memory; 137: the kernel's OOM killer.
+                if (process.ExitCode is 133 or 134 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
                     || errors.Contains("out of memory", StringComparison.OrdinalIgnoreCase))
                 {
                     return RunResult.Limit($"The script used more than {_o.HeapMegabytes} MB of memory.");

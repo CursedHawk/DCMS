@@ -197,6 +197,29 @@ public sealed class FunctionRunnerTests(ScriptSandboxTests.Deno deno, FunctionRu
         built.Diagnostics.Should().AllSatisfy(d => d.Message.Should().NotContain("root:"));
     }
 
+    // TypeScript reaches files without an import statement, and the type checker quotes what it
+    // cannot parse: a reference to /etc/hostname once put the box's hostname in a diagnostic.
+    [DockerTheory]
+    [InlineData("/// <reference path=\"/etc/hostname\" />")]
+    [InlineData("/// <reference types=\"/etc/hostname\" />")]
+    [InlineData("// @ts-types=\"/etc/hostname\"\nimport \"./lib.ts\";")]
+    [InlineData("// @deno-types=\"/etc/hostname\"\nimport \"./lib.ts\";")]
+    [InlineData("const m = await import(`/etc/hostname`);")]
+    [InlineData("const m = require('/etc/hostname');")]
+    public async Task A_function_reaches_no_file_outside_the_repository_by_any_other_way(string line)
+    {
+        var hostname = (await File.ReadAllTextAsync("/etc/hostname")).Trim();
+        var built = await Build(new()
+        {
+            ["functions/lib.ts"] = "export {}",
+            ["functions/sneaky.ts"] = line + "\nimport { defineFunction } from \"@dcms/functions\";\nexport default defineFunction({ handler: () => 1 });\n",
+        });
+
+        built.Ok.Should().BeFalse(line);
+        built.Functions.Should().BeEmpty();
+        built.Diagnostics.Should().AllSatisfy(d => d.Message.Should().NotContain(hostname));
+    }
+
     [DockerTheory]
     [InlineData("../outside.ts")]
     [InlineData("/abs.ts")]
@@ -297,6 +320,12 @@ public sealed class FunctionRunnerTests(ScriptSandboxTests.Deno deno, FunctionRu
             """);
 
         (await Session(loop, limits: """{ "timeoutMs": 500 }""")).Done["error"]!.GetValue<string>().Should().Contain("longer than");
+        // Closing its output does not take a function off the clock.
+        var mute = await BundleOf("""
+            import { defineFunction } from "@dcms/functions";
+            export default defineFunction({ handler() { Deno.stdout.close(); while (true) {} } });
+            """);
+        (await Session(mute, limits: """{ "timeoutMs": 500 }""")).Done["error"]!.GetValue<string>().Should().Contain("longer than");
         (await Session(chatty, broker: (_, _) => (true, null, null), configure: o => o.MaxCalls = 10)).Done["error"]!.GetValue<string>().Should().Contain("at most 10 host calls");
         (await Session(big, configure: o => o.MaxResultChars = 100_000)).Done["error"]!.GetValue<string>().Should().Contain("result is at most");
 

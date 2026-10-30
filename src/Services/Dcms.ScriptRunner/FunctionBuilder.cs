@@ -55,6 +55,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     [GeneratedRegex("""(?:\b(?:import|export)\s[^'"`;]*?\bfrom\s*|\bimport\s*\(?\s*)(['"])(?<spec>[^'"\n]+)\1""")]
     private static partial Regex ImportSpecifier();
 
+    [GeneratedRegex(@"\brequire\s*\(")]
+    private static partial Regex Require();
+
     [GeneratedRegex(@"(?<code>TS\d+) \[ERROR\]: (?<msg>[^\n]*)(?:(?!TS\d+ \[ERROR\]).)*?\bat (?<file>file:///\S+?):(?<line>\d+):(?<col>\d+)", RegexOptions.Singleline)]
     private static partial Regex DenoDiagnostic();
 
@@ -124,6 +127,14 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             deadline.CancelAfter(_o.BuildTimeoutMs);
             try
             {
+                foreach (var entry in entries.Values)
+                {
+                    diagnostics.AddRange(await ContainAsync(root.FullName, entry, deadline.Token));
+                }
+                if (diagnostics.Count > 0)
+                {
+                    return new BuildResult(false, diagnostics, []);
+                }
                 var check = await CheckAsync(root.FullName, entries.Values, deadline.Token);
                 if (check.Count > 0)
                 {
@@ -193,6 +204,11 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     private static IEnumerable<BuildDiagnostic> CheckImports(string root, string path, string content)
     {
         var directory = Path.GetDirectoryName(Path.Combine(root, path))!;
+        // esbuild bundles require() calls, which Deno's module graph (ContainAsync) does not list.
+        foreach (Match match in Require().Matches(content))
+        {
+            yield return new BuildDiagnostic("require() is not available: use import.", path, content.AsSpan(0, match.Index).Count('\n') + 1);
+        }
         foreach (Match match in ImportSpecifier().Matches(content))
         {
             var spec = match.Groups["spec"].Value;
@@ -213,12 +229,88 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         }
     }
 
+    /// <summary>
+    /// Deno's own module graph of one entry must stay inside the build directory. The specifier
+    /// check above reads import statements; TypeScript reaches files other ways too —
+    /// <c>/// &lt;reference path&gt;</c>, <c>@ts-types</c> pragmas — and <c>deno check</c> follows
+    /// them and quotes what it cannot parse. So the graph Deno resolves is the authority, and
+    /// nothing is type-checked until every module in it is the repository's or the SDK's.
+    /// </summary>
+    private async Task<List<BuildDiagnostic>> ContainAsync(string root, string entry, CancellationToken ct)
+    {
+        var cache = Directory.CreateTempSubdirectory("deno-");
+        try
+        {
+            var (exit, _, output) = await RunAsync(_o.DenoPath,
+                ["info", "--json", "--no-remote", "--no-npm", "--no-lock", "--config", "deno.json", entry],
+                _o.BuildDataLimitMegabytes, root, new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName }, ct);
+            var prefix = new Uri(root + Path.DirectorySeparatorChar).AbsoluteUri;
+            JsonDocument graph;
+            try
+            {
+                graph = JsonDocument.Parse(output.TrimEnd());
+            }
+            catch (JsonException)
+            {
+                // Its error text could quote whatever it failed on: none of it is passed on.
+                return [new BuildDiagnostic($"The function's imports could not be resolved (exit {exit}).", entry)];
+            }
+            using (graph)
+            {
+                var problems = new List<BuildDiagnostic>();
+                foreach (var module in graph.RootElement.GetProperty("modules").EnumerateArray())
+                {
+                    if (!module.TryGetProperty("dependencies", out var dependencies)
+                        || module.GetProperty("specifier").GetString() is not { } from || !from.StartsWith(prefix, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+                    foreach (var dependency in dependencies.EnumerateArray())
+                    {
+                        foreach (var kind in (string[])["code", "type"])
+                        {
+                            if (dependency.TryGetProperty(kind, out var resolved)
+                                && resolved.TryGetProperty("specifier", out var to)
+                                && !(to.GetString() ?? "").StartsWith(prefix, StringComparison.Ordinal))
+                            {
+                                var line = resolved.TryGetProperty("span", out var span) ? span.GetProperty("start").GetProperty("line").GetInt32() + 1 : (int?)null;
+                                problems.Add(new BuildDiagnostic(
+                                    $"'{dependency.GetProperty("specifier").GetString()}' is outside the repository: a function reaches only \"{SdkModule}\" and its repository's own files.",
+                                    from[prefix.Length..], line));
+                            }
+                        }
+                    }
+                }
+                // Anything listed at all must be the repository's: a dependency kind not read above still shows here.
+                var outside = graph.RootElement.GetProperty("modules").EnumerateArray()
+                    .Select(m => m.GetProperty("specifier").GetString() ?? "")
+                    .Any(specifier => !specifier.StartsWith(prefix, StringComparison.Ordinal));
+                if (outside && problems.Count == 0)
+                {
+                    problems.Add(new BuildDiagnostic("The function reaches a file outside the repository.", entry));
+                }
+                return problems;
+            }
+        }
+        finally
+        {
+            try
+            {
+                cache.Delete(recursive: true);
+            }
+            catch (IOException)
+            {
+                // A temp directory; the next deploy of this host clears it.
+            }
+        }
+    }
+
     private async Task<List<BuildDiagnostic>> CheckAsync(string root, IEnumerable<string> entries, CancellationToken ct)
     {
         var cache = Directory.CreateTempSubdirectory("deno-");
         try
         {
-            var (exit, output) = await RunAsync(_o.DenoPath,
+            var (exit, output, _) = await RunAsync(_o.DenoPath,
                 ["check", "--no-remote", "--no-npm", "--no-lock", "--config", "deno.json",
                  $"--v8-flags=--max-old-space-size={_o.BuildHeapMegabytes}", .. entries],
                 _o.BuildDataLimitMegabytes, root, new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName }, ct);
@@ -233,9 +325,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 int.Parse(m.Groups["line"].Value),
                 int.Parse(m.Groups["col"].Value),
                 m.Groups["code"].Value)).ToList();
-            return found.Count > 0
-                ? found
-                : [new BuildDiagnostic(Clean(output, root, prefix) is { Length: > 0 } text ? text : $"The type check failed (exit {exit}).")];
+            // Only what was parsed, in the repository's own files: raw tool output is never passed on.
+            found.RemoveAll(d => !InRepository(d.File));
+            return found.Count > 0 ? found : [new BuildDiagnostic($"The type check failed (exit {exit}).")];
         }
         finally
         {
@@ -254,7 +346,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     {
         var outFile = $".out/{name}.js";
         var metaFile = $".out/{name}.meta.json";
-        var (exit, output) = await RunAsync(_o.EsbuildPath,
+        var (exit, output, _) = await RunAsync(_o.EsbuildPath,
             [entry, "--bundle", "--format=esm", "--platform=neutral", "--target=es2022", "--charset=utf8",
              "--legal-comments=none", "--log-level=error", $"--alias:{SdkModule}=./.dcms/runtime.js",
              $"--outfile={outFile}", $"--metafile={metaFile}"],
@@ -264,6 +356,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             var found = EsbuildDiagnostic().Matches(output).Select(m => new BuildDiagnostic(
                 m.Groups["msg"].Value.Trim(), m.Groups["file"].Value,
                 int.Parse(m.Groups["line"].Value), int.Parse(m.Groups["col"].Value))).ToList();
+            found.RemoveAll(d => !InRepository(d.File));
             return (null, found.Count > 0 ? found : [new BuildDiagnostic($"Bundling failed (exit {exit}).", entry)]);
         }
 
@@ -343,7 +436,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         }
     }
 
-    private static async Task<(int Exit, string Output)> RunAsync(string program, IEnumerable<string> args, int dataLimitMegabytes,
+    private static async Task<(int Exit, string Output, string Stdout)> RunAsync(string program, IEnumerable<string> args, int dataLimitMegabytes,
         string root, IReadOnlyDictionary<string, string>? environment, CancellationToken ct)
     {
         using var process = Confined.Start(program, args, dataLimitMegabytes * 1024L * 1024, environment, root);
@@ -361,9 +454,11 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 Confined.Kill(process);
             }
         }
-        return (process.ExitCode, (await stdout) + "\n" + (await stderr));
+        var output = await stdout;
+        return (process.ExitCode, output + "\n" + (await stderr), output);
     }
 
-    private static string Clean(string output, string root, string prefix) =>
-        output.Replace(prefix, "", StringComparison.Ordinal).Replace(root + Path.DirectorySeparatorChar, "", StringComparison.Ordinal).Trim();
+    /// <summary>A diagnostic may be passed on only if it is about the repository's own files: one about any other file can quote it.</summary>
+    private static bool InRepository(string? file) =>
+        file is not null && SafePath().IsMatch(file) && !file.Split('/').Any(s => s.StartsWith('.'));
 }

@@ -122,10 +122,20 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
             {
                 return done;
             }
-            await process.WaitForExitAsync(ct);
+            try
+            {
+                // Its output can end long before the process does (it may close stdout and spin): the deadline still holds.
+                await process.WaitForExitAsync(deadline.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Confined.Kill(process);
+                return Done("limit", error: $"The function ran longer than {timeout.TotalSeconds:0.#} s.");
+            }
             var errors = await stderr;
-            // 133: V8 aborted (SIGTRAP) at its heap limit; 137: the kernel's OOM killer.
-            if (process.ExitCode is 133 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
+            // 133: V8 aborted (SIGTRAP) at its heap limit; 134: V8's fatal out-of-memory abort (SIGABRT), seen
+                // when the box itself is short of memory; 137: the kernel's OOM killer.
+            if (process.ExitCode is 133 or 134 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
                 || errors.Contains("out of memory", StringComparison.OrdinalIgnoreCase))
             {
                 return Done("limit", error: $"The function used more than {heap} MB of memory.");
