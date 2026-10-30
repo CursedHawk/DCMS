@@ -197,6 +197,10 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         var unchanged = Req(HttpMethod.Get, $"{api}/sdk.d.ts", slug, owner);
         unchanged.Headers.TryAddWithoutValidation("If-None-Match", sdk.Headers.ETag!.ToString());
         (await client.SendAsync(unchanged, ct)).StatusCode.Should().Be(HttpStatusCode.NotModified);
+        // A reader of the functions who may not see the app's model does not see its tables.
+        var reader = await SeedRoleAsync(tenantId, ["plugin:functions:read"], ct);
+        var narrow = await (await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk.d.ts", slug, reader), ct)).Content.ReadAsStringAsync(ct);
+        narrow.Should().Contain("export interface Database").And.NotContain("CrmCompaniesRow").And.NotContain("queryRecords");
 
         var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
         var at = $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}";

@@ -3,6 +3,8 @@ using Dcms.Plugins.Functions.Deploy;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using System.Text.Json.Nodes;
+using Dcms.Shared.Security.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 
 namespace Dcms.Plugins.Functions.Endpoints;
@@ -21,9 +23,11 @@ internal static class AdminEndpoints
             .RequirePluginPermission("read");
 
         // @dcms/functions as the editor's type checker sees it: what a build checks against now.
-        endpoints.MapGet("/_functions/sdk.d.ts", async (HttpContext http, SdkTypings sdk, CancellationToken ct) =>
+        endpoints.MapGet("/_functions/sdk.d.ts", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
             {
-                var typings = await sdk.GenerateAsync(ct);
+                // Only what the reader may see of the tables and contracts it describes.
+                var typings = await sdk.GenerateAsync(ct, async permission =>
+                    (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(permission))).Succeeded);
                 var etag = SdkTypings.ETag(typings);
                 http.Response.Headers.ETag = etag;
                 http.Response.Headers.CacheControl = "private, no-cache";

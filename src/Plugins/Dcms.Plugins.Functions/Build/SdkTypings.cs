@@ -20,14 +20,18 @@ namespace Dcms.Plugins.Functions.Build;
 /// </summary>
 public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, PluginContextFactory instances)
 {
-    public async Task<string> GenerateAsync(CancellationToken ct)
+    /// <param name="may">For a person reading it: whether they hold a permission. Tables need
+    /// Dynamic Apps' model-read, an operation its own permission; null (a build) shows everything,
+    /// since the broker and deploy-time vouching gate every call anyway.</param>
+    public async Task<string> GenerateAsync(CancellationToken ct, Func<string, Task<bool>>? may = null)
     {
         using var rls = RlsScope.Environment(context.TenantId, context.EnvironmentId);
         var enabled = (await instances.EnabledInstancesAsync(context.TenantId, ct)).OrderBy(i => i.Slug, StringComparer.Ordinal).ToList();
         var (database, plugins, rows) = (new StringBuilder(), new StringBuilder(), new StringBuilder());
         var names = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var app in enabled.Where(i => i.PluginId == "dynamic-apps"))
+        var tables = may is null || await may("plugin:dynamic-apps:model-read");
+        foreach (var app in enabled.Where(i => tables && i.PluginId == "dynamic-apps"))
         {
             var model = await context.Contracts.Get<IDynamicAppsAutomation>(app.InstanceId).ModelAsync(ct);
             if (model is null || model.Tables.Count == 0) continue;
@@ -49,13 +53,23 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
                 .Where(d => d.Operations.Any(o => o.Expose.HasFlag(OpExposure.Admin)))
                 .OrderBy(d => d.Id, StringComparer.Ordinal)
                 .ToList();
-            if (contracts.Count == 0) continue;
-            plugins.Append($"/** {Comment(instance.Name)} */\n{Key(instance.Slug)}: {{\n");
+            var shown = new List<(ContractDescriptor Contract, List<OperationDescriptor> Operations)>();
             foreach (var contract in contracts)
+            {
+                var operations = new List<OperationDescriptor>();
+                foreach (var op in contract.Operations.Where(o => o.Expose.HasFlag(OpExposure.Admin)))
+                {
+                    if (may is null || op.Permission is null || await may(op.Permission)) operations.Add(op);
+                }
+                if (operations.Count > 0) shown.Add((contract, operations));
+            }
+            if (shown.Count == 0) continue;
+            plugins.Append($"/** {Comment(instance.Name)} */\n{Key(instance.Slug)}: {{\n");
+            foreach (var (contract, operations) in shown)
             {
                 plugins.Append($"  /** {Comment(contract.Description ?? contract.Id)} Declare \"{contract.Id}\" in uses.contracts. */\n");
                 plugins.Append($"  {Camel(contract.Name)}: {{\n");
-                foreach (var op in contract.Operations.Where(o => o.Expose.HasFlag(OpExposure.Admin)))
+                foreach (var op in operations)
                 {
                     var input = op.InputSchema is JsonObject { Count: > 0 } ? $"input: {Ts(op.InputSchema)}" : "";
                     var output = op.OutputSchema is null ? "void" : Ts(op.OutputSchema);
