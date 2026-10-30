@@ -4,6 +4,11 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Deploy;
+using System.Net.WebSockets;
+using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.Functions.Runtime;
+using Dcms.Shared.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Functions;
@@ -65,8 +70,11 @@ public sealed class FunctionsPlugin : IPlugin
             ContractRequirement.Of<IPluginRepos>(),
             // Builds run as tracked jobs, on the workspace's jobs page.
             ContractRequirement.Of<IPluginTrackedJobs>(),
+            // What functions reach, each call checked against what they declared (ADR 0029).
+            ContractRequirement.Of<IDynamicAppsAutomation>(optional: true),
+            ContractRequirement.Of<IPluginSecrets>(),
         ],
-        jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name)],
+        jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name), JobDeclaration.Of<RunJob>(RunJob.Name)],
         // A push to release builds a deployment.
         subscribes: [EventSubscription.Of<RepoPushed, RepoPushedHandler>()],
         adminScreens:
@@ -92,6 +100,29 @@ public sealed class FunctionsPlugin : IPlugin
             client.BaseAddress = new Uri(host.Configuration["Services:ScriptRunner"] ?? "http://localhost:5095");
             client.Timeout = TimeSpan.FromMinutes(3);
         });
+
+        // Runs: a WebSocket session on the same runner, and the broker answering its calls here.
+        services.AddSingleton<FunctionSocketFactory>(_ =>
+        {
+            var runner = new Uri(host.Configuration["Services:ScriptRunner"] ?? "http://localhost:5095");
+            var session = new UriBuilder(runner) { Scheme = runner.Scheme == "https" ? "wss" : "ws", Path = "/session" }.Uri;
+            return async ct =>
+            {
+                var socket = new ClientWebSocket();
+                await socket.ConnectAsync(session, ct);
+                return socket;
+            };
+        });
+        services.AddScoped<FunctionRunner>();
+        // http.fetch: public addresses only, checked at connect time (redirects and DNS
+        // rebinding included), and no redirects followed: the function sees the 3xx and decides.
+        services.AddHttpClient(HostCalls.EgressClientName)
+            .ConfigurePrimaryHttpMessageHandler(() =>
+            {
+                var handler = PublicEgress.Handler(allowPrivate: host.Configuration.GetValue("Functions:EgressAllowLocal", false));
+                handler.AllowAutoRedirect = false;
+                return handler;
+            });
     }
 
     /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/_functions/…</c>.</summary>

@@ -24,10 +24,7 @@ const context = (c) =>
     db: chain("db"),
     plugins: chain("contract"),
     functions: Object.freeze({ invoke: (name, input) => call("functions.invoke", { name, input }) }),
-    jobs: Object.freeze({
-      enqueue: (fn, payload, options) => call("jobs.enqueue", { function: fn, payload, options }),
-      get: (id) => call("jobs.get", { id }),
-    }),
+    jobs: Object.freeze({ enqueue: (fn, payload, options) => call("jobs.enqueue", { function: fn, payload, options }) }),
     messages: Object.freeze({ emit: (topic, payload) => call("messages.emit", { topic, payload }) }),
     secrets: Object.freeze({ get: (name) => call("secrets.get", { name }) }),
     http: Object.freeze({

@@ -78,6 +78,13 @@ Outbound HTTP:
 - goes through `PublicEgress`, which checks at connect time, so a redirect or a DNS name pointing at an internal address is refused;
 - has fixed time and size caps.
 
+What each call needs, as the broker (`Runtime/HostCalls.cs`) checks it:
+- `db.<app>.<table>.<method>`: the table and verb in `uses.tables`, and the matching `plugin:dynamic-apps:data-*`. It goes through `dynamic-apps.automation@1`, an in-process contract on the system plane flows used, which checks no member permission itself: the broker does.
+- `plugins.<instance>.<contract>.<operation>`: the contract in `uses.contracts`, called through the contract dispatcher on the admin plane with the vouched set as the caller's permissions. Deploying vouches for every admin operation's permission of each declared contract. Platform (`dcms.*`) contracts are never callable.
+- `secrets.get`: the name in `uses.secrets`, and `plugin:functions:secrets`.
+- `functions.invoke`: a function of the same deployment, at most 5 deep.
+- `jobs.enqueue`: a tracked job that runs the *live* deployment when it starts. At most 100 per run, and a chain of jobs enqueuing jobs stops at 10.
+
 ### The SDK is generated per instance and environment; only its types
 
 `@dcms/functions` has two parts:

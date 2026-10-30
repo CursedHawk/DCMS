@@ -84,6 +84,8 @@ public sealed class DynamicAppsPlugin : IPlugin
         [
             ContractProvision.Of<IDynamicAppsConfig, Ai.DynamicAppsContracts>(),
             ContractProvision.Of<IDynamicAppsRecords, Ai.DynamicAppsContracts>(),
+            // The same records for automations, plugin-to-plugin only: Functions (ADR 0029).
+            ContractProvision.Of<IDynamicAppsAutomation, Ai.AutomationRecords>(),
             // Tables and manual flows a tenant can give its site users through roles (ADR 0022).
             ContractProvision.Of<IUserResources, AppUserResources>(),
         ],

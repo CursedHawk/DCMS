@@ -1,6 +1,7 @@
 using Dcms.Plugins.Functions.Deploy;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 
 namespace Dcms.Plugins.Functions.Endpoints;
@@ -40,7 +41,20 @@ internal static class AdminEndpoints
                 Run(async () => Results.Accepted(value: await deployments.RebuildAsync(ct))))
             .RequirePluginPermission("deploy")
             .AuditAs("build.requested");
+
+        // Runs a function now: the live deployment, or a built one tried before deploying it,
+        // which needs what deploying it would. Either way it acts, so only deployers may.
+        endpoints.MapPost("/_functions/run", (RunRequest body, DeploymentService deployments, CancellationToken ct) =>
+                Run(async () =>
+                {
+                    var outcome = await deployments.RunAsync(body.Function, body.Input, body.Deployment, ct);
+                    return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs });
+                }))
+            .RequirePluginPermission("deploy")
+            .AuditAs("function.ran");
     }
+
+    public sealed record RunRequest(string Function, JsonNode? Input = null, Guid? Deployment = null);
 
     private static async Task<IResult> Run(Func<Task<IResult>> handler)
     {

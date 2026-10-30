@@ -1,5 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dcms.Plugins.Functions.Build;
+using Dcms.Plugins.Functions.Runtime;
+using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.Functions;
@@ -34,7 +37,8 @@ public sealed class DeployRefusedException(IReadOnlyList<string> missing)
 /// hold too: nobody revives what they could not have deployed.
 /// </summary>
 public sealed class DeploymentService(
-    FunctionsDbContext db, IPluginContext context, IHttpContextAccessor http, IAuthorizationService authz)
+    FunctionsDbContext db, IPluginContext context, IHttpContextAccessor http, IAuthorizationService authz,
+    PluginRegistry registry, FunctionRunner runner)
 {
     /// <summary>What a new repository starts with: one function to call, and how to write more.</summary>
     public static readonly IReadOnlyDictionary<string, string> Starter = new Dictionary<string, string>
@@ -85,7 +89,7 @@ public sealed class DeploymentService(
         var functions = FunctionManifest.Deserialize(row.Manifest);
         return new DeploymentDetail(Summary(row), functions,
             row.Diagnostics is null ? null : JsonDocument.Parse(row.Diagnostics).RootElement.Clone(),
-            row.Status == FunctionDeploymentStatus.Ready ? FunctionManifest.RequiredPermissions(functions) : row.VouchedPermissions);
+            row.Status == FunctionDeploymentStatus.Ready ? Required(functions) : row.VouchedPermissions);
     }
 
     /// <summary>Makes a built deployment live (deploy), or an earlier one again (rollback).</summary>
@@ -100,18 +104,7 @@ public sealed class DeploymentService(
             throw new ContractConflictException($"Deployment {target.Number} is {target.Status.ToString().ToLowerInvariant()}; only a built one can go live.");
         }
 
-        var required = target.Status == FunctionDeploymentStatus.Ready
-            ? FunctionManifest.RequiredPermissions(FunctionManifest.Deserialize(target.Manifest))
-            : target.VouchedPermissions;
-        var missing = new List<string>();
-        foreach (var permission in required)
-        {
-            if (!(await authz.AuthorizeAsync(http.HttpContext!.User, null, new PermissionRequirement(permission))).Succeeded)
-            {
-                missing.Add(permission);
-            }
-        }
-        if (missing.Count > 0) throw new DeployRefusedException(missing);
+        var required = await VouchAsync(target);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var live = await db.Deployments.FirstOrDefaultAsync(d => d.InstanceId == InstanceId && d.Status == FunctionDeploymentStatus.Active, ct);
@@ -143,6 +136,54 @@ public sealed class DeploymentService(
         var builds = await db.Deployments.CountAsync(d => d.InstanceId == InstanceId && d.CommitSha == head, ct);
         return await BuildJob.EnqueueAsync(context, InstanceId, head, context.Instance?.Slug, ct, attempt: builds);
     }
+
+    /// <summary>
+    /// Runs one function now with an input (the editor's Run): the live deployment, or a built one
+    /// being tried before it goes live, which runs under the caller's permissions as a deploy would.
+    /// </summary>
+    public async Task<RunOutcome> RunAsync(string function, JsonNode? input, Guid? deploymentId, CancellationToken ct)
+    {
+        FunctionDeployment? deployment;
+        using (Scope())
+        {
+            deployment = await db.Deployments.AsNoTracking().FirstOrDefaultAsync(d => d.InstanceId == InstanceId
+                && (deploymentId == null ? d.Status == FunctionDeploymentStatus.Active : d.Id == deploymentId), ct);
+        }
+        if (deployment is null)
+        {
+            throw new ContractConflictException(deploymentId is null ? "Nothing is deployed yet." : $"There is no deployment {deploymentId}.");
+        }
+        if (deployment.Status is not (FunctionDeploymentStatus.Active or FunctionDeploymentStatus.Ready))
+        {
+            throw new ContractConflictException($"Deployment {deployment.Number} is {deployment.Status.ToString().ToLowerInvariant()}; only a built or live one runs.");
+        }
+        var vouched = deployment.Status == FunctionDeploymentStatus.Active ? deployment.VouchedPermissions : await VouchAsync(deployment);
+        var target = RunTargets.Of(deployment, function, vouched) ?? throw RunTargets.NoSuchFunction(function);
+        return await runner.RunAsync(target, input, new RunTrigger("manual"), ct);
+    }
+
+    /// <summary>What making <paramref name="target"/> live needs, if the caller holds all of it (definer's rights).</summary>
+    private async Task<List<string>> VouchAsync(FunctionDeployment target)
+    {
+        var required = target.Status == FunctionDeploymentStatus.Ready
+            ? Required(FunctionManifest.Deserialize(target.Manifest))
+            : target.VouchedPermissions;
+        var missing = new List<string>();
+        foreach (var permission in required)
+        {
+            if (!(await authz.AuthorizeAsync(http.HttpContext!.User, null, new PermissionRequirement(permission))).Succeeded)
+            {
+                missing.Add(permission);
+            }
+        }
+        return missing.Count > 0 ? throw new DeployRefusedException(missing) : required;
+    }
+
+    /// <summary>Everything the functions use, contract operations included.</summary>
+    private List<string> Required(IReadOnlyList<FunctionSpec> functions) =>
+        [.. FunctionManifest.RequiredPermissions(functions)
+            .Concat(functions.SelectMany(f => f.Uses.Contracts).SelectMany(c => HostCalls.ContractPermissions(registry, c)))
+            .Distinct().Order(StringComparer.Ordinal)];
 
     private IDisposable Scope() => RlsScope.Environment(context.TenantId, context.EnvironmentId);
 

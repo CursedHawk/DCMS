@@ -7,6 +7,7 @@ using System.Text.Json;
 using Dcms.IntegrationTests.Automation;
 using Dcms.IntegrationTests.Tenancy;
 using Dcms.Plugins.Functions.Build;
+using Dcms.Plugins.Functions.Runtime;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.PluginSdk.Runtime.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -157,6 +158,122 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         keys.Should().ContainSingle().Which.Should().EndWith($"functions-build:{instanceId}:bbb:0", "only release builds");
     }
 
+    [DockerFact]
+    public async Task A_deployed_function_runs_with_only_what_it_declared_and_its_deployer_vouched_for()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var instanceId = await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        // A Dynamic Apps app with a table, and a secret for the functions.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", slug, Guid.Empty,
+            new { pluginId = "dynamic-apps", slug = "crm", name = "CRM" }, superAdmin: true), ct)).EnsureSuccessStatusCode();
+        var model = await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_model", slug, owner), ct), ct);
+        var draft = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", slug, owner, new
+        {
+            expectedHash = model.GetProperty("hash").GetString(),
+            operations = JsonDocument.Parse("""
+                [{ "op": "create", "type": "table", "value": { "apiName": "companies", "displayName": "Company", "primaryFieldId": "name",
+                   "fields": [ { "apiName": "name", "displayName": "Name", "required": true } ] } },
+                 { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal",
+                   "fields": [ { "apiName": "title", "displayName": "Title" } ] } }]
+                """).RootElement,
+        }), ct), ct);
+        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", slug, owner,
+            new { expectedHash = draft.GetProperty("draft").GetProperty("hash").GetString() }), ct), ct);
+        (await host.Services.GetRequiredService<PluginHandlerRunner>().RunAsync(tenantId, "functions", instanceId, (ctx, _) =>
+            ctx.Contracts.Get<IPluginSecrets>().SetAsync(new SetSecret("STRIPE_KEY", "sk_test_1", instanceId), ct), ct)).Should().BeTrue();
+
+        var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
+        var at = $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}";
+        var sha = await ShipAsync(client, slug, owner, at, new()
+        {
+            ["functions/onboard.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({
+                  uses: { tables: { "crm.companies": ["read", "create"] }, secrets: ["STRIPE_KEY"], egress: ["api.example.com"] },
+                  async handler(input: { name: string }, ctx) {
+                    const db = ctx.db as any; // typed tables arrive with the generated SDK
+                    const created = await db.crm.companies.create({ name: input.name });
+                    const count = await db.crm.companies.count();
+                    const key = await ctx.secrets.get("STRIPE_KEY");
+                    const reply = await ctx.http.fetch("https://api.example.com/ping", { headers: { authorization: `Bearer ${key}` } });
+                    const doubled = await ctx.functions.invoke<number>("double", { n: count });
+                    const job = await ctx.jobs.enqueue("double", { n: 1 }, { dedupeKey: "once" });
+                    const refusals: string[] = [];
+                    for (const attempt of [() => db.crm.deals.find(), () => db.crm.companies.delete(created.id),
+                                           () => ctx.http.fetch("https://evil.example.org/"), () => ctx.secrets.get("OTHER")]) {
+                      try { await attempt(); refusals.push("allowed"); } catch (e) { refusals.push((e as Error).message); }
+                    }
+                    ctx.log.info("created", created.name);
+                    return { name: created.name, count, status: reply.status, pong: await reply.text(), doubled, job: job.id, refusals };
+                  },
+                });
+                """,
+            ["functions/double.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({ handler: (input: { n: number }) => input.n * 2 });
+                """,
+        }, "Onboarding", ct);
+        await BuildAsync(host, tenantId, instanceId, sha, ct);
+        var built = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().First();
+        built.GetProperty("status").GetString().Should().Be("Ready", built.ToString());
+        var builtId = built.GetProperty("id").GetGuid();
+
+        // Nothing is live yet; the build can be tried, under the caller's permissions.
+        (await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, owner, new { function = "double", input = new { n = 2 } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var tried = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, owner,
+            new { function = "double", input = new { n = 21 }, deployment = builtId }), ct), ct);
+        tried.GetProperty("result").GetInt32().Should().Be(42);
+
+        await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/deployments/{builtId}/activate", slug, owner), ct), ct);
+        var run = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, owner,
+            new { function = "onboard", input = new { name = "Acme" } }), ct), ct);
+        run.GetProperty("status").GetString().Should().Be("ok", run.ToString());
+        var result = run.GetProperty("result");
+        result.GetProperty("name").GetString().Should().Be("Acme");
+        result.GetProperty("count").GetInt32().Should().Be(1);
+        result.GetProperty("pong").GetString().Should().Be("pong for Bearer sk_test_1", "the secret reached only the declared host");
+        result.GetProperty("doubled").GetInt32().Should().Be(2);
+        var refusals = result.GetProperty("refusals").EnumerateArray().Select(r => r.GetString()).ToList();
+        refusals[0].Should().Contain("uses.tables[\"crm.deals\"]");
+        refusals[1].Should().Contain("\"delete\"");
+        refusals[2].Should().Contain("uses.egress");
+        refusals[3].Should().Contain("uses.secrets");
+        run.GetProperty("logs").GetString().Should().Contain("[info] created Acme");
+        _egress.Requests.Should().ContainSingle().Which.Should().Be("https://api.example.com/ping");
+
+        // jobs.enqueue: a tracked run of the live deployment, once per dedupe key.
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """SELECT "DedupeKey" FROM jobs.jobs WHERE "Id" = @id""";
+        cmd.Parameters.AddWithValue("id", result.GetProperty("job").GetGuid());
+        ((string)(await cmd.ExecuteScalarAsync(ct))!).Should().EndWith($"functions-run:{instanceId}:once");
+    }
+
+    private readonly StubEgress _egress = new();
+
+    /// <summary>The internet, for http.fetch: one host that answers, and a record of what was asked.</summary>
+    private sealed class StubEgress : HttpMessageHandler
+    {
+        public List<string> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests.Add(request.RequestUri!.ToString());
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($"pong for {request.Headers.Authorization}"),
+            });
+        }
+    }
+
     private WebApplicationFactory<AdminApiApp::Program> Host() => fixture.Factory.WithWebHostBuilder(builder =>
     {
         builder.UseSetting("Forgejo:BaseUrl", _forgejo!.BaseUrl);
@@ -168,6 +285,12 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
                 c.Timeout = TimeSpan.FromMinutes(3);
             })
             .ConfigurePrimaryHttpMessageHandler(() => _runner!.Server.CreateHandler()));
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<FunctionSocketFactory>(_ => ct =>
+                _runner!.Server.CreateWebSocketClient().ConnectAsync(new Uri(_runner.Server.BaseAddress, "session"), ct));
+            services.AddHttpClient(HostCalls.EgressClientName).ConfigurePrimaryHttpMessageHandler(() => _egress);
+        });
     });
 
     /// <summary>Writes files into the owner's draft on main, commits, merges into release; the release head.</summary>

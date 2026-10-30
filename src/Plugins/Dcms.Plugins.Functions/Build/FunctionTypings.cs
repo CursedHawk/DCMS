@@ -97,10 +97,8 @@ public static class FunctionTypings
           /** Other apps' contracts, as declared in `uses.contracts`. */
           plugins: Plugins;
           functions: { invoke<O = Json>(name: string, input?: Json): Promise<O> };
-          jobs: {
-            enqueue(fn: string, payload?: Json, options?: { runAt?: string; dedupeKey?: string }): Promise<{ id: string }>;
-            get(id: string): Promise<{ id: string; status: string; result?: Json } | null>;
-          };
+          /** Runs a function of this deployment later, on the workspace's jobs page; the same dedupeKey is one job. */
+          jobs: { enqueue(fn: string, payload?: Json, options?: { dedupeKey?: string }): Promise<{ id: string }> };
           messages: { emit(topic: string, payload?: Json): Promise<void> };
           secrets: { get(name: string): Promise<string | null> };
           /** fetch, to the hosts in `uses.egress` only. */
@@ -111,8 +109,8 @@ public static class FunctionTypings
           /** The signed-in caller, over HTTP; null otherwise. */
           user: User | null;
           /** What started this run: the trigger and its event. */
-          trigger: { kind: string; [key: string]: Json } | null;
-          run: { id: string; function: string; deployment: number } | null;
+          trigger: { kind: string; detail: Json } | null;
+          run: { function: string; deployment: number; depth: number } | null;
         }
 
         export interface FunctionSpec<I, O> {

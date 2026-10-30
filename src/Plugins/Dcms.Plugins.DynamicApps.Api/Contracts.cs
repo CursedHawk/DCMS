@@ -273,3 +273,44 @@ public interface IDynamicAppsRecords
             + "and returns the problems. Validate first and say how many records will be created.")]
     Task<ImportResult> ImportRecordsAsync(RecordsImport input, CancellationToken ct);
 }
+
+/// <summary>
+/// The records of an application as an automation sees them (ADR 0029): what a deployed function
+/// reads and writes. Plugin-to-plugin only, and nothing here checks a member's permission — the
+/// caller must, the way Functions checks every call against what the function declared and the
+/// deployer vouched for. Writes may set read-only fields, as flows could, and fire the table's
+/// row events like any other write.
+/// </summary>
+[DcmsContract("dynamic-apps.automation", 1, Description = "An application's records for automations (system plane).")]
+public interface IDynamicAppsAutomation
+{
+    [Operation(OpRisk.Read)]
+    Task<RecordPage> QueryAsync(TableQuery input, CancellationToken ct);
+
+    [Operation(OpRisk.Read)]
+    Task<JsonObject?> GetAsync(RecordRequest input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe)]
+    Task<JsonObject> CreateAsync(RecordCreate input, CancellationToken ct);
+
+    /// <summary>Null when there is no such record. Include <c>version</c> in the values to refuse a stale write.</summary>
+    [Operation(OpRisk.Safe)]
+    Task<JsonObject?> UpdateAsync(RecordUpdate input, CancellationToken ct);
+
+    /// <summary>False when there was no such record.</summary>
+    [Operation(OpRisk.Dangerous)]
+    Task<bool> DeleteAsync(RecordRequest input, CancellationToken ct);
+
+    /// <summary>False unless both records exist.</summary>
+    [Operation(OpRisk.Safe)]
+    Task<bool> LinkAsync(RecordLink input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe)]
+    Task<bool> UnlinkAsync(RecordLink input, CancellationToken ct);
+
+    [Operation(OpRisk.Dangerous)]
+    Task<BulkResult> BulkUpdateAsync(RecordsUpdate input, CancellationToken ct);
+
+    [Operation(OpRisk.Dangerous)]
+    Task<BulkResult> BulkDeleteAsync(RecordsDelete input, CancellationToken ct);
+}

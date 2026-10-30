@@ -1384,6 +1384,9 @@
       },
       "functionsBuild": {
         "title": "Building functions at {{commit}}"
+      },
+      "functionsRun": {
+        "title": "Running function {{function}}"
       }
     },
     "stages": {

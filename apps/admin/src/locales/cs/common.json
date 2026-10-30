@@ -1415,6 +1415,9 @@
       },
       "functionsBuild": {
         "title": "Sestavení funkcí z {{commit}}"
+      },
+      "functionsRun": {
+        "title": "Spuštění funkce {{function}}"
       }
     },
     "stages": {
