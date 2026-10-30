@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
+import { checkDraft, functionsTools } from './agent/functionsTools';
 import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 
@@ -30,6 +31,7 @@ export function IdeSidebar({
   onReload,
   onRestored,
   viewWidth,
+  functionsApi,
 }: {
   siteId: string;
   siteName?: string;
@@ -45,6 +47,8 @@ export function IdeSidebar({
   ) => void;
   /** Width (px) of the active-view panel; the activity rail stays fixed. */
   viewWidth?: number;
+  /** A Functions app's repository: the agent works with its builds and its SDK. */
+  functionsApi?: string;
 }) {
   const repo = isRepoWorkspace(siteId);
   const [agentOpened, setAgentOpened] = useState(false);
@@ -91,8 +95,8 @@ export function IdeSidebar({
           <Rocket className="h-5 w-5" />
         </RailButton>
         )}
-        {/* The site agent's tools speak to a site; a repository's agent arrives with its own (F9). */}
-        {repo ? null : (
+        {/* The site agent's tools speak to a site; a repository has one only where its plugin brings tools. */}
+        {repo && !functionsApi ? null : (
         <RailButton
           active={view === 'agent'}
           label={t('ide.agent.title')}
@@ -124,7 +128,18 @@ export function IdeSidebar({
             views; it ends with the page. */}
         {agentOpened && (
           <div className={view === 'agent' ? 'h-full' : 'hidden'}>
-            <AgentPanel key={siteId} siteId={siteId} siteName={siteName} />
+            {functionsApi ? (
+              <AgentPanel
+                key={siteId}
+                siteId={siteId}
+                siteName={siteName}
+                kind="functions"
+                tools={functionsTools(functionsApi)}
+                validate={() => checkDraft(functionsApi)}
+              />
+            ) : (
+              <AgentPanel key={siteId} siteId={siteId} siteName={siteName} />
+            )}
           </div>
         )}
       </div>

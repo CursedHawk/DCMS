@@ -3,7 +3,8 @@
     "model": "Data model",
     "automation": "Automations",
     "access": "Public access & API",
-    "revisions": "Revisions"
+    "revisions": "Revisions",
+    "functions": "Functions"
   },
   "status": {
     "draft": "Draft r{{number}}",
@@ -372,5 +373,15 @@
     "enableDescription": "This turns on the app's AI tools. The assistant can then read and change the configuration and records, with your permissions only. Publishing, rolling back and deleting still wait for your approval.",
     "enable": "Turn on and ask",
     "enableFailed": "Could not turn on AI tools. You need permission to manage plugins."
+  },
+  "functions": {
+    "hint": "Functions in your Functions apps that this app's tables trigger, or that read and write them.",
+    "none": "No Functions app is installed. Install one to automate this app with TypeScript functions.",
+    "install": "Install Functions",
+    "open": "Open code",
+    "automate": "Automate with AI",
+    "empty": "None of its functions work with this app yet.",
+    "unreadable": "You cannot see this app's functions.",
+    "prompt": "Using the Functions app \"{{functions}}\", write a function for the \"{{app}}\" app (tables {{slug}}.*) that "
   }
 }

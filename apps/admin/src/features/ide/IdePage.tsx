@@ -76,6 +76,8 @@ export interface RepoTarget {
   /** What kind of code this is, under the name. */
   mode: string;
   types?: { module: string; path: string };
+  /** A Functions app's admin routes (`/admin/plugins/{slug}/_functions`): the agent builds and runs drafts there. */
+  functionsApi?: string;
 }
 
 export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget }) {
@@ -618,6 +620,7 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
         <IdeSidebar
           siteId={siteId}
           siteName={repo ? repo.name : site.data?.name}
+          functionsApi={repo?.functionsApi}
           branch={branch}
           view={sidebarView}
           onViewChange={setSidebarView}

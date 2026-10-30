@@ -20,7 +20,7 @@ public sealed record BuildPayload(string Sha);
 /// who holds what it uses to deploy it; a bad one is <c>Failed</c> with every problem's file and
 /// line. Either way the job succeeds: the outcome is the deployment's, not the worker's.
 /// </summary>
-public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, SdkTypings sdk, ILogger<BuildJob> logger) : IPluginJobHandler
+public sealed class BuildJob(FunctionsDbContext db, Builder builder, ILogger<BuildJob> logger) : IPluginJobHandler
 {
     public const string Name = "build";
     public const string HttpClientName = "functions-script-runner";
@@ -71,24 +71,16 @@ public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, Sdk
         try
         {
             var files = await context.Contracts.Get<IPluginRepos>().ReadFilesAsync(new RepoFilesQuery(sha, instance.InstanceId), ct);
-            var built = await BuildAsync(files.Files, await sdk.GenerateAsync(ct), ct);
+            var built = await builder.BuildAsync(files.Files, ct);
             if (!built.Ok)
             {
                 Fail(deployment, built.Diagnostics);
             }
             else
             {
-                var (functions, problems) = FunctionManifest.Read(built.Functions.ToDictionary(f => f.Name, f => f.Definition));
-                if (problems.Count > 0)
-                {
-                    Fail(deployment, problems.Select(p => new Diagnostic(p.Message, $"functions/{p.Function}.ts")).ToList());
-                }
-                else
-                {
-                    deployment.Manifest = FunctionManifest.Serialize(functions);
-                    deployment.Bundles = JsonSerializer.Serialize(built.Functions.ToDictionary(f => f.Name, f => f.Bundle));
-                    deployment.Status = FunctionDeploymentStatus.Ready;
-                }
+                deployment.Manifest = FunctionManifest.Serialize(built.Functions);
+                deployment.Bundles = JsonSerializer.Serialize(built.Bundles);
+                deployment.Status = FunctionDeploymentStatus.Ready;
             }
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
@@ -97,14 +89,6 @@ public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, Sdk
             Fail(deployment, [new Diagnostic("The build service could not be reached. Try again in a moment.")]);
         }
         await db.SaveChangesAsync(ct);
-    }
-
-    private async Task<BuildResponse> BuildAsync(IReadOnlyDictionary<string, string> files, string sdkTypes, CancellationToken ct)
-    {
-        using var response = await http.CreateClient(HttpClientName).PostAsJsonAsync("/build", new { files, sdkTypes }, Json, ct);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<BuildResponse>(Json, ct)
-               ?? throw new HttpRequestException("script-runner returned no build result.");
     }
 
     private static void Fail(FunctionDeployment deployment, IReadOnlyList<Diagnostic> diagnostics)
@@ -118,9 +102,6 @@ public sealed class BuildJob(FunctionsDbContext db, IHttpClientFactory http, Sdk
     /// <summary>A build problem, as script-runner reports one.</summary>
     public sealed record Diagnostic(string Message, string? File = null, int? Line = null, int? Column = null, string? Code = null);
 
-    private sealed record BuiltFunction(string Name, string Bundle, JsonNode? Definition);
-
-    private sealed record BuildResponse(bool Ok, List<Diagnostic> Diagnostics, List<BuiltFunction> Functions);
 }
 
 /// <summary>A push to an instance's release branch builds it; pushes to any other branch are work in progress.</summary>

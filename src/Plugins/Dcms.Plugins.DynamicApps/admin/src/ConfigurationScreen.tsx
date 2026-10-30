@@ -24,11 +24,12 @@ import { useAppState, useModelAction, useWorkingConfig, type ValidationResultLik
 import { ModelTab } from './model/ModelTab';
 import { AutomationTab } from './automation/AutomationTab';
 import { AccessTab } from './AccessTab';
+import { FunctionsTab } from './FunctionsTab';
 import { RevisionsTab } from './RevisionsTab';
 import { PublishDialog } from './PublishDialog';
 import { deepLink } from './deepLink';
 
-const TABS = ['model', 'automation', 'access', 'revisions'];
+const TABS = ['model', 'automation', 'functions', 'access', 'revisions'];
 
 /**
  * The application's control plane (instance screen "configuration"): its tables, automations,
@@ -148,6 +149,7 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
         <TabsList>
           <TabsTrigger value="model">{t('tabs.model')}</TabsTrigger>
           <TabsTrigger value="automation">{t('tabs.automation')}</TabsTrigger>
+          <TabsTrigger value="functions">{t('tabs.functions')}</TabsTrigger>
           <TabsTrigger value="access">{t('tabs.access')}</TabsTrigger>
           <TabsTrigger value="revisions">
             <History className="size-4" aria-hidden /> {t('tabs.revisions')}
@@ -158,6 +160,9 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
         </TabsContent>
         <TabsContent value="automation">
           <AutomationTab slug={slug} config={config} editable={mayEdit} onSelect={setSelection} />
+        </TabsContent>
+        <TabsContent value="functions">
+          <FunctionsTab slug={slug} appName={instance?.name ?? slug} />
         </TabsContent>
         <TabsContent value="access">
           <AccessTab slug={slug} config={config} editable={mayEdit} published={published !== null} />

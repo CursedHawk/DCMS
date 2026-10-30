@@ -46,7 +46,7 @@ public sealed class DeployRefusedException(IReadOnlyList<string> missing)
 /// </summary>
 public sealed class DeploymentService(
     FunctionsDbContext db, IPluginContext context, IHttpContextAccessor http, IAuthorizationService authz,
-    PluginRegistry registry, FunctionRunner runner, RunQueue runs)
+    PluginRegistry registry, FunctionRunner runner, RunQueue runs, Builder builder)
 {
     /// <summary>What a new repository starts with: one function to call, and how to write more.</summary>
     public static readonly IReadOnlyDictionary<string, string> Starter = new Dictionary<string, string>
@@ -200,6 +200,54 @@ public sealed class DeploymentService(
         r.Id, r.Function, r.DeploymentNumber, r.TriggerKind, r.Status.ToString(), r.Attempts, r.Error, r.DurationMs, r.CreatedAt, r.FinishedAt);
 
     private static JsonElement? Json(string? json) => json is null ? null : JsonDocument.Parse(json).RootElement.Clone();
+
+    public sealed record DraftCheck(bool Ok, IReadOnlyList<BuildJob.Diagnostic> Problems, IReadOnlyList<string> Functions, IReadOnlyList<string> Permissions);
+
+    /// <summary>Builds files (a draft, a branch) as a deployment would be built, without making one.</summary>
+    public async Task<DraftCheck> CheckAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
+    {
+        var built = await builder.BuildAsync(files, ct);
+        return new DraftCheck(built.Ok, built.Diagnostics, built.Functions.Select(f => f.Name).ToList(), built.Ok ? Required(built.Functions) : []);
+    }
+
+    /// <summary>
+    /// Builds files and runs one function of them now (the editor's and the assistant's test):
+    /// for real, under the caller's permissions, which must cover everything the code uses, as
+    /// deploying it would. Nothing is deployed and the run is not in the history.
+    /// </summary>
+    public async Task<RunOutcome> TestAsync(IReadOnlyDictionary<string, string> files, string function, JsonNode? input, CancellationToken ct)
+    {
+        var built = await builder.BuildAsync(files, ct);
+        if (!built.Ok)
+        {
+            throw new ContractValidationException("It does not build: " + string.Join("; ",
+                built.Diagnostics.Take(5).Select(d => d.File is null ? d.Message : $"{d.File}:{d.Line}: {d.Message}")));
+        }
+        var draft = new FunctionDeployment
+        {
+            Id = Guid.NewGuid(),
+            TenantId = context.TenantId,
+            EnvironmentId = context.EnvironmentId,
+            InstanceId = InstanceId,
+            Number = 0,
+            CommitSha = "draft",
+            Status = FunctionDeploymentStatus.Ready,
+            Manifest = FunctionManifest.Serialize(built.Functions),
+            Bundles = JsonSerializer.Serialize(built.Bundles),
+        };
+        var vouched = await VouchAsync(draft);
+        var target = RunTargets.Of(draft, function, vouched) ?? throw RunTargets.NoSuchFunction(function);
+        return await runner.RunAsync(target, input, new RunTrigger("manual", new JsonObject { ["test"] = true }), ct);
+    }
+
+    /// <summary>The latest build waiting to go live, or a deployment by number.</summary>
+    public async Task<Guid?> FindAsync(int? number, CancellationToken ct)
+    {
+        using var rls = Scope();
+        var query = db.Deployments.AsNoTracking().Where(d => d.InstanceId == InstanceId);
+        query = number is { } n ? query.Where(d => d.Number == n) : query.Where(d => d.Status == FunctionDeploymentStatus.Ready);
+        return await query.OrderByDescending(d => d.Number).Select(d => (Guid?)d.Id).FirstOrDefaultAsync(ct);
+    }
 
     /// <summary>What making <paramref name="target"/> live needs, if the caller holds all of it (definer's rights).</summary>
     private async Task<List<string>> VouchAsync(FunctionDeployment target)

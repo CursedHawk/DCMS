@@ -436,6 +436,57 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         return runs;
     }
 
+    [DockerFact]
+    public async Task The_assistant_writes_checks_tests_ships_and_deploys_a_function_through_its_contract()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var instanceId = await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var member = await SeedMemberAsync(tenantId, "Member", ct);
+        Task<HttpResponseMessage> Call(string op, object body, Guid? who = null) =>
+            client.SendAsync(Req(HttpMethod.Post, $"/api/admin/contracts/functions.code@1/{op}?instance=fn", slug, who ?? owner, body), ct);
+
+        var overview = await Json(await Call("Overview", new { }), ct);
+        overview.GetProperty("live").ValueKind.Should().Be(JsonValueKind.Null);
+        (await Call("Overview", new { }, member)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        (await Json(await Call("Sdk", new { }), ct)).GetProperty("typings").GetString().Should().Contain("defineFunction");
+
+        var written = await Json(await Call("WriteFiles", new
+        {
+            message = "Add greet",
+            put = new Dictionary<string, string>
+            {
+                ["functions/greet.ts"] = """
+                    import { defineFunction } from "@dcms/functions";
+                    export default defineFunction({ handler: (input: { name: string }) => `Hi ${input.name}` });
+                    """,
+            },
+        }), ct);
+        written.GetProperty("branch").GetString().Should().Be("main");
+        (await Call("WriteFiles", new { message = "Sneak", branch = "release", put = new Dictionary<string, string> { ["x.ts"] = "" } }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "release moves only by a merge");
+
+        var check = await Json(await Call("Check", new { }), ct);
+        check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());
+        check.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().Contain(["greet", "hello"]);
+
+        var tested = await Json(await Call("Test", new { function = "greet", input = new { name = "Ada" } }), ct);
+        tested.GetProperty("result").GetString().Should().Be("Hi Ada");
+
+        var shipped = await Json(await Call("Ship", new { }), ct);
+        shipped.GetProperty("merged").GetBoolean().Should().BeTrue(shipped.ToString());
+        await BuildAsync(host, tenantId, instanceId, shipped.GetProperty("sha").GetString()!, ct); // the push webhook, here
+
+        var deployed = await Json(await Call("Deploy", new { }), ct);
+        deployed.GetProperty("status").GetString().Should().Be("Active");
+        var live = await Json(await Call("Overview", new { }), ct);
+        live.GetProperty("functions").EnumerateArray().Select(f => f.GetProperty("name").GetString()).Should().Contain("greet");
+    }
+
     /// <summary>A Dynamic Apps app "crm": companies (with a lookup to a deal) and deals.</summary>
     private static async Task PublishCrmAsync(HttpClient client, string slug, Guid owner, CancellationToken ct)
     {

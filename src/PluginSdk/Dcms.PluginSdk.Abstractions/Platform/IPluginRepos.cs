@@ -28,6 +28,22 @@ public sealed record RepoHeadQuery(string Branch, Guid? InstanceId = null);
 
 public sealed record RepoHead(string? Sha);
 
+/// <param name="Branch">Any branch but <c>release</c>, which only a merge moves; made from the default branch if missing.</param>
+/// <param name="Put">Files to write, by path.</param>
+/// <param name="Delete">Paths to remove.</param>
+public sealed record RepoCommit(
+    string Branch, string Message, IReadOnlyDictionary<string, string>? Put = null, IReadOnlyList<string>? Delete = null,
+    Guid? InstanceId = null);
+
+/// <param name="Sha">The new commit; null when nothing changed.</param>
+public sealed record RepoCommitResult(string? Sha);
+
+/// <param name="Base">Where to merge into: <c>release</c> by default, which builds.</param>
+public sealed record RepoMerge(string Head, string Base = "release", Guid? InstanceId = null);
+
+/// <param name="Conflicts">Paths changed on both sides; nothing was merged. Resolve them in the IDE.</param>
+public sealed record RepoMergeResult(bool Merged, bool UpToDate, string? Sha, IReadOnlyList<string> Conflicts);
+
 /// <summary>
 /// A git repository for one of the calling plugin's instances, one per environment, edited in
 /// the platform's web IDE like a Mode B site (ADR 0029). The plugin decides what the files mean
@@ -53,6 +69,20 @@ public interface IPluginRepos
 
     [Operation(OpRisk.Read)]
     Task<RepoHead> HeadAsync(RepoHeadQuery input, CancellationToken ct);
+
+    /// <summary>
+    /// Commits files to a working branch, as the IDE would. The caller checks who may: the
+    /// platform knows only that the plugin owns the repository.
+    /// </summary>
+    [Operation(OpRisk.Safe)]
+    Task<RepoCommitResult> CommitAsync(RepoCommit input, CancellationToken ct);
+
+    /// <summary>
+    /// Merges one branch into another, <c>release</c> by default (a push: the plugin is told).
+    /// Refused into <c>release</c> where the environment leaves the instance to deployments.
+    /// </summary>
+    [Operation(OpRisk.Dangerous)]
+    Task<RepoMergeResult> MergeAsync(RepoMerge input, CancellationToken ct);
 }
 
 /// <summary>

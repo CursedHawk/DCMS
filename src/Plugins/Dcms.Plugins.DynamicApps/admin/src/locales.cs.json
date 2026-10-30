@@ -3,7 +3,8 @@
     "model": "Datový model",
     "automation": "Automatizace",
     "access": "Veřejný přístup a API",
-    "revisions": "Revize"
+    "revisions": "Revize",
+    "functions": "Funkce"
   },
   "status": {
     "draft": "Koncept r{{number}}",
@@ -372,5 +373,15 @@
     "enableDescription": "Tím zapnete AI nástroje aplikace. Asistent pak může číst a měnit konfiguraci i záznamy, a to jen s vašimi oprávněními. Publikování, návrat k revizi a mazání stále čekají na vaše schválení.",
     "enable": "Zapnout a zeptat se",
     "enableFailed": "AI nástroje se nepodařilo zapnout. Potřebujete oprávnění ke správě pluginů."
+  },
+  "functions": {
+    "hint": "Funkce v aplikacích Funkce, které spouštějí tabulky této aplikace nebo s nimi pracují.",
+    "none": "Není nainstalovaná žádná aplikace Funkce. Nainstalujte ji a automatizujte tuto aplikaci funkcemi v TypeScriptu.",
+    "install": "Nainstalovat Funkce",
+    "open": "Otevřít kód",
+    "automate": "Automatizovat s AI",
+    "empty": "Žádná z jejích funkcí s touto aplikací zatím nepracuje.",
+    "unreadable": "Funkce této aplikace nemáte oprávnění vidět.",
+    "prompt": "S pomocí aplikace Funkce „{{functions}}“ napiš funkci pro aplikaci „{{app}}“ (tabulky {{slug}}.*), která "
   }
 }

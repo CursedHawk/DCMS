@@ -92,6 +92,8 @@ public sealed class FunctionsPlugin : IPlugin
             ContractProvision.Of<IAppEventSink, AppEventSink>(),
             // Functions whose access names "role", for the roles screen to grant.
             ContractProvision.Of<IUserResources, FunctionUserResources>(),
+            // The app's code for the console's assistant: write, check, test, ship, deploy.
+            ContractProvision.Of<IFunctionsCode, FunctionsCodeContract>(),
         ],
         jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name), JobDeclaration.Of<RunJob>(RunJob.Name)],
         subscribes:
@@ -172,6 +174,7 @@ public sealed class FunctionsPlugin : IPlugin
         });
         services.AddScoped<FunctionRunner>();
         services.AddScoped<SdkTypings>();
+        services.AddScoped<Builder>();
         services.AddScoped<RunQueue>();
         if (host.RunsBackgroundWork)
         {

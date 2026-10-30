@@ -170,7 +170,7 @@ export function AgentPanel({
         <div className="h-56 shrink-0 overflow-hidden border-b">
           <ConversationRail
             surface="ide"
-            siteId={siteId}
+            siteId={siteId.replace(/^repo:/, '')}
             scope={scope}
             onScopeChange={setScope}
             selectedId={session.conversationId}

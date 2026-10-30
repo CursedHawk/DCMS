@@ -178,7 +178,7 @@ export function useAgentSession(opts: {
    * genuinely does not need the reach.
    */
   const [scope, setScopeState] = useState<AgentScope>(
-    kind !== 'react' ? 'site+tenant' : DEFAULT_SCOPE,
+    kind !== 'react' && kind !== 'functions' ? 'site+tenant' : DEFAULT_SCOPE,
   );
   const [classification, setClassification] = useState<Classification | null>(null);
   const [changes, setChanges] = useState<FileChange[]>([]);
@@ -356,7 +356,7 @@ export function useAgentSession(opts: {
        */
       // Only Mode B has types to baseline; a Mode A site has no .ts file to check.
       baselineRef.current =
-        kind !== 'react' ? Promise.resolve(null) : baselineTypeProblems(Object.keys(vfs.files));
+        kind !== 'react' && kind !== 'functions' ? Promise.resolve(null) : baselineTypeProblems(Object.keys(vfs.files));
 
       /*
        * How much of the transcript has reached the server.
@@ -606,7 +606,8 @@ export function useAgentSession(opts: {
               title: titleFrom(trimmed),
               mode: modeRef.current,
               surface: 'ide',
-              siteId: opts.siteId,
+              // A repository's conversations are keyed by its binding, as a site's by the site.
+              siteId: opts.siteId.replace(/^repo:/, ''),
               branch: vfs.branch,
             });
             conversationRef.current = created.id;
@@ -634,15 +635,23 @@ export function useAgentSession(opts: {
               openApi: opts.getOpenApi?.(),
             }),
             tools: toolsFor(
-              [
-                ...(ALL_TOOLS as ToolSpec<TenantToolContext>[]).filter(
-                  (tool) => kind === 'react' || !REACT_ONLY_TOOLS.has(tool.name),
-                ),
-                ...(opts.tools ?? []),
-                ...SKILL_TOOLS,
-                ...PREVIEW_TOOLS,
-                ...TENANT_TOOLS,
-              ],
+              kind === 'functions'
+                ? [
+                    // A repository of functions: its files, its types and git; no site, preview or skills.
+                    ...(ALL_TOOLS as ToolSpec<TenantToolContext>[]).filter(
+                      (tool) => tool.name === 'check_types' || !REACT_ONLY_TOOLS.has(tool.name),
+                    ),
+                    ...(opts.tools ?? []),
+                  ]
+                : [
+                    ...(ALL_TOOLS as ToolSpec<TenantToolContext>[]).filter(
+                      (tool) => kind === 'react' || !REACT_ONLY_TOOLS.has(tool.name),
+                    ),
+                    ...(opts.tools ?? []),
+                    ...SKILL_TOOLS,
+                    ...PREVIEW_TOOLS,
+                    ...TENANT_TOOLS,
+                  ],
               scopeRef.current,
               permissions,
             ),

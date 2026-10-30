@@ -121,6 +121,21 @@ internal static class AdminEndpoints
             .RequirePluginPermission("secrets")
             .AuditAs("secret.deleted");
 
+        // The editor's checks: its draft built as a deployment would be, and tried, without making one.
+        endpoints.MapPost("/_functions/check", (DraftFiles body, DeploymentService deployments, CancellationToken ct) =>
+                Run(async () => Results.Ok(await deployments.CheckAsync(body.Files, ct))))
+            .RequirePluginPermission("edit")
+            .SkipAudit("Builds nothing that stays: a check of files the caller already holds.");
+
+        endpoints.MapPost("/_functions/test", (DraftTest body, DeploymentService deployments, CancellationToken ct) =>
+                Run(async () =>
+                {
+                    var outcome = await deployments.TestAsync(body.Files, body.Function, body.Input, ct);
+                    return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs });
+                }))
+            .RequirePluginPermission("deploy")
+            .AuditAs("function.tested");
+
         // Runs a function now: the live deployment, or a built one tried before deploying it,
         // which needs what deploying it would. Either way it acts, so only deployers may.
         endpoints.MapPost("/_functions/run", (RunRequest body, DeploymentService deployments, CancellationToken ct) =>
@@ -134,6 +149,10 @@ internal static class AdminEndpoints
     }
 
     public sealed record SecretBody(string Value);
+
+    public sealed record DraftFiles(Dictionary<string, string> Files);
+
+    public sealed record DraftTest(Dictionary<string, string> Files, string Function, JsonNode? Input = null);
 
     public sealed record RunRequest(string Function, JsonNode? Input = null, Guid? Deployment = null);
 

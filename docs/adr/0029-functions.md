@@ -130,6 +130,12 @@ As built (F7):
 - At most 4 HTTP runs per tenant at once on a replica; past that, 503.
 - Not yet: HTTP functions in the tenant's OpenAPI document. content-api cannot read deployments, so this needs its own read path.
 
+### AI
+
+- **In the editor.** A Functions app's repository opens in the console's IDE (`/repos/{id}/code`, F8). Its agent is the site agent's loop with the `functions` prompt: the file, type and git tools, plus `functions_check` (the server's build of the draft, also the run's closing gate), `functions_test_run` (a real run of a draft function under the member's permissions, approved like any dangerous tool) and `functions_sdk`. The agent edits the draft; committing, shipping and deploying stay the member's.
+- **From anywhere.** `functions.code@1` (Admin and Ai) gives the console's assistant the same path: overview, read files, read the SDK, write files to a working branch (never `release`), check, test, ship (merge into `release`, which builds) and deploy. Each step needs its own permission; deploying still needs everything the functions use. `dcms.repos@1` gained `CommitAsync` and `MergeAsync` for it. A merge into `release` is refused where the environment leaves the instance to deployments, as in the IDE.
+- **On a Dynamic Apps app's page.** A Functions tab lists the functions its tables trigger or use, opens their code, and offers "Automate with AI": the assistant with a prompt naming the app and its tables, the Functions app's AI tools switched on when needed.
+
 ### No third-party imports in v1
 
 A function imports only:

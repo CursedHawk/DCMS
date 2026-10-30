@@ -33,6 +33,7 @@ export function RepoWorkspace({ repoId, search }: { repoId: string; search: Repo
       mode: functions ? t('ide.functions') : t('ide.repository'),
       back: slug ? `/apps/${slug}/code` : '/',
       types: functions ? { module: '@dcms/functions', path: `/admin/plugins/${slug}/_functions/sdk` } : undefined,
+      functionsApi: functions ? `/admin/plugins/${slug}/_functions` : undefined,
     };
   }, [search, t]);
 

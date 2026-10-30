@@ -21,8 +21,13 @@ public sealed class AdminPluginRepos(
     SitesDbContext sites,
     CmsDbContext cms,
     TenantStore tenants,
-    SiteGitService git) : IPluginRepos
+    SiteGitService git,
+    IServiceProvider services,
+    Dcms.Shared.Kernel.Abstractions.ITenantContext tenant) : IPluginRepos
 {
+    private const int MaxCommitFiles = 200;
+    private const int MaxCommitChars = 2 * 1024 * 1024;
+
     public async Task<RepoInfo> EnsureAsync(RepoSetup input, CancellationToken ct)
     {
         if (!git.Enabled)
@@ -79,6 +84,52 @@ public sealed class AdminPluginRepos(
     {
         var binding = await BindingAsync(input.InstanceId, ct);
         return new RepoHead(await git.HeadShaAsync(binding.RepoFullName, input.Branch, ct));
+    }
+
+    public async Task<RepoCommitResult> CommitAsync(RepoCommit input, CancellationToken ct)
+    {
+        var binding = await BindingAsync(input.InstanceId, ct);
+        var branch = input.Branch?.Trim() ?? "";
+        if (branch.Length is 0 or > 100 || branch == SiteGitService.ReleaseBranch || branch.Contains("..") || branch.StartsWith('-'))
+        {
+            throw new ContractValidationException("Commit to a working branch: release moves only by a merge.");
+        }
+        var puts = input.Put ?? new Dictionary<string, string>();
+        var deletes = input.Delete ?? [];
+        if (puts.Count + deletes.Count is 0 or > MaxCommitFiles || puts.Values.Sum(v => (long)v.Length) > MaxCommitChars)
+        {
+            throw new ContractValidationException($"A commit changes 1 to {MaxCommitFiles} files, at most {MaxCommitChars / (1024 * 1024)} MB.");
+        }
+        if ((await git.BranchesAsync(binding.RepoFullName, ct)).All(b => b.Name != branch))
+        {
+            await git.CreateBranchAsync(binding.RepoFullName, branch, binding.DefaultBranch, ct);
+        }
+        var message = string.IsNullOrWhiteSpace(input.Message) ? "Update" : input.Message.Trim()[..Math.Min(input.Message.Trim().Length, 500)];
+        var sha = await git.CommitDeltaAsync(binding.RepoFullName, branch, message, puts, deletes, authorName: null, authorEmail: null, ct);
+        return new RepoCommitResult(sha);
+    }
+
+    public async Task<RepoMergeResult> MergeAsync(RepoMerge input, CancellationToken ct)
+    {
+        var binding = await BindingAsync(input.InstanceId, ct);
+        var @base = string.IsNullOrWhiteSpace(input.Base) ? SiteGitService.ReleaseBranch : input.Base.Trim();
+        if (string.IsNullOrWhiteSpace(input.Head))
+        {
+            throw new ContractValidationException("Name the branch to merge.");
+        }
+        if (@base == SiteGitService.ReleaseBranch)
+        {
+            // As the IDE's routes refuse it: where deployments manage the instance, so its code.
+            var slug = caller.Instance?.Slug ?? await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                .Where(p => p.Id == binding.InstanceId).Select(p => p.Slug).FirstOrDefaultAsync(ct);
+            if (slug is not null && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "plugins", slug, ct) is not null)
+            {
+                throw new ContractConflictException("This environment takes this app's code from deployments: change it where they come from.");
+            }
+            try { await git.EnsureWebhookAsync(binding.RepoFullName, ct); } catch { /* best effort, as the IDE */ }
+        }
+        var outcome = await git.MergeAsync(binding.RepoFullName, @base, input.Head.Trim(), ct);
+        return new RepoMergeResult(outcome.Merged, outcome.UpToDate, outcome.Sha, outcome.Conflicts.Select(c => c.Path).ToList());
     }
 
     private async Task<RepoBinding> BindingAsync(Guid? requested, CancellationToken ct)
