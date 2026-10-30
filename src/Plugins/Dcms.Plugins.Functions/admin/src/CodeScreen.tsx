@@ -1,6 +1,6 @@
 import { Code, ExternalLink } from 'lucide-react';
 import { Badge, Button, Callout, CenteredSpinner, CopyButton, LoadFailed } from '@dcms/ui';
-import { instancePath, usePluginHost, usePluginT, useCan, type PluginScreenProps } from '@dcms/plugin-ui';
+import { usePluginHost, usePluginT, useCan, type PluginScreenProps } from '@dcms/plugin-ui';
 import { httpPath, useLive, useRepo } from './api';
 import { describeTrigger } from './triggers';
 
@@ -21,13 +21,7 @@ export function CodeScreen({ instance }: PluginScreenProps) {
     return <LoadFailed title={t('code.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void repo.refetch()} />;
   }
   const open = () => {
-    const search = new URLSearchParams({
-      name: instance!.name,
-      mode: t('code.mode'),
-      back: `/apps/${slug}/code`,
-      module: '@dcms/functions',
-      types: instancePath(slug, '/_functions/sdk'),
-    });
+    const search = new URLSearchParams({ name: instance!.name, slug, kind: 'functions' });
     host.navigate(`/repos/${repo.data!.id}/code?${search}`);
   };
 

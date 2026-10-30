@@ -4,7 +4,6 @@
     "repositoryHint": "Funkce této aplikace jsou v jednom git repozitáři: každý soubor ve functions/ je jedna funkce. Sloučení do release spustí sestavení; nasadíte ho v Nasazení.",
     "copyClone": "Kopírovat adresu pro klonování",
     "open": "Otevřít editor",
-    "mode": "Funkce",
     "live": "Živé funkce",
     "nothingLive": "Zatím není nic nasazeno. Napište funkci, slučte ji do release a nasaďte sestavení.",
     "loadFailed": "Repozitář se nepodařilo načíst"

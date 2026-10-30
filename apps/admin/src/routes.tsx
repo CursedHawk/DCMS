@@ -292,7 +292,7 @@ const repoEditorRoute = createRoute({
   path: '/repos/$repoId/code',
   validateSearch: (search: Record<string, unknown>): RepoSearch => {
     const text = (key: string) => (typeof search[key] === 'string' ? (search[key] as string) : undefined);
-    return { name: text('name'), mode: text('mode'), back: text('back'), module: text('module'), types: text('types') };
+    return { name: text('name'), slug: text('slug'), kind: text('kind') };
   },
   component: function RepoEditor() {
     const { repoId } = useParams({ strict: false });

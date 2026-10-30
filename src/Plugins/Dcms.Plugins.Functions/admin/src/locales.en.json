@@ -4,7 +4,6 @@
     "repositoryHint": "One git repository holds this app's functions: each file in functions/ is one. Merge into release to build; deploy the build on Deployments.",
     "copyClone": "Copy clone URL",
     "open": "Open the editor",
-    "mode": "Functions",
     "live": "Live functions",
     "nothingLive": "Nothing is deployed yet. Write a function, merge it into release, then deploy the build.",
     "loadFailed": "The repository could not be loaded"
