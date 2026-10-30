@@ -100,6 +100,11 @@ public sealed class AdminPluginRepos(
         {
             throw new ContractValidationException($"A commit changes 1 to {MaxCommitFiles} files, at most {MaxCommitChars / (1024 * 1024)} MB.");
         }
+        // The same paths the IDE accepts: relative, no "..", no control characters.
+        if (puts.Keys.Concat(deletes).FirstOrDefault(path => !SiteFileMap.IsSafePath(path)) is { } unsafePath)
+        {
+            throw new ContractValidationException($"'{unsafePath}' is not a path inside the repository.");
+        }
         if ((await git.BranchesAsync(binding.RepoFullName, ct)).All(b => b.Name != branch))
         {
             await git.CreateBranchAsync(binding.RepoFullName, branch, binding.DefaultBranch, ct);

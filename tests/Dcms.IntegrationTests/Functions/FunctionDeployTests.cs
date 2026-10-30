@@ -469,6 +469,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         written.GetProperty("branch").GetString().Should().Be("main");
         (await Call("WriteFiles", new { message = "Sneak", branch = "release", put = new Dictionary<string, string> { ["x.ts"] = "" } }))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest, "release moves only by a merge");
+        (await Call("WriteFiles", new { message = "Escape", put = new Dictionary<string, string> { ["../../etc/x.ts"] = "" } }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "a path outside the repository is refused");
 
         var check = await Json(await Call("Check", new { }), ct);
         check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());

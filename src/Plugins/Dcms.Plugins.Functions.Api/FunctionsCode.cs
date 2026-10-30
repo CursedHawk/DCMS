@@ -50,7 +50,7 @@ public sealed record CodeTestResult(string Status, JsonNode? Result, string? Err
 [DcmsContract("functions.code", 1, Description = "Write, check, test and deploy a Functions app's TypeScript functions.")]
 public interface IFunctionsCode
 {
-    [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
         Description = "Start here. What is live (each function's triggers, HTTP access and uses) and the latest builds with their status.")]
     Task<CodeOverview> OverviewAsync(CancellationToken ct);
 
@@ -69,12 +69,12 @@ public interface IFunctionsCode
         Description = "Commit files to a working branch (main by default; never release). Nothing runs until it is shipped and deployed. Check it afterwards.")]
     Task<CodeWritten> WriteFilesAsync(CodeWrite input, CancellationToken ct);
 
-    [Operation(OpRisk.Read, Permission = FunctionsPermissions.Edit, Expose = OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Permission = FunctionsPermissions.Edit, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
         Description = "Type-check and build a branch without deploying it: every problem with its file and line, the functions it defines, "
             + "and the permissions deploying it would take. Fix what it reports before shipping.")]
     Task<CodeCheck> CheckAsync(CodeRef input, CancellationToken ct);
 
-    [Operation(OpRisk.Dangerous, Permission = FunctionsPermissions.Deploy, Expose = OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Dangerous, Permission = FunctionsPermissions.Deploy, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
         Description = "Run one function of a branch now, built on the spot, with an input. It runs for real, with your permissions: its writes, "
             + "messages and HTTP calls happen. Say what it will do first.")]
     Task<CodeTestResult> TestAsync(CodeTest input, CancellationToken ct);
