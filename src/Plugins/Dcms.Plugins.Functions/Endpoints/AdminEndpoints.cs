@@ -3,6 +3,7 @@ using Dcms.Plugins.Functions.Deploy;
 using Dcms.Plugins.Functions.Http;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using System.Text.Json.Nodes;
 using Dcms.Shared.Security.Authorization;
 using Microsoft.AspNetCore.Authorization;
@@ -35,6 +36,15 @@ internal static class AdminEndpoints
                 return http.Request.Headers.IfNoneMatch == etag
                     ? Results.StatusCode(StatusCodes.Status304NotModified)
                     : Results.Text(typings, "application/typescript; charset=utf-8");
+            })
+            .RequirePluginPermission("read");
+
+        // The same, as JSON for the console's client, which reads every answer as JSON.
+        endpoints.MapGet("/_functions/sdk", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
+            {
+                var typings = await sdk.GenerateAsync(ct, async permission =>
+                    (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(permission))).Succeeded);
+                return Results.Ok(new { typings, etag = SdkTypings.ETag(typings) });
             })
             .RequirePluginPermission("read");
 
@@ -89,6 +99,28 @@ internal static class AdminEndpoints
             .RequirePluginPermission("keys")
             .AuditAs("key.revoked");
 
+        // Secrets, per instance and so per environment: names listed, values only ever written.
+        endpoints.MapGet("/_functions/secrets", (IPluginContext context, CancellationToken ct) =>
+                Run(async () => Results.Ok((await context.Contracts.Get<IPluginSecrets>()
+                    .ListAsync(new SecretNames(context.Instance!.InstanceId), ct)).Names)))
+            .RequirePluginPermission("secrets");
+
+        endpoints.MapPut("/_functions/secrets/{name}", (string name, SecretBody body, IPluginContext context, CancellationToken ct) =>
+                Run(async () =>
+                {
+                    await context.Contracts.Get<IPluginSecrets>().SetAsync(new SetSecret(name, body.Value, context.Instance!.InstanceId), ct);
+                    return Results.NoContent();
+                }))
+            .RequirePluginPermission("secrets")
+            .AuditAs("secret.set");
+
+        endpoints.MapDelete("/_functions/secrets/{name}", (string name, IPluginContext context, CancellationToken ct) =>
+                Run(async () => (await context.Contracts.Get<IPluginSecrets>().DeleteAsync(new SecretName(name, context.Instance!.InstanceId), ct)).Found
+                    ? Results.NoContent()
+                    : Results.NotFound(new { error = $"There is no secret {name}." })))
+            .RequirePluginPermission("secrets")
+            .AuditAs("secret.deleted");
+
         // Runs a function now: the live deployment, or a built one tried before deploying it,
         // which needs what deploying it would. Either way it acts, so only deployers may.
         endpoints.MapPost("/_functions/run", (RunRequest body, DeploymentService deployments, CancellationToken ct) =>
@@ -100,6 +132,8 @@ internal static class AdminEndpoints
             .RequirePluginPermission("deploy")
             .AuditAs("function.ran");
     }
+
+    public sealed record SecretBody(string Value);
 
     public sealed record RunRequest(string Function, JsonNode? Input = null, Guid? Deployment = null);
 

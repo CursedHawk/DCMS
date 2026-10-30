@@ -21,11 +21,14 @@ import { NotificationBell } from '../notifications/NotificationBell';
 export function EditorHeader({
   name,
   mode,
+  back,
   children,
 }: {
   name: string | undefined;
   /** What kind of site this is — "React app", "Static files". */
   mode: string;
+  /** Where the way back leads, when it is not the sites list: a plugin repository's app. */
+  back?: string;
   children?: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -34,9 +37,9 @@ export function EditorHeader({
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
       <Link
-        to={'/sites' as string}
-        aria-label={t('sites.backToSites')}
-        title={t('sites.backToSites')}
+        to={(back ?? '/sites') as string}
+        aria-label={back ? t('actions.back') : t('sites.backToSites')}
+        title={back ? t('actions.back') : t('sites.backToSites')}
         className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />

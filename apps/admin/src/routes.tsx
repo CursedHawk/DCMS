@@ -2,6 +2,7 @@ import { Outlet, createRootRoute, createRoute, redirect, useParams } from '@tans
 import { lazy } from 'react';
 import { RequirePermission } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
+import type { RepoSearch } from './features/ide/RepoWorkspace';
 import { LEGACY_PLUGIN_PATHS, LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 
@@ -61,6 +62,9 @@ const PluginReferencePage = lazy(() =>
 );
 const AppPage = lazy(() => import('./features/apps/AppPage').then((m) => ({ default: m.AppPage })));
 const PluginAppRedirect = lazy(() => import('./features/apps/AppPage').then((m) => ({ default: m.PluginAppRedirect })));
+const RepoWorkspace = lazy(() =>
+  import('./features/ide/RepoWorkspace').then((m) => ({ default: m.RepoWorkspace })),
+);
 const SiteWorkspace = lazy(() =>
   import('./features/sites/SiteWorkspace').then((m) => ({ default: m.SiteWorkspace })),
 );
@@ -283,6 +287,20 @@ const legacyPluginRoutes = Object.entries(LEGACY_PLUGIN_PATHS).map(([from, to]) 
   }),
 );
 
+const repoEditorRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/repos/$repoId/code',
+  validateSearch: (search: Record<string, unknown>): RepoSearch => {
+    const text = (key: string) => (typeof search[key] === 'string' ? (search[key] as string) : undefined);
+    return { name: text('name'), mode: text('mode'), back: text('back'), module: text('module'), types: text('types') };
+  },
+  component: function RepoEditor() {
+    const { repoId } = useParams({ strict: false });
+    const search = repoEditorRoute.useSearch();
+    return <RepoWorkspace repoId={repoId as string} search={search} />;
+  },
+});
+
 const editorRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/sites/$siteId',
@@ -313,6 +331,7 @@ export const routeTree = rootRoute.addChildren([
     mediaRoute,
     sitesRoute,
     editorRoute,
+    repoEditorRoute,
     accountRoute,
     assistantRoute,
     assistantChatRoute,

@@ -970,7 +970,8 @@
     },
     "generatedAutoRefreshed": "Your plugins changed, so the API client was updated ({{count}} files)",
     "generatedRefreshFailed": "The generated API client could not be refreshed",
-    "deleteFileConfirm": "Delete {{path}}?"
+    "deleteFileConfirm": "Delete {{path}}?",
+    "repository": "Repository"
   },
   "openapi": {
     "title": "API documentation",

@@ -1,0 +1,126 @@
+{
+  "code": {
+    "repository": "Repozitář",
+    "repositoryHint": "Funkce této aplikace jsou v jednom git repozitáři: každý soubor ve functions/ je jedna funkce. Sloučení do release spustí sestavení; nasadíte ho v Nasazení.",
+    "copyClone": "Kopírovat adresu pro klonování",
+    "open": "Otevřít editor",
+    "mode": "Funkce",
+    "live": "Živé funkce",
+    "nothingLive": "Zatím není nic nasazeno. Napište funkci, slučte ji do release a nasaďte sestavení.",
+    "loadFailed": "Repozitář se nepodařilo načíst"
+  },
+  "access": {
+    "public": "Veřejná",
+    "user": "Přihlášení uživatelé",
+    "role": "Role",
+    "apiKey": "API klíč"
+  },
+  "triggers": {
+    "row": "Když je {{table}} {{event}}",
+    "relation": "Když je vazba {{relationship}} {{event}}",
+    "message": "Na zprávu {{topic}}",
+    "schedule": "Podle plánu {{cron}}",
+    "every": "Každých {{interval}}",
+    "event": "Při {{name}}",
+    "events": {
+      "created": "vytvořen",
+      "updated": "změněn",
+      "deleted": "smazán"
+    }
+  },
+  "deployments": {
+    "hint": "Každé sloučení do release vytvoří sestavení. Živým se stane, až ho nasadí někdo, kdo má vše, co jeho funkce používají.",
+    "status": "Stav",
+    "commit": "Commit",
+    "functions": "Funkce",
+    "when": "Kdy",
+    "deploy": "Nasadit",
+    "rollback": "Vrátit",
+    "deployTitle": "Nasadit sestavení {{number}}?",
+    "deployHint": "Jeho funkce se spustí s oprávněními, která máte pro to, co používají.",
+    "rollbackTitle": "Znovu nasadit {{number}}?",
+    "rollbackHint": "Poběží znovu s oprávněními, se kterými bylo nasazeno; musíte je mít také.",
+    "live": "Nasazení {{number}} je živé",
+    "rebuild": "Znovu sestavit release",
+    "rebuilding": "Sestavuji větev release",
+    "empty": "Zatím žádná sestavení.",
+    "detail": "Nasazení {{number}}",
+    "problems": "Co sestavení našlo",
+    "permissions": "Nasazení vyžaduje:"
+  },
+  "deploymentStatus": {
+    "Building": "Sestavuje se",
+    "Failed": "Selhalo",
+    "Ready": "Připraveno k nasazení",
+    "Active": "Živé",
+    "Superseded": "Nahrazeno",
+    "RolledBack": "Vráceno"
+  },
+  "runs": {
+    "function": "Funkce",
+    "status": "Stav",
+    "trigger": "Spouštěč",
+    "duration": "Trvání",
+    "when": "Spuštěno",
+    "filterFunction": "Název funkce",
+    "anyStatus": "Jakýkoli stav",
+    "empty": "Zatím žádné běhy.",
+    "newer": "Novější",
+    "older": "Starší",
+    "detail": "{{function}} (nasazení {{deployment}})",
+    "input": "Vstup",
+    "result": "Výsledek",
+    "triggerDetail": "Spouštěč",
+    "logs": "Log",
+    "noLogs": "Nic nezalogováno.",
+    "meta": "Pokus {{attempts}} · {{calls}} volání hostitele · hloubka {{depth}}"
+  },
+  "runStatus": {
+    "Pending": "Čeká",
+    "Running": "Běží",
+    "Succeeded": "Úspěch",
+    "Failed": "Selhal",
+    "Terminated": "Nespuštěn"
+  },
+  "runTrigger": {
+    "row": "Řádek",
+    "relation": "Vazba",
+    "message": "Zpráva",
+    "schedule": "Plán",
+    "event": "Událost",
+    "job": "Úloha",
+    "manual": "Ručně",
+    "http": "HTTP",
+    "invoke": "Jiná funkce"
+  },
+  "keys": {
+    "hint": "Externí volající posílají klíč v hlavičce X-Api-Key funkcím, jejichž přístup zahrnuje API klíče.",
+    "add": "Nový klíč",
+    "name": "Název",
+    "prefix": "Klíč",
+    "functions": "Funkce",
+    "functionsHint": "Všechny, nebo názvy oddělené čárkami",
+    "allFunctions": "Všechny",
+    "created": "Vytvořen",
+    "revoke": "Zrušit",
+    "revokeTitle": "Zrušit {{name}}?",
+    "revokeHint": "Volající s tímto klíčem budou od teď odmítnuti.",
+    "empty": "Žádné klíče.",
+    "create": "Vytvořit",
+    "madeTitle": "Váš nový klíč",
+    "shownOnce": "Zkopírujte ho teď: zobrazí se jen jednou a znovu ho přečíst nelze.",
+    "done": "Hotovo"
+  },
+  "secrets": {
+    "hint": "Funkce je čtou přes secrets.get, pokud je uvedou v uses.secrets. Hodnotu lze nahradit, nikdy přečíst.",
+    "empty": "Žádné tajné hodnoty.",
+    "replace": "Nahradit",
+    "delete": "Smazat",
+    "deleteTitle": "Smazat {{name}}?",
+    "deleteHint": "Funkce, které ji čtou, nedostanou nic.",
+    "name": "Název",
+    "value": "Hodnota",
+    "save": "Uložit",
+    "saved": "{{name}} uloženo"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "code": {
+    "repository": "Repository",
+    "repositoryHint": "One git repository holds this app's functions: each file in functions/ is one. Merge into release to build; deploy the build on Deployments.",
+    "copyClone": "Copy clone URL",
+    "open": "Open the editor",
+    "mode": "Functions",
+    "live": "Live functions",
+    "nothingLive": "Nothing is deployed yet. Write a function, merge it into release, then deploy the build.",
+    "loadFailed": "The repository could not be loaded"
+  },
+  "access": {
+    "public": "Public",
+    "user": "Signed-in users",
+    "role": "Role",
+    "apiKey": "API key"
+  },
+  "triggers": {
+    "row": "When {{table}} is {{event}}",
+    "relation": "When a {{relationship}} link is {{event}}",
+    "message": "On message {{topic}}",
+    "schedule": "On schedule {{cron}}",
+    "every": "Every {{interval}}",
+    "event": "On {{name}}",
+    "events": {
+      "created": "created",
+      "updated": "updated",
+      "deleted": "deleted"
+    }
+  },
+  "deployments": {
+    "hint": "Each merge into release builds one. A build goes live when someone holding everything its functions use deploys it.",
+    "status": "Status",
+    "commit": "Commit",
+    "functions": "Functions",
+    "when": "When",
+    "deploy": "Deploy",
+    "rollback": "Roll back",
+    "deployTitle": "Deploy build {{number}}?",
+    "deployHint": "Its functions start running, with the permissions you hold for what they use.",
+    "rollbackTitle": "Make deployment {{number}} live again?",
+    "rollbackHint": "It runs again with the permissions it was deployed with; you must hold them too.",
+    "live": "Deployment {{number}} is live",
+    "rebuild": "Build release again",
+    "rebuilding": "Building the release branch",
+    "empty": "No builds yet.",
+    "detail": "Deployment {{number}}",
+    "problems": "What the build found",
+    "permissions": "Deploying it takes:"
+  },
+  "deploymentStatus": {
+    "Building": "Building",
+    "Failed": "Failed",
+    "Ready": "Ready to deploy",
+    "Active": "Live",
+    "Superseded": "Superseded",
+    "RolledBack": "Rolled back"
+  },
+  "runs": {
+    "function": "Function",
+    "status": "Status",
+    "trigger": "Trigger",
+    "duration": "Took",
+    "when": "Started",
+    "filterFunction": "Function name",
+    "anyStatus": "Any status",
+    "empty": "No runs yet.",
+    "newer": "Newer",
+    "older": "Older",
+    "detail": "{{function}} (deployment {{deployment}})",
+    "input": "Input",
+    "result": "Result",
+    "triggerDetail": "Trigger",
+    "logs": "Log",
+    "noLogs": "Nothing logged.",
+    "meta": "Attempt {{attempts}} · {{calls}} host calls · depth {{depth}}"
+  },
+  "runStatus": {
+    "Pending": "Waiting",
+    "Running": "Running",
+    "Succeeded": "Succeeded",
+    "Failed": "Failed",
+    "Terminated": "Not run"
+  },
+  "runTrigger": {
+    "row": "Row",
+    "relation": "Link",
+    "message": "Message",
+    "schedule": "Schedule",
+    "event": "Event",
+    "job": "Job",
+    "manual": "By hand",
+    "http": "HTTP",
+    "invoke": "Another function"
+  },
+  "keys": {
+    "hint": "Outside callers send a key in the X-Api-Key header to functions whose access includes API keys.",
+    "add": "New key",
+    "name": "Name",
+    "prefix": "Key",
+    "functions": "Functions",
+    "functionsHint": "All, or names separated by commas",
+    "allFunctions": "All",
+    "created": "Created",
+    "revoke": "Revoke",
+    "revokeTitle": "Revoke {{name}}?",
+    "revokeHint": "Callers using it are refused from now on.",
+    "empty": "No keys.",
+    "create": "Create",
+    "madeTitle": "Your new key",
+    "shownOnce": "Copy it now: it is shown this once and cannot be read again.",
+    "done": "Done"
+  },
+  "secrets": {
+    "hint": "Functions read these with secrets.get, if they declare them in uses.secrets. A value can be replaced, never read back.",
+    "empty": "No secrets.",
+    "replace": "Replace",
+    "delete": "Delete",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteHint": "Functions reading it get nothing.",
+    "name": "Name",
+    "value": "Value",
+    "save": "Save secret",
+    "saved": "{{name}} saved"
+  }
+}

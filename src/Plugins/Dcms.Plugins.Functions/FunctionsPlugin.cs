@@ -106,6 +106,29 @@ public sealed class FunctionsPlugin : IPlugin
         adminScreens:
         [
             AdminScreen.Settings,
+            // The app's work: writing functions, shipping them, watching them run.
+            new AdminScreen("code", "Code", AdminScreenScope.Instance, Permission: "edit", IconName: "Code",
+                Titles: new Dictionary<string, string> { ["cs"] = "Kód" },
+                Description: "Write and test the functions in the web IDE, with the generated SDK."),
+            new AdminScreen("deployments", "Deployments", AdminScreenScope.Instance, Permission: "read", IconName: "Rocket",
+                Titles: new Dictionary<string, string> { ["cs"] = "Nasazení" },
+                Description: "Builds of the release branch: deploy one, or roll back."),
+            new AdminScreen("runs", "Runs", AdminScreenScope.Instance, Permission: "logs", IconName: "Activity",
+                Titles: new Dictionary<string, string> { ["cs"] = "Běhy" },
+                Description: "Every run with its trigger, input, result and log."),
+            // Configuring who and what may call in.
+            new AdminScreen("keys", "API keys", AdminScreenScope.Instance, Permission: "keys", IconName: "KeyRound",
+                Titles: new Dictionary<string, string> { ["cs"] = "API klíče" },
+                Description: "Keys outside callers use to invoke HTTP functions.")
+            {
+                Section = AdminScreenSection.Admin,
+            },
+            new AdminScreen("secrets", "Secrets", AdminScreenScope.Instance, Permission: "secrets", IconName: "LockKeyhole",
+                Titles: new Dictionary<string, string> { ["cs"] = "Tajné hodnoty" },
+                Description: "Values functions read with secrets.get: set or replaced, never shown again.")
+            {
+                Section = AdminScreenSection.Admin,
+            },
         ],
         category: "Integrations",
         summary: "TypeScript functions on HTTP, data changes, messages and schedules.",

@@ -25,6 +25,7 @@ export * from './useDraftSession';
 export * from './useRelativeTime';
 export * from './useSiteLiveUpdates';
 export * from './vfs';
+export * from './workspace';
 
 export { BinaryFileView } from './BinaryFileView';
 export { DeploymentsView } from './DeploymentsView';

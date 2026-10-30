@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
-import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi } from '../site-source';
+import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 
 export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy';
@@ -46,6 +46,7 @@ export function IdeSidebar({
   /** Width (px) of the active-view panel; the activity rail stays fixed. */
   viewWidth?: number;
 }) {
+  const repo = isRepoWorkspace(siteId);
   const [agentOpened, setAgentOpened] = useState(false);
   if (view === 'agent' && !agentOpened) setAgentOpened(true);
   const { t } = useTranslation();
@@ -81,6 +82,7 @@ export function IdeSidebar({
         >
           <GitBranch className="h-5 w-5" />
         </RailButton>
+        {repo ? null : (
         <RailButton
           active={view === 'deploy'}
           label={t('ide.deploy.title')}
@@ -88,6 +90,9 @@ export function IdeSidebar({
         >
           <Rocket className="h-5 w-5" />
         </RailButton>
+        )}
+        {/* The site agent's tools speak to a site; a repository's agent arrives with its own (F9). */}
+        {repo ? null : (
         <RailButton
           active={view === 'agent'}
           label={t('ide.agent.title')}
@@ -95,6 +100,7 @@ export function IdeSidebar({
         >
           <Sparkles className="h-5 w-5" />
         </RailButton>
+        )}
       </div>
 
       {/* Active view */}

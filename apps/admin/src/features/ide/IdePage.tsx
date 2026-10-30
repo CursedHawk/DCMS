@@ -37,6 +37,7 @@ import {
   useDraftSession,
   useSiteLiveUpdates,
   useStoredWidth,
+  setupMonaco,
   useVfs,
 } from '../site-source';
 import type { SiteTemplate } from '../site-source/ide';
@@ -63,7 +64,21 @@ interface SiteData {
 // per-branch working draft in the backend (autosaved, race-free); commits, branches,
 // diffs and merges are driven from the Source Control view in the left sidebar.
 // Publishing commits the draft to the `release` branch, which builds + deploys.
-export function IdePage({ siteId }: { siteId: string }) {
+/**
+ * A plugin's repository in the IDE (ADR 0029): no preview, no site builds, no starter; the
+ * plugin's own screens show what its release builds into. `types` is an admin path answering
+ * `{ typings }`: declarations for the module the code imports (`@dcms/functions`).
+ */
+export interface RepoTarget {
+  name: string;
+  /** Where the way back leads: the plugin's app page. */
+  back: string;
+  /** What kind of code this is, under the name. */
+  mode: string;
+  types?: { module: string; path: string };
+}
+
+export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const dirty = useVfs((s) => s.dirty);
@@ -73,7 +88,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   const activeDiff = useVfs((s) => s.activeDiff);
   const openDiffs = useVfs((s) => s.openDiffs);
   const conflict = useVfs((s) => s.conflict);
-  const [showPreview, setShowPreview] = useState(true);
+  const [showPreview, setShowPreview] = useState(!repo);
   const [sidebarView, setSidebarView] = useState<SidebarView>('files');
   // When publishing from a non-release branch, we open the merge-into-release dialog.
   const [publishMerge, setPublishMerge] = useState(false);
@@ -87,7 +102,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Driven here rather than inside PreviewPane: the Problems view lists the messages from this
   // same build, and a second usePreview would be a second worker bundling the same project.
-  const preview = usePreview(showPreview, siteId);
+  const preview = usePreview(showPreview && !repo, siteId);
   // Type problems come from Monaco's worker, which is attached whether or not the preview is,
   // so the Problems panel has something true to say even with the preview closed.
   const typeProblems = useTypeProblems();
@@ -126,9 +141,31 @@ export function IdePage({ siteId }: { siteId: string }) {
   const site = useQuery({
     queryKey: ['site', siteId],
     queryFn: () => api.get<SiteData>(`/admin/sites/${siteId}`),
+    enabled: !repo,
   });
   // Only a deployment moves the release of a site this environment leaves to deployments.
-  const releaseManaged = useManaged('sites').managed(site.data?.environmentKey);
+  // A repository's release is refused by the server where its environment says so.
+  const siteManaged = useManaged('sites').managed(site.data?.environmentKey);
+  const releaseManaged = !repo && siteManaged;
+
+  // The repository's module declarations, for Monaco's type checker; gone with the editor.
+  useEffect(() => {
+    if (!repo?.types) return;
+    const { module, path } = repo.types;
+    let disposed = false;
+    let lib: { dispose(): void } | undefined;
+    void api.get<{ typings: string }>(path).then(({ typings }) => {
+      if (disposed) return;
+      lib = setupMonaco().languages.typescript.typescriptDefaults.addExtraLib(
+        typings,
+        `file:///node_modules/${module}/index.d.ts`,
+      );
+    });
+    return () => {
+      disposed = true;
+      lib?.dispose();
+    };
+  }, [repo?.types]);
 
   // Live deployments and commits for everyone with this site open. `sub` identifies this user
   // so the hook can tell your own publish (which already toasted) from a colleague's.
@@ -137,7 +174,8 @@ export function IdePage({ siteId }: { siteId: string }) {
   const [draftMovedPaths, setDraftMovedPaths] = useState<string[] | null>(null);
   const draftVersion = useVfs((s) => s.version);
   useSiteLiveUpdates({
-    siteId,
+    // A site's hub only; a repository has no live channel yet.
+    siteId: repo ? '' : siteId,
     branch,
     myUserId: user?.profile.sub,
     // Somebody else committed to the branch in this editor. The banner the conflict path
@@ -177,7 +215,7 @@ export function IdePage({ siteId }: { siteId: string }) {
     seed: () => null,
     onLoaded: (loadedBranch, isEmpty) => {
       restoredFor.current = siteId;
-      if (isEmpty) {
+      if (isEmpty && !repo) {
         setPickStarter(true);
         return;
       }
@@ -208,8 +246,8 @@ export function IdePage({ siteId }: { siteId: string }) {
   // Mode B typings are opted into here rather than by the shared Monaco setup, so
   // the Mode A builder never pays for the React dependency palette.
   useEffect(() => {
-    ensurePaletteTypes();
-  }, []);
+    if (!repo) ensurePaletteTypes();
+  }, [repo]);
 
   // Persist the open documents (per site + branch) whenever the tab set or focus
   // changes, but only once this site's own session has been restored (see restoredFor).
@@ -244,7 +282,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       if (branch === RELEASE_BRANCH) {
         toast.success(t('editor.publishQueued'));
         appendOutput('git', t('editor.publishQueued'));
-        setSidebarView('deploy');
+        if (!repo) setSidebarView('deploy');
       } else {
         setPublishMerge(true);
       }
@@ -432,7 +470,7 @@ export function IdePage({ siteId }: { siteId: string }) {
     ),
   );
 
-  if (site.isLoading || !session.ready) return <CenteredSpinner label={t('common.loading')} />;
+  if ((!repo && site.isLoading) || !session.ready) return <CenteredSpinner label={t('common.loading')} />;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -453,19 +491,25 @@ export function IdePage({ siteId }: { siteId: string }) {
       />
       <ShortcutSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
-      <EditorHeader name={site.data?.name} mode={t('sites.modeReactApp')}>
+      <EditorHeader
+        name={repo ? repo.name : site.data?.name}
+        mode={repo ? repo.mode : t('sites.modeReactApp')}
+        back={repo?.back}
+      >
         <div className="flex-1" />
         <span className="text-xs text-muted-foreground">
           {session.saving || dirty ? t('common.saving') : session.status}
         </span>
-        <Button
-          variant="ghost"
-          onClick={() => generated.refresh()}
-          disabled={generated.refreshing}
-          title={t('ide.refreshGeneratedHint')}
-        >
-          <RefreshCw className="h-4 w-4" /> {t('ide.refreshGenerated')}
-        </Button>
+        {repo ? null : (
+          <Button
+            variant="ghost"
+            onClick={() => generated.refresh()}
+            disabled={generated.refreshing}
+            title={t('ide.refreshGeneratedHint')}
+          >
+            <RefreshCw className="h-4 w-4" /> {t('ide.refreshGenerated')}
+          </Button>
+        )}
         <Button
           variant="ghost"
           onClick={() => openPalette('commands')}
@@ -473,10 +517,12 @@ export function IdePage({ siteId }: { siteId: string }) {
         >
           <Terminal className="h-4 w-4" /> {t('ide.palette.runCommand')}
         </Button>
-        <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
-          {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          {showPreview ? t('ide.hidePreview') : t('ide.showPreview')}
-        </Button>
+        {repo ? null : (
+          <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
+            {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showPreview ? t('ide.hidePreview') : t('ide.showPreview')}
+          </Button>
+        )}
         <Button
           onClick={() => publish.mutate()}
           disabled={publish.isPending || !!conflict || session.switching || releaseManaged}
@@ -488,7 +534,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       {/* The release branch of a site deployments manage is theirs: the IDE edits and publishes
           the working branch, and only a deployment moves the release. */}
       <div className="px-3 pt-2 empty:hidden">
-        <ManagedNotice kind="sites" itemKey={site.data?.environmentKey} />
+        {repo ? null : <ManagedNotice kind="sites" itemKey={site.data?.environmentKey} />}
       </div>
 
       {/* Publishing from a non-release branch: complete the merge into release. */}
@@ -505,7 +551,8 @@ export function IdePage({ siteId }: { siteId: string }) {
           queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
           queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
           queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
-          setSidebarView('deploy');
+          if (repo) toast.success(t('editor.publishQueued'));
+          else setSidebarView('deploy');
         }}
       />
 
@@ -570,7 +617,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       <div className="relative flex min-h-0 flex-1">
         <IdeSidebar
           siteId={siteId}
-          siteName={site.data?.name}
+          siteName={repo ? repo.name : site.data?.name}
           branch={branch}
           view={sidebarView}
           onViewChange={setSidebarView}
@@ -618,7 +665,7 @@ export function IdePage({ siteId }: { siteId: string }) {
             onEnablePreview={() => setShowPreview(true)}
           />
         </div>
-        {showPreview && (
+        {showPreview && !repo && (
           <>
             <Resizer
               ariaLabel={t('ide.resizePreview')}

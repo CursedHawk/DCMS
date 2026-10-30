@@ -151,6 +151,9 @@ export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
 /** Paths reachable by any signed-in member, stated rather than merely omitted. */
 export const OPEN_ROUTES: readonly string[] = [
   '/',
+  // A plugin's repository (ADR 0029): its binding names the permissions, which the server checks
+  // on every call; the console cannot know them from the path.
+  '/repos/$repoId/code',
   // The landing page redirects to the first section the caller may open, so guarding it on any
   // one permission would refuse people who hold a different one.
   '/settings',

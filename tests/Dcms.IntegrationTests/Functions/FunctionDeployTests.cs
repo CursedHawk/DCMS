@@ -171,8 +171,13 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
 
         // A Dynamic Apps app with a table, and a secret for the functions.
         await PublishCrmAsync(client, slug, owner, ct);
-        (await host.Services.GetRequiredService<PluginHandlerRunner>().RunAsync(tenantId, "functions", instanceId, (ctx, _) =>
-            ctx.Contracts.Get<IPluginSecrets>().SetAsync(new SetSecret("STRIPE_KEY", "sk_test_1", instanceId), ct), ct)).Should().BeTrue();
+        // Secrets: set through the app's screen, listed by name only, never read back.
+        (await client.SendAsync(Req(HttpMethod.Put, $"{api}/secrets/STRIPE_KEY", slug, owner, new { value = "sk_test_1" }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.SendAsync(Req(HttpMethod.Put, $"{api}/secrets/GONE", slug, owner, new { value = "x" }), ct)).EnsureSuccessStatusCode();
+        (await client.SendAsync(Req(HttpMethod.Delete, $"{api}/secrets/GONE", slug, owner), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var names = await (await client.SendAsync(Req(HttpMethod.Get, $"{api}/secrets", slug, owner), ct)).Content.ReadAsStringAsync(ct);
+        names.Should().Be("""["STRIPE_KEY"]""");
 
         // The SDK the editor and the build check against: this environment's tables, typed.
         var sdk = await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk.d.ts", slug, owner), ct);

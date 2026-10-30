@@ -998,7 +998,8 @@
     },
     "generatedAutoRefreshed": "Pluginy se změnily, API klient byl aktualizován ({{count}} souborů)",
     "generatedRefreshFailed": "Vygenerovaného API klienta se nepodařilo obnovit",
-    "deleteFileConfirm": "Smazat {{path}}?"
+    "deleteFileConfirm": "Smazat {{path}}?",
+    "repository": "Repozitář"
   },
   "openapi": {
     "title": "API dokumentace",

@@ -1,4 +1,5 @@
 import { api } from '../../lib/api';
+import { workspacePath } from './workspace';
 
 // Git backing for a Mode B site: the source lives in a Forgejo repo (one per site).
 // Status auto-provisions the repo on first read, so opening the IDE is enough.
@@ -89,22 +90,22 @@ export interface GitBuild {
 }
 
 export const gitApi = {
-  status: (siteId: string) => api.get<GitStatus>(`/admin/sites/${siteId}/git`),
-  branches: (siteId: string) => api.get<GitBranch[]>(`/admin/sites/${siteId}/git/branches`),
+  status: (siteId: string) => api.get<GitStatus>(`${workspacePath(siteId)}/git`),
+  branches: (siteId: string) => api.get<GitBranch[]>(`${workspacePath(siteId)}/git/branches`),
   history: (siteId: string, branch?: string, limit = 50) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (branch) qs.set('branch', branch);
-    return api.get<GitCommit[]>(`/admin/sites/${siteId}/git/history?${qs}`);
+    return api.get<GitCommit[]>(`${workspacePath(siteId)}/git/history?${qs}`);
   },
   // Working draft vs branch HEAD — the source-control changes list + diffs.
   changes: (siteId: string, branch: string) =>
-    api.get<GitChange[]>(`/admin/sites/${siteId}/git/changes?branch=${encodeURIComponent(branch)}`),
+    api.get<GitChange[]>(`${workspacePath(siteId)}/git/changes?branch=${encodeURIComponent(branch)}`),
   // Commit the working draft to a branch (or a new/other branch). Author = the user.
   commit: (siteId: string, body: CommitBody) =>
-    api.post<{ sha: string; branch: string }>(`/admin/sites/${siteId}/git/commit`, body),
+    api.post<{ sha: string; branch: string }>(`${workspacePath(siteId)}/git/commit`, body),
   // Create a branch off `from` (defaults server-side to the site's default branch).
   createBranch: (siteId: string, name: string, from?: string) =>
-    api.post<{ name: string; from: string }>(`/admin/sites/${siteId}/git/branches`, { name, from }),
+    api.post<{ name: string; from: string }>(`${workspacePath(siteId)}/git/branches`, { name, from }),
   // Restore a commit's tree into the working draft on a branch (does not commit).
   restore: (siteId: string, sha: string, branch: string) =>
     api.post<{
@@ -112,16 +113,16 @@ export const gitApi = {
       version: number;
       files: Record<string, string>;
       hashes: Record<string, string>;
-    }>(`/admin/sites/${siteId}/git/restore?branch=${encodeURIComponent(branch)}`, { sha }),
+    }>(`${workspacePath(siteId)}/git/restore?branch=${encodeURIComponent(branch)}`, { sha }),
   // Pre-merge review: what merging `head` into `base` (default release) would bring.
   compare: (siteId: string, head: string, base?: string) => {
     const qs = new URLSearchParams({ head });
     if (base) qs.set('base', base);
-    return api.get<GitCompare>(`/admin/sites/${siteId}/git/compare?${qs}`);
+    return api.get<GitCompare>(`${workspacePath(siteId)}/git/compare?${qs}`);
   },
   // Merge `head` into `base` (default release). Clean → { merged, sha }; conflict → { conflict, files }.
   merge: (siteId: string, head: string, base?: string) =>
-    api.post<MergeResult>(`/admin/sites/${siteId}/git/merge`, { head, base }),
+    api.post<MergeResult>(`${workspacePath(siteId)}/git/merge`, { head, base }),
   // Complete a conflicted merge with per-file resolved content (null = delete).
   resolveMerge: (
     siteId: string,
@@ -129,27 +130,27 @@ export const gitApi = {
     resolutions: Record<string, string | null>,
     base?: string,
   ) =>
-    api.post<MergeResult>(`/admin/sites/${siteId}/git/merge/resolve`, { head, base, resolutions }),
+    api.post<MergeResult>(`${workspacePath(siteId)}/git/merge/resolve`, { head, base, resolutions }),
   // Recent builds (deployments) for a site, newest first.
   builds: (siteId: string, limit = 20) =>
-    api.get<GitBuild[]>(`/admin/sites/${siteId}/builds?limit=${limit}`),
+    api.get<GitBuild[]>(`${workspacePath(siteId)}/builds?limit=${limit}`),
   // Full build log (install + build output) as plain text.
   buildLog: (siteId: string, buildId: string) =>
-    api.get<string>(`/admin/sites/${siteId}/builds/${buildId}/log`),
+    api.get<string>(`${workspacePath(siteId)}/builds/${buildId}/log`),
   // Force a fresh build+deploy of the current release head (recovers a failed/wedged build),
   // or of a publishing branch's.
   rebuild: (siteId: string, branch?: string) =>
     api.post<{ buildId: string }>(
-      `/admin/sites/${siteId}/builds${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
+      `${workspacePath(siteId)}/builds${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
       {},
     ),
   // Release, then every branch that publishes to its own domains (#277).
   publishBranches: (siteId: string) =>
-    api.get<PublishBranch[]>(`/admin/sites/${siteId}/publish-branches`),
+    api.get<PublishBranch[]>(`${workspacePath(siteId)}/publish-branches`),
   addPublishBranch: (siteId: string, branch: string) =>
-    api.post<{ branch: string; buildId: string }>(`/admin/sites/${siteId}/publish-branches`, { branch }),
+    api.post<{ branch: string; buildId: string }>(`${workspacePath(siteId)}/publish-branches`, { branch }),
   removePublishBranch: (siteId: string, branch: string) =>
-    api.del(`/admin/sites/${siteId}/publish-branches/${branch.split('/').map(encodeURIComponent).join('/')}`),
+    api.del(`${workspacePath(siteId)}/publish-branches/${branch.split('/').map(encodeURIComponent).join('/')}`),
 };
 
 export interface PublishBranch {

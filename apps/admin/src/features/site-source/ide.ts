@@ -1,4 +1,5 @@
 import { api } from '../../lib/api';
+import { workspacePath } from './workspace';
 import { clientId } from './clientId';
 import type { Delta } from './vfs';
 
@@ -24,7 +25,7 @@ export type SiteTemplate = (typeof SITE_TEMPLATES)[number];
 export const ideApi = {
   /** Load (seeding from git HEAD on first open) the user's draft for a branch. */
   load: (siteId: string, branch?: string) =>
-    api.get<IdeState>(`/admin/sites/${siteId}/ide${branchQuery(branch)}`),
+    api.get<IdeState>(`${workspacePath(siteId)}/ide${branchQuery(branch)}`),
 
   /**
    * Granular save of the working draft (per-file hash conflict → 409).
@@ -36,7 +37,7 @@ export const ideApi = {
    */
   saveFiles: (siteId: string, branch: string, delta: Delta, origin: 'user' | 'agent' = 'user') =>
     api.patch<{ version: number; hashes: Record<string, string> }>(
-      `/admin/sites/${siteId}/ide/files${branchQuery(branch)}`,
+      `${workspacePath(siteId)}/ide/files${branchQuery(branch)}`,
       { put: delta.put, delete: delta.delete, clientId: clientId(), origin },
     ),
 
@@ -46,7 +47,7 @@ export const ideApi = {
    */
   scaffold: (siteId: string, template: SiteTemplate | 'visual') =>
     api.get<{ fingerprint: string; files: Record<string, string> }>(
-      `/admin/sites/${siteId}/starter-files?template=${template}`,
+      `${workspacePath(siteId)}/starter-files?template=${template}`,
     ),
 
   /**
@@ -55,7 +56,7 @@ export const ideApi = {
    */
   generatedFiles: (siteId: string) =>
     api.get<{ fingerprint: string; files: Record<string, string> }>(
-      `/admin/sites/${siteId}/generated-files`,
+      `${workspacePath(siteId)}/generated-files`,
     ),
 
   /** The fingerprint of what `generatedFiles` would return now — compared with the site's manifest. */

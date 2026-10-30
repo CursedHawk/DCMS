@@ -36,7 +36,7 @@ export function AppShell() {
   // A site editor opens in focus mode: no app sidebar, no app topbar. Its own header
   // (EditorHeader) has the way back and the job and notification indicators; the sidebar
   // beside the editor's rail and panels made three stacked left columns.
-  const focus = useRouterState({ select: (s) => /^\/sites\/[^/]+\/?$/.test(s.location.pathname) });
+  const focus = useRouterState({ select: (s) => /^\/(sites\/[^/]+|repos\/[^/]+\/code)\/?$/.test(s.location.pathname) });
 
   // One connection for the whole app, opened here rather than in the bell so that unmounting
   // the popover does not drop the socket. `sub` is the platform user id, which the toast
