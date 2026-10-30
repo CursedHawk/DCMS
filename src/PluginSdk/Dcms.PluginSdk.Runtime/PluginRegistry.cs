@@ -228,6 +228,13 @@ public sealed class PluginRegistry : IPluginCatalog
 
         foreach (var subscription in manifest.Subscribes ?? [])
         {
+            // As for requirements: an event of a platform contract the SDK defines (dcms.repo.pushed)
+            // is accepted by a registry built without them, if the plugin consumes that contract.
+            if (FindEvent(subscription.EventName) is null && _contracts.Keys.All(k => !ContractIds.IsPlatform(k))
+                && PlatformEvents.TryGetValue(subscription.EventName, out var platform) && consumed.Contains(platform))
+            {
+                continue;
+            }
             if (FindEvent(subscription.EventName) is not { } found)
             {
                 throw new InvalidOperationException(
@@ -454,6 +461,14 @@ public sealed class PluginRegistry : IPluginCatalog
         .Where(a => a is not null && ContractIds.IsPlatform(a.Id))
         .Select(a => a!.Id)
         .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>The events platform contracts declare, by name, with the contract that declares each.</summary>
+    private static readonly IReadOnlyDictionary<string, string> PlatformEvents = typeof(IPlugin).Assembly.GetTypes()
+        .Where(t => t.IsInterface && t.GetCustomAttributes(typeof(DcmsContractAttribute), false).FirstOrDefault() is DcmsContractAttribute a
+                    && ContractIds.IsPlatform(a.Id))
+        .Select(ContractDescriptorBuilder.Build)
+        .SelectMany(d => d.Events.Select(e => (e.Name, d.Id)))
+        .ToDictionary(x => x.Name, x => x.Id, StringComparer.Ordinal);
 
     public static bool IsKebabCase(string value)
         => value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
