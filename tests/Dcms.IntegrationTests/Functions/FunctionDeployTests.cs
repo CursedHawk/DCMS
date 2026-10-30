@@ -170,23 +170,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         var api = "/api/admin/plugins/fn/_functions";
 
         // A Dynamic Apps app with a table, and a secret for the functions.
-        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", slug, Guid.Empty,
-            new { pluginId = "dynamic-apps", slug = "crm", name = "CRM" }, superAdmin: true), ct)).EnsureSuccessStatusCode();
-        var model = await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_model", slug, owner), ct), ct);
-        var draft = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", slug, owner, new
-        {
-            expectedHash = model.GetProperty("hash").GetString(),
-            operations = JsonDocument.Parse("""
-                [{ "op": "create", "type": "table", "value": { "apiName": "companies", "displayName": "Company", "primaryFieldId": "name",
-                   "fields": [ { "apiName": "name", "displayName": "Name", "required": true } ] } },
-                 { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal",
-                   "fields": [ { "apiName": "title", "displayName": "Title" } ] } },
-                 { "op": "create", "type": "relationship", "value": { "apiName": "deal", "sourceTableId": "companies",
-                   "targetTableId": "deals", "inverseApiName": "companies", "onDelete": "restrict" } }]
-                """).RootElement,
-        }), ct), ct);
-        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", slug, owner,
-            new { expectedHash = draft.GetProperty("draft").GetProperty("hash").GetString() }), ct), ct);
+        await PublishCrmAsync(client, slug, owner, ct);
         (await host.Services.GetRequiredService<PluginHandlerRunner>().RunAsync(tenantId, "functions", instanceId, (ctx, _) =>
             ctx.Contracts.Get<IPluginSecrets>().SetAsync(new SetSecret("STRIPE_KEY", "sk_test_1", instanceId), ct), ct)).Should().BeTrue();
 
@@ -302,6 +286,171 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
                 Content = new StringContent($"pong for {request.Headers.Authorization}"),
             });
         }
+    }
+
+    [DockerFact]
+    public async Task Row_events_messages_and_schedules_start_runs_and_a_cascade_stops_at_its_limit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var instanceId = await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var member = await SeedMemberAsync(tenantId, "Member", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+        await PublishCrmAsync(client, slug, owner, ct);
+
+        var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
+        var sha = await ShipAsync(client, slug, owner, $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}", new()
+        {
+            ["functions/welcome.ts"] = """
+                import { defineFunction, on } from "@dcms/functions";
+                export default defineFunction({
+                  triggers: [on.row("crm.companies").created()],
+                  uses: { messages: { emit: ["companies.new"] } },
+                  async handler(input: { record: { name: string } }, ctx) {
+                    await ctx.messages.emit("companies.new", { name: input.record.name });
+                    return input.record.name;
+                  },
+                });
+                """,
+            ["functions/greet.ts"] = """
+                import { defineFunction, on } from "@dcms/functions";
+                export default defineFunction({ triggers: [on.message("companies.new")], handler: (input: { name: string }) => `hello ${input.name}` });
+                """,
+            ["functions/shout.ts"] = """
+                import { defineFunction, on } from "@dcms/functions";
+                export default defineFunction({
+                  triggers: [on.row("crm.deals").updated({ fields: ["title"] })],
+                  uses: { tables: { "crm.deals": ["update"] } },
+                  async handler(input: { id: string; record: { title: string } }, ctx) {
+                    await ctx.db.crm.deals.update(input.id, { title: input.record.title + "!" });
+                  },
+                });
+                """,
+            ["functions/tick.ts"] = """
+                import { defineFunction, on } from "@dcms/functions";
+                export default defineFunction({ triggers: [on.every("5m")], handler: () => "tick" });
+                """,
+        }, "Triggers", ct);
+        await BuildAsync(host, tenantId, instanceId, sha, ct);
+        var built = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().First();
+        built.GetProperty("status").GetString().Should().Be("Ready", built.ToString());
+        // A row trigger hands its function the row: deploying it takes reading rows, though no function declares a read.
+        var needs = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{built.GetProperty("id").GetGuid()}", slug, owner), ct), ct);
+        needs.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:dynamic-apps:data-read");
+        await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/deployments/{built.GetProperty("id").GetGuid()}/activate", slug, owner), ct), ct);
+
+        // A row created: its function runs, and the message it emits starts another.
+        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/companies", slug, owner, new { name = "Acme" }), ct), ct);
+        await DrainAsync(host, tenantId, ct);
+        var runs = await RunsAsync(tenantId, ct);
+        runs.Should().ContainSingle(r => r.Function == "welcome").Which.Should().Be(("welcome", "Succeeded", "\"Acme\"", 1));
+        runs.Should().ContainSingle(r => r.Function == "greet").Which.Should().Be(("greet", "Succeeded", "\"hello Acme\"", 2));
+
+        // A function that rewrites what triggers it: the cascade stops at the depth limit.
+        var deal = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/deals", slug, owner, new { title = "x" }), ct), ct);
+        await Json(await client.SendAsync(Req(HttpMethod.Patch, $"/api/admin/plugins/crm/_records/deals/{deal.GetProperty("id").GetString()}", slug, owner,
+            new { title = "deal" }), ct), ct);
+        await DrainAsync(host, tenantId, ct);
+        var shouts = (await RunsAsync(tenantId, ct)).Where(r => r.Function == "shout").ToList();
+        shouts.Count(r => r.Status == "Succeeded").Should().Be(RunQueue.MaxDepth);
+        shouts.Should().ContainSingle(r => r.Status == "Terminated").Which.Depth.Should().Be(RunQueue.MaxDepth + 1);
+
+        // A schedule's slot starts once, however often the worker looks.
+        var worker = ActivatorUtilities.CreateInstance<RunWorker>(host.Services);
+        var now = DateTimeOffset.UtcNow;
+        (await worker.ScheduleAsync(now, ct)).Should().BeGreaterThanOrEqualTo(1);
+        (await RunsAsync(tenantId, ct)).Count(r => r.Function == "tick").Should().Be(1);
+        await worker.ScheduleAsync(now, ct);
+        (await RunsAsync(tenantId, ct)).Count(r => r.Function == "tick").Should().Be(1);
+
+        // The history, for those who may read what runs carry.
+        var page = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/runs?function=greet", slug, owner), ct), ct);
+        var greetId = page.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid();
+        var detail = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/runs/{greetId}", slug, owner), ct), ct);
+        detail.GetProperty("input").GetProperty("name").GetString().Should().Be("Acme");
+        (await client.SendAsync(Req(HttpMethod.Get, $"{api}/runs", slug, member), ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    /// <summary>Routes the apps' outbox and runs every queued run until nothing is left, as the workers would.</summary>
+    private async Task DrainAsync(WebApplicationFactory<AdminApiApp::Program> host, Guid tenantId, CancellationToken ct)
+    {
+        var router = ActivatorUtilities.CreateInstance<Dcms.Plugins.DynamicApps.Automation.AutomationWorker>(host.Services);
+        var worker = ActivatorUtilities.CreateInstance<RunWorker>(host.Services);
+        for (var round = 0; round < 30; round++)
+        {
+            while (await router.RouteAsync(ct) > 0)
+            {
+            }
+            await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE functions.runs SET "Status" = 'Running', "Attempts" = "Attempts" + 1
+                WHERE "TenantId" = @tenant AND "Status" = 'Pending' RETURNING "Id", "EnvironmentId", "InstanceId"
+                """;
+            cmd.Parameters.AddWithValue("tenant", tenantId);
+            var claimed = new List<(Guid, Guid, Guid)>();
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                while (await reader.ReadAsync(ct)) claimed.Add((reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2)));
+            }
+            await using (var busy = conn.CreateCommand())
+            {
+                // The host's own workers run too: done is when neither of us has anything left.
+                busy.CommandText = """SELECT count(*) FROM functions.runs WHERE "TenantId" = @tenant AND "Status" IN ('Pending', 'Running')""";
+                busy.Parameters.AddWithValue("tenant", tenantId);
+                if (claimed.Count == 0 && round > 0 && (long)(await busy.ExecuteScalarAsync(ct))! == 0)
+                {
+                    return;
+                }
+            }
+            if (claimed.Count == 0)
+            {
+                await Task.Delay(500, ct);
+            }
+            foreach (var (id, environment, instance) in claimed)
+            {
+                await worker.ExecuteAsync(id, tenantId, environment, instance, ct);
+            }
+        }
+    }
+
+    private async Task<List<(string Function, string Status, string? Result, int Depth)>> RunsAsync(Guid tenantId, CancellationToken ct)
+    {
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """SELECT "Function", "Status", "Result"::text, "Depth" FROM functions.runs WHERE "TenantId" = @tenant ORDER BY "CreatedAt" """;
+        cmd.Parameters.AddWithValue("tenant", tenantId);
+        var runs = new List<(string, string, string?, int)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) runs.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetInt32(3)));
+        return runs;
+    }
+
+    /// <summary>A Dynamic Apps app "crm": companies (with a lookup to a deal) and deals.</summary>
+    private static async Task PublishCrmAsync(HttpClient client, string slug, Guid owner, CancellationToken ct)
+    {
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", slug, Guid.Empty,
+            new { pluginId = "dynamic-apps", slug = "crm", name = "CRM" }, superAdmin: true), ct)).EnsureSuccessStatusCode();
+        var model = await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_model", slug, owner), ct), ct);
+        var draft = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", slug, owner, new
+        {
+            expectedHash = model.GetProperty("hash").GetString(),
+            operations = JsonDocument.Parse("""
+                [{ "op": "create", "type": "table", "value": { "apiName": "companies", "displayName": "Company", "primaryFieldId": "name",
+                   "fields": [ { "apiName": "name", "displayName": "Name", "required": true } ] } },
+                 { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal",
+                   "fields": [ { "apiName": "title", "displayName": "Title" } ] } },
+                 { "op": "create", "type": "relationship", "value": { "apiName": "deal", "sourceTableId": "companies",
+                   "targetTableId": "deals", "inverseApiName": "companies", "onDelete": "restrict" } }]
+                """).RootElement,
+        }), ct), ct);
+        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", slug, owner,
+            new { expectedHash = draft.GetProperty("draft").GetProperty("hash").GetString() }), ct), ct);
     }
 
     private WebApplicationFactory<AdminApiApp::Program> Host() => fixture.Factory.WithWebHostBuilder(builder =>

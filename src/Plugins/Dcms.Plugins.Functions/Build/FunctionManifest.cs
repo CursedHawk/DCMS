@@ -111,9 +111,32 @@ public static partial class FunctionManifest
             {
                 required.Add(FunctionsPermissions.Secrets);
             }
+            // A trigger hands the function what happened: reading it is a read like any other.
+            foreach (var permission in function.Triggers.Select(TriggerPermission).OfType<string>())
+            {
+                required.Add(permission);
+            }
         }
         return [.. required];
     }
+
+    /// <summary>What a trigger delivers is someone's data: the permission it takes to read it, if any.</summary>
+    public static string? TriggerPermission(JsonObject trigger) => trigger["kind"]?.GetValue<string>() switch
+    {
+        "row" or "relation" => "plugin:dynamic-apps:data-read",
+        "event" => trigger["name"]?.GetValue<string>() switch
+        {
+            "form.submitted" => Dcms.Plugins.Forms.Api.FormsPermissions.SubmissionsRead,
+            "user.invited" or "user.activated" => Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersRead,
+            "visitor.registered" => Dcms.Plugins.VisitorAuth.Api.VisitorPermissions.Read,
+            _ => null,
+        },
+        _ => null,
+    };
+
+    /// <summary>Whether a live deployment was vouched for what <paramref name="trigger"/> delivers.</summary>
+    public static bool MayReceive(JsonObject trigger, IReadOnlyCollection<string> vouched) =>
+        TriggerPermission(trigger) is not { } permission || vouched.Contains(permission);
 
     public static string Serialize(IEnumerable<FunctionSpec> functions) =>
         JsonSerializer.Serialize(new { functions }, Json);
@@ -239,9 +262,12 @@ public static partial class FunctionManifest
                 break;
             case "schedule":
                 Known(trigger, problems, "on.schedule: ", "kind", "cron");
-                var fields = (Text(trigger["cron"], 128, "on.schedule", problems) ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (fields.Length != 5 || !fields.All(f => CronField().IsMatch(f)))
+                var expression = Text(trigger["cron"], 128, "on.schedule", problems) ?? "";
+                var fields = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (fields.Length != 5 || !fields.All(f => CronField().IsMatch(f)) || Dcms.Plugins.Functions.Runtime.Cron.TryParse(expression) is not { } cron)
                     problems.Add("on.schedule: a cron expression has five fields: minute hour day month weekday.");
+                else if (cron.MinGapMinutes() < 5)
+                    problems.Add("on.schedule: it may fire at most every 5 minutes.");
                 break;
             case "every":
                 Known(trigger, problems, "on.every: ", "kind", "interval");

@@ -16,7 +16,7 @@ public class AdminRoleTests(AdminApiFixture fixture)
     private static readonly string[] Background =
     [
         nameof(JobConsumerHost), nameof(JobMaintenanceWorker), nameof(JobStateIngestConsumer),
-        "PluginJobConsumer", "PluginEventConsumer", "PluginJobScheduler", "AutomationWorker", "SiteGateReconciler",
+        "PluginJobConsumer", "PluginEventConsumer", "PluginJobScheduler", "AutomationWorker", "RunWorker", "SiteGateReconciler",
     ];
 
     [DockerFact]

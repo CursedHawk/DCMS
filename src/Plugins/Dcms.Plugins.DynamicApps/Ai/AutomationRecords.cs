@@ -16,10 +16,11 @@ internal sealed class AutomationRecords : IDynamicAppsAutomation
 {
     private readonly RecordService _records;
     private readonly ConfigurationService _config;
+    private readonly AppEventLog _events;
 
     public AutomationRecords(IServiceProvider services, IPluginContext context)
     {
-        var events = ActivatorUtilities.CreateInstance<AppEventLog>(services, context);
+        var events = _events = ActivatorUtilities.CreateInstance<AppEventLog>(services, context);
         var models = ActivatorUtilities.CreateInstance<RuntimeModelProvider>(services, context);
         _records = ActivatorUtilities.CreateInstance<RecordService>(services, context, models, events);
         _config = ActivatorUtilities.CreateInstance<ConfigurationService>(services, context, events);
@@ -57,8 +58,13 @@ internal sealed class AutomationRecords : IDynamicAppsAutomation
     public Task<BulkResult> BulkDeleteAsync(RecordsDelete input, CancellationToken ct) =>
         Guarded(() => _records.BulkDeleteAsync(input.Table, new BulkDeleteRequest(input.Ids), RecordPlane.System, ct));
 
-    private static async Task<T> Guarded<T>(Func<Task<T>> call)
+    private async Task<T> Guarded<T>(Func<Task<T>> call)
     {
+        // What a run writes carries the run: its cascade is counted, and stopped.
+        if (AutomationCause.Current is { } cause)
+        {
+            _events.Origin = new EventOrigin(cause.CorrelationId, cause.CausationId, cause.Depth);
+        }
         try
         {
             return await call();

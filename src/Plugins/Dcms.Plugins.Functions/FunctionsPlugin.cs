@@ -6,6 +6,9 @@ using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Deploy;
 using System.Net.WebSockets;
 using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.Forms.Api;
+using Dcms.Plugins.UserAuth.Api;
+using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.Plugins.Functions.Runtime;
 using Dcms.Shared.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -73,10 +76,23 @@ public sealed class FunctionsPlugin : IPlugin
             // What functions reach, each call checked against what they declared (ADR 0029).
             ContractRequirement.Of<IDynamicAppsAutomation>(optional: true),
             ContractRequirement.Of<IPluginSecrets>(),
+            // Triggers: other plugins' events (on.event), and what form submissions carried.
+            ContractRequirement.Of<IFormSubmissions>(optional: true),
+            ContractRequirement.Of<IVisitorProfiles>(optional: true),
+            ContractRequirement.Of<IUserDirectory>(optional: true),
         ],
+        // Every app's committed row and relation events reach the functions triggered by them.
+        provides: [ContractProvision.Of<IAppEventSink, AppEventSink>()],
         jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name), JobDeclaration.Of<RunJob>(RunJob.Name)],
-        // A push to release builds a deployment.
-        subscribes: [EventSubscription.Of<RepoPushed, RepoPushedHandler>()],
+        subscribes:
+        [
+            // A push to release builds a deployment.
+            EventSubscription.Of<RepoPushed, RepoPushedHandler>(),
+            EventSubscription.Of<VisitorRegistered, PlatformEventRuns>(),
+            EventSubscription.Of<FormSubmitted, PlatformEventRuns>(),
+            EventSubscription.Of<UserInvited, PlatformEventRuns>(),
+            EventSubscription.Of<UserActivated, PlatformEventRuns>(),
+        ],
         adminScreens:
         [
             AdminScreen.Settings,
@@ -115,6 +131,12 @@ public sealed class FunctionsPlugin : IPlugin
         });
         services.AddScoped<FunctionRunner>();
         services.AddScoped<SdkTypings>();
+        services.AddScoped<RunQueue>();
+        if (host.RunsBackgroundWork)
+        {
+            // Queued runs and schedules: jobs-worker's work.
+            services.AddHostedService<RunWorker>();
+        }
         // http.fetch: public addresses only, checked at connect time (redirects and DNS
         // rebinding included), and no redirects followed: the function sees the 3xx and decides.
         services.AddHttpClient(HostCalls.EgressClientName)

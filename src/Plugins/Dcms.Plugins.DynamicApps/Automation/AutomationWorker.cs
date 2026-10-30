@@ -238,8 +238,17 @@ public sealed class AutomationWorker(
                     // In the environment the event happened in (ADR 0028).
                     using (RlsScope.Environment(message.TenantId, message.EnvironmentId))
                     {
-                        await runner.RunAsync(message.TenantId, DynamicAppsPlugin.PluginId, message.InstanceId,
-                            (_, sp) => sp.GetRequiredService<FlowRunQueue>().RouteAsync(evt, ct), ct);
+                        await runner.RunAsync(message.TenantId, DynamicAppsPlugin.PluginId, message.InstanceId, async (context, sp) =>
+                        {
+                            await sp.GetRequiredService<FlowRunQueue>().RouteAsync(evt, ct);
+                            // Then everything else that runs on the app's events (functions). Each is
+                            // idempotent by event id, so a retry of this message repeats nothing.
+                            // ponytail: one call per sink per event; batch them if imports make routing slow.
+                            foreach (var sink in context.Contracts.GetAll<IAppEventSink>())
+                            {
+                                await sink.DeliverAsync(new AppEventDelivery(context.Instance!.Slug, evt), ct);
+                            }
+                        }, ct);
                     }
                     message.SentAt = DateTimeOffset.UtcNow;
                 }

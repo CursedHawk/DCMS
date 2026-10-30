@@ -60,6 +60,17 @@ internal static class AdminEndpoints
             .RequirePluginPermission("deploy")
             .AuditAs("build.requested");
 
+        // The run history: inputs, results and logs are the tenant's data, so the logs permission.
+        endpoints.MapGet("/_functions/runs", (string? function, string? status, int? page, DeploymentService deployments, CancellationToken ct) =>
+                Run(async () => Results.Ok(await deployments.RunsAsync(function, status, page ?? 1, ct))))
+            .RequirePluginPermission("logs");
+
+        endpoints.MapGet("/_functions/runs/{id:guid}", (Guid id, DeploymentService deployments, CancellationToken ct) =>
+                Run(async () => await deployments.RunAsync(id, ct) is { } run
+                    ? Results.Ok(run)
+                    : Results.NotFound(new { error = $"There is no run {id}." })))
+            .RequirePluginPermission("logs");
+
         // Runs a function now: the live deployment, or a built one tried before deploying it,
         // which needs what deploying it would. Either way it acts, so only deployers may.
         endpoints.MapPost("/_functions/run", (RunRequest body, DeploymentService deployments, CancellationToken ct) =>

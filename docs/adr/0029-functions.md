@@ -100,6 +100,20 @@ The generated declarations (`Build/SdkTypings.cs`) are served at `GET …/_funct
 
 The broker re-validates every call against live configuration, so stale types can never widen access.
 
+### Triggers and the run queue
+
+`functions.runs` is the queue and the history, as `apps.flow_runs` was for flows. A run is unique per (instance, trigger event, function), so a redelivered event or a second replica's tick starts nothing twice. `RunWorker` (jobs-worker) claims due runs with `FOR UPDATE SKIP LOCKED` and a 7-minute lease, in 4 slots, at most 2 per tenant. A run that threw is retried after 30 s and 2 min, 3 attempts in all; one that hit a limit is not.
+
+Where runs come from:
+- **Row and relation events.** Dynamic Apps keeps its transactional outbox. Its router hands each committed event to `dynamic-apps.event-sink@1`, an open extension point Dynamic Apps declares and Functions provides; it does not know Functions exists.
+- **Platform events** (`on.event`): Functions subscribes to them itself, in the environment the event names.
+- **Messages** (`messages.emit`): every function on the topic in every live deployment of the environment. No outbox: emitting queues the runs directly.
+- **Schedules** (`on.schedule`, `on.every`): the worker looks every 30 s; a slot is the run's event id. A slot missed while no worker ran is not caught up. A cron firing more often than every 5 minutes is refused at build.
+
+Cascades stop as flows' did: each run carries its chain (correlation, depth). A function's writes carry it through `AutomationCause`, an ambient value `dynamic-apps.automation@1` reads, and its messages one level deeper. A run deeper than 5, or past 20 runs set off by one original action, is recorded as terminated and not run.
+
+Manual, job and HTTP runs run at once and are recorded in the same history. Each executed run is audited once (`plugin.functions.run.executed`); the rows themselves are not. Inputs, results and logs are shown only to holders of `plugin:functions:logs`.
+
 ### HTTP
 
 Functions are called at `GET|POST /api/{instance}/fn/{function}` on the site plane.

@@ -542,6 +542,7 @@ public sealed class TenantDeleter(
 
         // Functions (ADR 0029): every instance's builds. The repositories go with the tenant's git org.
         await SweepAsync(functions, manifest, ct,
+            ("functions.Runs", () => functions.Runs.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("functions.Deployments", () => functions.Deployments.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // User Authentication (ADR 0022): the access policy over the environment's realm. Grants

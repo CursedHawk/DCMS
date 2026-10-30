@@ -22,6 +22,7 @@ public sealed class RunBudget
     public int Fetches { get; set; }
     public int Enqueues { get; set; }
     public int Invokes { get; set; }
+    public int Emits { get; set; }
 }
 
 /// <summary>
@@ -49,6 +50,8 @@ public sealed class HostCalls(
     public const int MaxFetchBodyChars = 1024 * 1024;
     public const int MaxEnqueues = 100;
     public const int MaxInvokes = 50;
+    public const int MaxEmits = 100;
+    public const int MaxMessageChars = 256 * 1024;
 
     /// <summary>A job that enqueues a job that enqueues…: how long such a chain may grow.</summary>
     public const int MaxGenerations = 10;
@@ -73,6 +76,7 @@ public sealed class HostCalls(
                 "http.fetch" => await FetchAsync(args, ct),
                 "functions.invoke" => await InvokeAsync(args, ct),
                 "jobs.enqueue" => await EnqueueAsync(args, ct),
+                "messages.emit" => await EmitAsync(args, ct),
                 _ => throw new HostCallException($"'{op}' is not something a function can do here."),
             };
             return new JsonObject { ["ok"] = true, ["result"] = result };
@@ -120,6 +124,9 @@ public sealed class HostCalls(
             .FirstOrDefault(i => i.Slug == app && i.PluginId == "dynamic-apps")
             ?? throw new HostCallException($"There is no Dynamic Apps app '{app}' here.");
         var records = context.Contracts.Get<IDynamicAppsAutomation>(provider.InstanceId);
+        // What this writes is this run's doing: the events it raises cascade from it, counted.
+        using var cause = AutomationCause.Enter(new AutomationCause.Cause(
+            trigger.Chain.CorrelationId, trigger.RunId ?? trigger.Chain.CorrelationId, trigger.Chain.Depth));
 
         // A read may follow a lookup into another table (expand, or a filter or sort on
         // company.name): that table must be declared readable too.
@@ -331,7 +338,7 @@ public sealed class HostCalls(
         var callee = RunTargets.Of(target.Deployment, name, target.Vouched)
                      ?? throw new HostCallException($"There is no function '{name}' in this deployment.");
         var outcome = await services.GetRequiredService<FunctionRunner>()
-            .RunAsync(callee, args?["input"], new RunTrigger("invoke", Generation: trigger.Generation), ct, depth: depth + 1, budget: budget);
+            .RunAsync(callee, args?["input"], trigger with { Kind = "invoke", Detail = null }, ct, depth: depth + 1, budget: budget);
         return outcome.Succeeded ? outcome.Result : throw new HostCallException($"{name}: {outcome.Error}");
     }
 
@@ -357,6 +364,49 @@ public sealed class HostCalls(
         }
         var ticket = await RunJob.EnqueueAsync(context, target.Deployment.InstanceId, name, args?["payload"], dedupe, trigger.Generation + 1, ct);
         return new JsonObject { ["id"] = ticket.JobId };
+    }
+
+    // ------------------------------------------------------------------ messages.emit(topic, payload)
+
+    /// <summary>
+    /// Starts every function on the topic in every live deployment of this environment. The
+    /// message carries this run's chain one level deeper, so a function that answers its own
+    /// messages stops at the cascade limits. A retried run emits the same messages again under
+    /// the same ids, which start nothing twice.
+    /// </summary>
+    private async Task<JsonNode?> EmitAsync(JsonNode? args, CancellationToken ct)
+    {
+        var topic = args?["topic"]?.GetValue<string>() ?? "";
+        if (!Uses.Emits.Contains(topic))
+        {
+            throw new HostCallException($"This function does not declare uses.messages.emit: [\"{topic}\"].");
+        }
+        var payload = args?["payload"];
+        if (payload?.ToJsonString().Length > MaxMessageChars)
+        {
+            throw new HostCallException($"A message is at most {MaxMessageChars / 1024} KiB.");
+        }
+        var index = ++budget.Emits;
+        if (index > MaxEmits)
+        {
+            throw new HostCallException($"A run, with the functions it invokes, emits at most {MaxEmits} messages.");
+        }
+        var queue = new RunQueue(services.GetRequiredService<Dcms.Shared.Data.Functions.FunctionsDbContext>());
+        var eventId = trigger.RunId is { } run ? RunQueue.EventId($"message:{run:N}:{index}") : Guid.CreateVersion7();
+        var started = 0;
+        foreach (var (live, functions) in await queue.OnAsync(t => t["kind"]?.GetValue<string>() == "message" && t["topic"]?.GetValue<string>() == topic, ct))
+        {
+            foreach (var function in functions)
+            {
+                if (await queue.EnqueueAsync(live, function.Name, "message", eventId, payload?.DeepClone(),
+                        new JsonObject { ["topic"] = topic, ["from"] = target.Function.Name },
+                        new RunOrigin(trigger.Chain.CorrelationId, trigger.RunId, trigger.Chain.Depth + 1), ct))
+                {
+                    started++;
+                }
+            }
+        }
+        return new JsonObject { ["started"] = started };
     }
 
     // ------------------------------------------------------------------ helpers

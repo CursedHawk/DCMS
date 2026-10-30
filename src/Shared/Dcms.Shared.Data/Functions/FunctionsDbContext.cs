@@ -83,6 +83,77 @@ public sealed class FunctionDeployment : EnvironmentEntity
     public string? ActivatedBy { get; set; }
 }
 
+public enum FunctionRunStatus
+{
+    /// <summary>Waiting for a worker, or for its next attempt.</summary>
+    Pending,
+
+    /// <summary>A worker holds it until its lease ends.</summary>
+    Running,
+
+    Succeeded,
+
+    /// <summary>Failed on its last attempt; <see cref="FunctionRun.Error"/> says why.</summary>
+    Failed,
+
+    /// <summary>Never ran: a cascade limit, or its instance was switched off.</summary>
+    Terminated,
+}
+
+/// <summary>
+/// One run of one function (ADR 0029): the queue for runs a trigger started (rows, messages,
+/// schedules, platform events) and the history of every run, however started. Unique per
+/// (instance, trigger event, function): a redelivered event or a second replica's schedule tick
+/// finds its run already there.
+/// </summary>
+// The queue's mechanics: each run is audited once, as plugin.functions.run.executed, not per state change.
+[AuditIgnore]
+public sealed class FunctionRun : EnvironmentEntity
+{
+    public Guid InstanceId { get; set; }
+    public string Function { get; set; } = string.Empty;
+
+    /// <summary>The deployment it ran, or will: the live one when it was queued.</summary>
+    public Guid DeploymentId { get; set; }
+    public int DeploymentNumber { get; set; }
+
+    /// <summary><c>row</c>, <c>relation</c>, <c>message</c>, <c>schedule</c>, <c>event</c>, <c>job</c>, <c>manual</c>, <c>http</c>.</summary>
+    public string TriggerKind { get; set; } = string.Empty;
+    public Guid TriggerEventId { get; set; }
+
+    /// <summary>What the function receives as input (JSON).</summary>
+    [AuditIgnore]
+    public string? Input { get; set; }
+
+    /// <summary>The trigger's own detail, for <c>ctx.trigger</c> (JSON).</summary>
+    [AuditIgnore]
+    public string? TriggerDetail { get; set; }
+
+    public FunctionRunStatus Status { get; set; } = FunctionRunStatus.Pending;
+    public int Attempts { get; set; }
+    public DateTimeOffset NextAttemptAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LeaseUntil { get; set; }
+
+    /// <summary>The original action every run it set off shares; the cascade limits count by it.</summary>
+    public Guid CorrelationId { get; set; }
+    public Guid? CausationId { get; set; }
+    public int Depth { get; set; }
+
+    [AuditIgnore]
+    public string? Result { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>What the function logged, capped. Tenant data: shown to holders of the logs permission only.</summary>
+    [AuditIgnore]
+    public string? Logs { get; set; }
+    public int Calls { get; set; }
+    public long DurationMs { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
+}
+
 /// <summary>Owns the "functions" schema: the Functions plugin's deployments and runs (ADR 0029).</summary>
 public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : ScopedDbContext(options)
 {
@@ -92,6 +163,7 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
     private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<FunctionDeployment> Deployments => Set<FunctionDeployment>();
+    public DbSet<FunctionRun> Runs => Set<FunctionRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -120,6 +192,26 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
                 .HasDatabaseName("IX_deployments_active");
             e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
+        });
+
+        builder.Entity<FunctionRun>(e =>
+        {
+            e.ToTable("runs");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Function).HasMaxLength(64).IsRequired();
+            e.Property(r => r.TriggerKind).HasMaxLength(16).IsRequired();
+            e.Property(r => r.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(r => r.Input).HasColumnType("jsonb");
+            e.Property(r => r.TriggerDetail).HasColumnType("jsonb");
+            e.Property(r => r.Result).HasColumnType("jsonb");
+            e.Property(r => r.Error).HasMaxLength(4000);
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.TriggerEventId, r.Function }).IsUnique();
+            e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.CreatedAt });
+            e.HasIndex(r => r.CorrelationId);
+            // The worker's claim: what is due, across tenants.
+            e.HasIndex(r => new { r.Status, r.NextAttemptAt }).HasFilter("\"Status\" IN ('Pending', 'Running')");
+            e.HasQueryFilter(QueryFilters.Tenant, r => r.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, r => CurrentEnvironmentId == null || r.EnvironmentId == CurrentEnvironmentId);
         });
     }
 

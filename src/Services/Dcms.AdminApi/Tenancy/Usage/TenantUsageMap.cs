@@ -94,6 +94,7 @@ public static class TenantUsageMap
             [("apps", "flow_run_steps")] = new("dynamicApps", "automation"),
             [("apps", "flow_schedules")] = new("dynamicApps", "automation"),
             [("functions", "deployments")] = Plugin("functions"),
+            [("functions", "runs")] = Plugin("functions"),
             [("apps", "site_views")] = new("dynamicApps", "views"),
             [("apps", "site_view_defaults")] = new("dynamicApps", "views"),
             [("userauth", "roles")] = Plugin("user-auth"),

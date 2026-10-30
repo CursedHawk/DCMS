@@ -15,7 +15,7 @@ public sealed record RunPayload(string Function, JsonNode? Input, int Generation
 /// deployment when the job starts, not the one that enqueued it, so a rollback in between wins.
 /// A failed run fails the job, which the ledger retries.
 /// </summary>
-public sealed class RunJob(FunctionsDbContext db, FunctionRunner runner) : IPluginJobHandler
+public sealed class RunJob(FunctionsDbContext db, FunctionRunner runner, RunQueue runs) : IPluginJobHandler
 {
     public const string Name = "run";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -49,6 +49,10 @@ public sealed class RunJob(FunctionsDbContext db, FunctionRunner runner) : IPlug
             throw new ContractConflictException($"No live deployment has a function '{run.Function}'.");
         }
         var outcome = await runner.RunAsync(target, run.Input, new RunTrigger("job", Generation: run.Generation), ct);
+        using (RlsScope.Environment(context.TenantId, context.EnvironmentId))
+        {
+            await runs.RecordAsync(target, "job", run.Input, outcome, ct);
+        }
         if (!outcome.Succeeded)
         {
             throw new InvalidOperationException($"{run.Function}: {outcome.Error}");

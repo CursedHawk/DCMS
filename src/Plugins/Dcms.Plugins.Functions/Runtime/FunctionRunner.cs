@@ -16,8 +16,12 @@ public delegate Task<WebSocket> FunctionSocketFactory(CancellationToken ct);
 
 /// <summary>What started a run: <c>http</c>, <c>manual</c>, <c>invoke</c>, <c>job</c>, and later the event kinds.</summary>
 /// <param name="Generation">How many runs deep in a chain of enqueued jobs this is: 0 for one nothing enqueued.</param>
-public sealed record RunTrigger(string Kind, JsonNode? Detail = null, int Generation = 0)
+/// <param name="Origin">The action this run's chain began with; a new one when nothing set it off.</param>
+/// <param name="RunId">The queued run, when it is one: what its writes and messages name as their cause.</param>
+public sealed record RunTrigger(string Kind, JsonNode? Detail = null, int Generation = 0, RunOrigin? Origin = null, Guid? RunId = null)
 {
+    public RunOrigin Chain { get; } = Origin ?? RunOrigin.New();
+
     /// <summary>Requests wait for their answer; everything else is background work.</summary>
     public int MaxTimeoutMs => Kind is "http" or "manual" or "invoke" ? 30_000 : 300_000;
 }

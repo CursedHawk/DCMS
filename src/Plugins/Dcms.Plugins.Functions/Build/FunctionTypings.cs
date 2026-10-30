@@ -151,7 +151,8 @@ public static class FunctionTypings
           functions: { invoke<O = Json>(name: string, input?: Json): Promise<O> };
           /** Runs a function of this deployment later, on the workspace's jobs page; the same dedupeKey is one job. */
           jobs: { enqueue(fn: string, payload?: Json, options?: { dedupeKey?: string }): Promise<{ id: string }> };
-          messages: { emit(topic: string, payload?: Json): Promise<void> };
+          /** To every function on the topic in this environment, as declared in uses.messages.emit. */
+          messages: { emit(topic: string, payload?: Json): Promise<{ started: number }> };
           secrets: { get(name: string): Promise<string | null> };
           /** fetch, to the hosts in `uses.egress` only. */
           http: { fetch(url: string | URL, init?: { method?: string; headers?: Record<string, string>; body?: string | Json }): Promise<Response> };

@@ -321,3 +321,45 @@ public interface IDynamicAppsAutomation
     [Operation(OpRisk.Dangerous)]
     Task<BulkResult> BulkDeleteAsync(RecordsDelete input, CancellationToken ct);
 }
+
+/// <param name="App">The app's address (its instance slug), as functions name tables: <c>app.table</c>.</param>
+public sealed record AppEventDelivery(string App, AppEvent Event);
+
+/// <summary>
+/// Where an app's runtime events go besides its own flows (ADR 0029): every enabled provider in
+/// the app's environment receives each event once it is committed, as the outbox routes it.
+/// Delivery is at least once, so a provider must be idempotent by event id. Functions provides it.
+/// </summary>
+[DcmsContract("dynamic-apps.event-sink", 1, Description = "Receives an application's committed runtime events.")]
+public interface IAppEventSink
+{
+    /// <summary>How many runs the event started.</summary>
+    [Operation(OpRisk.Safe)]
+    Task<int> DeliverAsync(AppEventDelivery input, CancellationToken ct);
+}
+
+/// <summary>
+/// The automation run whose writes these are, set by the caller of <see cref="IDynamicAppsAutomation"/>
+/// around its calls: the events they raise carry its correlation and one more level of depth, so
+/// the cascade limits stop a function that triggers itself.
+/// </summary>
+public static class AutomationCause
+{
+    public sealed record Cause(Guid CorrelationId, Guid CausationId, int Depth);
+
+    private static readonly AsyncLocal<Cause?> Ambient = new();
+
+    public static Cause? Current => Ambient.Value;
+
+    public static IDisposable Enter(Cause cause)
+    {
+        var previous = Ambient.Value;
+        Ambient.Value = cause;
+        return new Restore(previous);
+    }
+
+    private sealed class Restore(Cause? previous) : IDisposable
+    {
+        public void Dispose() => Ambient.Value = previous;
+    }
+}

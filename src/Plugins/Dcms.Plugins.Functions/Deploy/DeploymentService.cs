@@ -18,6 +18,14 @@ public sealed record DeploymentSummary(
     Guid Id, int Number, string CommitSha, string Status, string? Error,
     IReadOnlyList<string> Functions, DateTimeOffset CreatedAt, DateTimeOffset? ActivatedAt, string? ActivatedBy);
 
+public sealed record RunSummary(
+    Guid Id, string Function, int Deployment, string Trigger, string Status, int Attempts, string? Error,
+    long DurationMs, DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt);
+
+public sealed record RunDetail(RunSummary Run, JsonElement? Input, JsonElement? Trigger, JsonElement? Result, string? Logs, int Calls, Guid CorrelationId, int Depth);
+
+public sealed record RunPage(IReadOnlyList<RunSummary> Items, int Page, bool More);
+
 public sealed record DeploymentDetail(
     DeploymentSummary Deployment, IReadOnlyList<FunctionSpec> Functions, JsonElement? Diagnostics,
     IReadOnlyList<string> Permissions);
@@ -38,7 +46,7 @@ public sealed class DeployRefusedException(IReadOnlyList<string> missing)
 /// </summary>
 public sealed class DeploymentService(
     FunctionsDbContext db, IPluginContext context, IHttpContextAccessor http, IAuthorizationService authz,
-    PluginRegistry registry, FunctionRunner runner)
+    PluginRegistry registry, FunctionRunner runner, RunQueue runs)
 {
     /// <summary>What a new repository starts with: one function to call, and how to write more.</summary>
     public static readonly IReadOnlyDictionary<string, string> Starter = new Dictionary<string, string>
@@ -161,8 +169,37 @@ public sealed class DeploymentService(
         // The caller holds whatever the run may do: a manual run lends nobody the deployer's rights.
         var vouched = await VouchAsync(deployment);
         var target = RunTargets.Of(deployment, function, vouched) ?? throw RunTargets.NoSuchFunction(function);
-        return await runner.RunAsync(target, input, new RunTrigger("manual"), ct);
+        var outcome = await runner.RunAsync(target, input, new RunTrigger("manual"), ct);
+        using (Scope())
+        {
+            await runs.RecordAsync(target, "manual", input, outcome, ct);
+        }
+        return outcome;
     }
+
+    public async Task<RunPage> RunsAsync(string? function, string? status, int page, CancellationToken ct)
+    {
+        const int size = 50;
+        page = Math.Max(1, page);
+        using var rls = Scope();
+        var query = db.Runs.AsNoTracking().Where(r => r.InstanceId == InstanceId);
+        if (!string.IsNullOrWhiteSpace(function)) query = query.Where(r => r.Function == function);
+        if (Enum.TryParse<FunctionRunStatus>(status, ignoreCase: true, out var wanted)) query = query.Where(r => r.Status == wanted);
+        var rows = await query.OrderByDescending(r => r.CreatedAt).Skip((page - 1) * size).Take(size + 1).ToListAsync(ct);
+        return new RunPage(rows.Take(size).Select(RunSummaryOf).ToList(), page, rows.Count > size);
+    }
+
+    public async Task<RunDetail?> RunAsync(Guid id, CancellationToken ct)
+    {
+        using var rls = Scope();
+        var r = await db.Runs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.InstanceId == InstanceId, ct);
+        return r is null ? null : new RunDetail(RunSummaryOf(r), Json(r.Input), Json(r.TriggerDetail), Json(r.Result), r.Logs, r.Calls, r.CorrelationId, r.Depth);
+    }
+
+    private static RunSummary RunSummaryOf(FunctionRun r) => new(
+        r.Id, r.Function, r.DeploymentNumber, r.TriggerKind, r.Status.ToString(), r.Attempts, r.Error, r.DurationMs, r.CreatedAt, r.FinishedAt);
+
+    private static JsonElement? Json(string? json) => json is null ? null : JsonDocument.Parse(json).RootElement.Clone();
 
     /// <summary>What making <paramref name="target"/> live needs, if the caller holds all of it (definer's rights).</summary>
     private async Task<List<string>> VouchAsync(FunctionDeployment target)

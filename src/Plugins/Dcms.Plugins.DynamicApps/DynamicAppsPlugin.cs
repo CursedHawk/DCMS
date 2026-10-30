@@ -119,6 +119,8 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IPluginTrackedJobs>(),
             // Another environment's tables, through a tables link (ADR 0028): environment.records.* actions.
             ContractRequirement.Of<IDynamicAppsRecords>(optional: true),
+            // Committed events also go to whatever else runs on them: Functions (ADR 0029).
+            ContractRequirement.Of<IAppEventSink>(optional: true),
         ],
         jobs: [JobDeclaration.Of<Data.RecordBulkJob>(Data.RecordBulkJob.Name)],
         // Other plugins' events, forwarded to the flows that trigger on them.
