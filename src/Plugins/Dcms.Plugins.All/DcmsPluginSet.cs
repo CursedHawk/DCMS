@@ -10,6 +10,7 @@ using Dcms.Plugins.Events;
 using Dcms.Plugins.Facebook;
 using Dcms.Plugins.FileDownloads;
 using Dcms.Plugins.Forms;
+using Dcms.Plugins.Functions;
 using Dcms.Plugins.GoogleAnalytics;
 using Dcms.Plugins.ImageGallery;
 using Dcms.Plugins.Instagram;
@@ -40,6 +41,7 @@ public static class DcmsPluginSet
         .Add<FacebookPlugin>()
         .Add<FileDownloadsPlugin>()
         .Add<FormsPlugin>()
+        .Add<FunctionsPlugin>()
         .Add<GoogleAnalyticsPlugin>()
         .Add<ImageGalleryPlugin>()
         .Add<InstagramPlugin>()

@@ -9,6 +9,7 @@ using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.Functions;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
@@ -258,6 +259,7 @@ public sealed class TenantDeleter(
     MediaDbContext media,
     FormsDbContext forms,
     AppsDbContext apps,
+    FunctionsDbContext functions,
     UserAuthDbContext userAuth,
     SearchDbContext search,
     AnalyticsDbContext analytics,
@@ -523,6 +525,10 @@ public sealed class TenantDeleter(
             ("apps.Changes", () => apps.Changes.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Revisions", () => apps.Revisions.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Apps", () => apps.Apps.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+
+        // Functions (ADR 0029): every instance's builds. The repositories go with the tenant's git org.
+        await SweepAsync(functions, manifest, ct,
+            ("functions.Deployments", () => functions.Deployments.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         // User Authentication (ADR 0022): the access policy over the environment's realm. Grants
         // before the roles they point at.

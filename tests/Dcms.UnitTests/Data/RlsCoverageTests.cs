@@ -4,6 +4,7 @@ using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.Functions;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Jobs;
@@ -59,6 +60,7 @@ public class RlsCoverageTests
         new FormsDbContext(Options<FormsDbContext>()).WithTenant(Tenant),
         new SocialDbContext(Options<SocialDbContext>()).WithTenant(Tenant),
         new AppsDbContext(Options<AppsDbContext>()).WithTenant(Tenant),
+        new FunctionsDbContext(Options<FunctionsDbContext>()).WithTenant(Tenant),
         new UserAuthDbContext(Options<UserAuthDbContext>()).WithTenant(Tenant),
         new AuditDbContext(Options<AuditDbContext>()),
         new JobsDbContext(Options<JobsDbContext>()).WithTenant(Tenant),

@@ -128,6 +128,8 @@ public static class RlsConfigurator
         // Site users' saved views of app tables (#297), and which one each opens with.
         ("apps", "site_views"),
         ("apps", "site_view_defaults"),
+        // Functions (ADR 0029): each instance's builds and what runs.
+        ("functions", "deployments"),
         // User Authentication (ADR 0022): the access policy over each tenant's realm.
         ("userauth", "roles"),
         ("userauth", "grants"),
@@ -188,6 +190,7 @@ public static class RlsConfigurator
         ("apps", "flow_schedules"),
         ("apps", "site_views"),
         ("apps", "site_view_defaults"),
+        ("functions", "deployments"),
         ("userauth", "roles"),
         ("userauth", "grants"),
         ("userauth", "gates"),

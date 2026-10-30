@@ -19,6 +19,8 @@ CREATE SCHEMA IF NOT EXISTS notifications;
 CREATE SCHEMA IF NOT EXISTS jobs;
 -- Dynamic Apps (ADR 0021): tenant-defined application configuration, records and flows.
 CREATE SCHEMA IF NOT EXISTS apps;
+-- Functions (ADR 0029): tenant-written functions' deployments and runs.
+CREATE SCHEMA IF NOT EXISTS functions;
 -- User Authentication (ADR 0022): roles, grants and site access rules over each tenant's realm.
 CREATE SCHEMA IF NOT EXISTS userauth;
 -- TLS certificates, the ACME account, and the edge's route overlay. No tenant column on any of

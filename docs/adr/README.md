@@ -34,3 +34,4 @@ as their implementation phase lands.
 - [0025](0025-flow-scripts.md) — Flow scripts run in a separate, credential-free Deno sandbox
 - [0026](0026-environments.md) — Environments are tenants of one workspace; configuration moves between them as reviewed migrations
 - [0028](0028-environments-as-a-dimension.md) — Environments are a dimension of one tenant: shared media and members, per-environment configuration and content
+- [0029](0029-functions.md) — Functions: tenant-written TypeScript in a repository, a generated SDK, and host calls out of a credential-free sandbox; replaces Dynamic Apps flows

@@ -7,6 +7,7 @@ using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.Functions;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Data.Forms;
@@ -82,6 +83,7 @@ public static class DcmsMigrationRunner
         await MigrateAsync(scoped.GetRequiredService<NotificationsDbContext>(), ct);
         await MigrateAsync(scoped.GetRequiredService<JobsDbContext>(), ct);
         await MigrateAsync(scoped.GetRequiredService<AppsDbContext>(), ct);
+        await MigrateAsync(scoped.GetRequiredService<FunctionsDbContext>(), ct);
         await MigrateAsync(scoped.GetRequiredService<UserAuthDbContext>(), ct);
 
         // The platform console's role -> permission grants. No tenant column, so it takes no
@@ -188,6 +190,7 @@ public static class DcmsMigrationRunner
                 scoped.GetRequiredService<NotificationsDbContext>(),
                 scoped.GetRequiredService<JobsDbContext>(),
                 scoped.GetRequiredService<AppsDbContext>(),
+                scoped.GetRequiredService<FunctionsDbContext>(),
                 scoped.GetRequiredService<UserAuthDbContext>(),
                 scoped.GetRequiredService<AuditDbContext>(),
                 // Listed even though nothing in it is tenant-scoped: the assertion's job is to

@@ -27,6 +27,7 @@ using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.Functions;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Audit.Http;
@@ -115,6 +116,7 @@ builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsAppsData(builder.Configuration);
+builder.Services.AddDcmsFunctionsData(builder.Configuration);
 builder.Services.AddDcmsUserAuthData(builder.Configuration);
 builder.Services.AddDcmsNotificationsData(builder.Configuration);
 // The job ledger (ADR 0024): admin-api owns the schema and enqueues most jobs; the worker role
