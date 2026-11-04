@@ -29,8 +29,8 @@ namespace Dcms.IntegrationTests.Functions;
 /// goes live only when someone holding what it uses deploys it; a broken build says where.
 /// </summary>
 [Collection(AdminApiCollection.Name)]
-public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno, FunctionRunnerTests.Esbuild esbuild)
-    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IAsyncLifetime
+public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno, FunctionRunnerTests.Esbuild esbuild, DotnetFunctionsRuntime dotnet)
+    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IClassFixture<DotnetFunctionsRuntime>, IAsyncLifetime
 {
     private TestForgejo? _forgejo;
     private WebApplicationFactory<ScriptRunnerApp::Program>? _runner;
@@ -46,6 +46,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         {
             b.UseSetting("ScriptRunner:DenoPath", deno.Path);
             b.UseSetting("ScriptRunner:EsbuildPath", esbuild.Path);
+            b.UseSetting("ScriptRunner:DotnetHarnessPath", dotnet.HarnessPath);
+            b.UseSetting("ScriptRunner:CSharpCompilerPath", dotnet.CompilerPath);
         });
     }
 
@@ -134,6 +136,54 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var statuses = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct))
             .EnumerateArray().Select(d => d.GetProperty("status").GetString()).ToList();
         statuses.Should().Equal("RolledBack", "Failed", "Active");
+    }
+
+    [DockerFact]
+    public async Task A_repository_mixes_typescript_and_csharp_and_one_invokes_the_other()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        // The C# half of the SDK is served beside the TypeScript one (ADR 0030).
+        var sdk = await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk.cs", slug, owner), ct);
+        sdk.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await sdk.Content.ReadAsStringAsync(ct)).Should().Contain("public sealed class Database(Context ctx)");
+
+        var files = new Dictionary<string, string>
+        {
+            ["functions/caller.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({
+                  async handler(input: { lines: number[] }, ctx) {
+                    const total = await ctx.functions.invoke<number>("order-total", input);
+                    return { total, from: "ts" };
+                  },
+                });
+                """,
+            ["functions/OrderTotal.cs"] = """
+                namespace Shop;
+                public record Order(decimal[] Lines);
+
+                [Function("order-total")]
+                public sealed class OrderTotal : Function<Order, decimal>
+                {
+                    public override Task<decimal> Run(Order input, Context ctx) => Task.FromResult(input.Lines.Sum());
+                }
+                """,
+        };
+        var check = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files }), ct), ct);
+        check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());
+        check.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["caller", "order-total"]);
+
+        var run = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
+            new { files, function = "caller", input = new { lines = new[] { 1.5, 2.5, 6 } } }), ct), ct);
+        run.GetProperty("status").GetString().Should().Be("ok", run.ToString());
+        run.GetProperty("result").GetProperty("total").GetDecimal().Should().Be(10m);
     }
 
     [DockerFact]

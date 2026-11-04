@@ -25,26 +25,22 @@ internal static class AdminEndpoints
             .RequirePluginPermission("read");
 
         // @dcms/functions as the editor's type checker sees it: what a build checks against now.
+        // Only what the reader may see of the tables and contracts it describes.
         endpoints.MapGet("/_functions/sdk.d.ts", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
-            {
-                // Only what the reader may see of the tables and contracts it describes.
-                var typings = await sdk.GenerateAsync(ct, async permission =>
-                    (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(permission))).Succeeded);
-                var etag = SdkTypings.ETag(typings);
-                http.Response.Headers.ETag = etag;
-                http.Response.Headers.CacheControl = "private, no-cache";
-                return http.Request.Headers.IfNoneMatch == etag
-                    ? Results.StatusCode(StatusCodes.Status304NotModified)
-                    : Results.Text(typings, "application/typescript; charset=utf-8");
-            })
+                Sdk(http, SdkTypings.TypeScript(await sdk.ModelAsync(ct, May(http, authz))), "application/typescript; charset=utf-8"))
             .RequirePluginPermission("read");
 
-        // The same, as JSON for the console's client, which reads every answer as JSON.
+        // The C# half (ADR 0030): Sdk.g.cs, compiled together with a repository's .cs files.
+        endpoints.MapGet("/_functions/sdk.cs", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
+                Sdk(http, SdkTypings.CSharp(await sdk.ModelAsync(ct, May(http, authz))), "text/x-csharp; charset=utf-8"))
+            .RequirePluginPermission("read");
+
+        // Both, as JSON for the console's client, which reads every answer as JSON.
         endpoints.MapGet("/_functions/sdk", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
             {
-                var typings = await sdk.GenerateAsync(ct, async permission =>
-                    (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(permission))).Succeeded);
-                return Results.Ok(new { typings, etag = SdkTypings.ETag(typings) });
+                var model = await sdk.ModelAsync(ct, May(http, authz));
+                var (typings, csharp) = (SdkTypings.TypeScript(model), SdkTypings.CSharp(model));
+                return Results.Ok(new { typings, csharp, etag = SdkTypings.ETag(typings + csharp) });
             })
             .RequirePluginPermission("read");
 
@@ -174,5 +170,18 @@ internal static class AdminEndpoints
         {
             return Results.BadRequest(new { error = e.Message });
         }
+    }
+
+    private static Func<string, Task<bool>> May(HttpContext http, IAuthorizationService authz) =>
+        async permission => (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(permission))).Succeeded;
+
+    private static IResult Sdk(HttpContext http, string text, string contentType)
+    {
+        var etag = SdkTypings.ETag(text);
+        http.Response.Headers.ETag = etag;
+        http.Response.Headers.CacheControl = "private, no-cache";
+        return http.Request.Headers.IfNoneMatch == etag
+            ? Results.StatusCode(StatusCodes.Status304NotModified)
+            : Results.Text(text, contentType);
     }
 }

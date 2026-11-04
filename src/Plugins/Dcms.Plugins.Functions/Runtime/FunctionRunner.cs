@@ -27,7 +27,9 @@ public sealed record RunTrigger(string Kind, JsonNode? Detail = null, int Genera
 }
 
 /// <summary>One function of one deployment, with the permissions it runs under (definer's rights).</summary>
-public sealed record RunTarget(FunctionDeployment Deployment, FunctionSpec Function, IReadOnlyCollection<string> Vouched, string Bundle);
+/// <param name="Bundle">deno-ts: its bundle. dotnet: its class, run from <paramref name="Assembly"/> (ADR 0030).</param>
+public sealed record RunTarget(FunctionDeployment Deployment, FunctionSpec Function, IReadOnlyCollection<string> Vouched, string Bundle,
+    string? Assembly = null, string? Pdb = null);
 
 /// <param name="Status"><c>ok</c>, <c>error</c> (the function threw or a call was refused) or <c>limit</c>.</param>
 public sealed record RunOutcome(string Status, JsonNode? Result, string? Error, string Logs, int Calls, long DurationMs)
@@ -64,11 +66,10 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
         try
         {
             using var socket = await sockets(deadline.Token);
-            await SendAsync(socket, new JsonObject
+            var start = new JsonObject
             {
                 ["type"] = "start",
                 ["mode"] = "run",
-                ["bundle"] = target.Bundle,
                 ["input"] = input?.DeepClone(),
                 ["context"] = new JsonObject
                 {
@@ -78,7 +79,20 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
                     ["user"] = user?.DeepClone(),
                 },
                 ["limits"] = new JsonObject { ["timeoutMs"] = timeout, ["heapMb"] = target.Function.HeapMb ?? 128 },
-            }, deadline.Token);
+            };
+            if (target.Function.Runtime == FunctionManifest.Dotnet)
+            {
+                // C# (ADR 0030): the deployment's one assembly, and which class of it this function is.
+                start["runtime"] = FunctionManifest.Dotnet;
+                start["assembly"] = target.Assembly;
+                start["pdb"] = target.Pdb;
+                start["class"] = target.Bundle;
+            }
+            else
+            {
+                start["bundle"] = target.Bundle;
+            }
+            await SendAsync(socket, start, deadline.Token);
 
             while (true)
             {
@@ -168,7 +182,10 @@ public static class RunTargets
     {
         var spec = FunctionManifest.Deserialize(deployment.Manifest).FirstOrDefault(f => f.Name == function);
         var bundles = JsonSerializer.Deserialize<Dictionary<string, string>>(deployment.Bundles) ?? [];
-        return spec is not null && bundles.TryGetValue(function, out var bundle) ? new RunTarget(deployment, spec, vouched, bundle) : null;
+        return spec is not null && bundles.TryGetValue(function, out var bundle)
+            ? new RunTarget(deployment, spec, vouched, bundle,
+                bundles.GetValueOrDefault(BuildOutput.DotnetAssembly), bundles.GetValueOrDefault(BuildOutput.DotnetPdb))
+            : null;
     }
 
     /// <summary>Thrown for an input the caller got wrong.</summary>

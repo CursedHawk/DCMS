@@ -16,9 +16,22 @@ public sealed class ScriptRunnerOptions
 
     public string SessionHarnessPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "session-harness.js");
 
+    /// <summary>
+    /// A C# function's harness (ADR 0030), in the published Dcms.Functions.WasmHost beside the .NET
+    /// runtime it imports. The image puts it here; tests point it at their own publish.
+    /// </summary>
+    public string DotnetHarnessPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "dotnet", "dotnet-harness.js");
+
     /// <summary>The static <c>@dcms/functions</c> runtime every bundle imports in place of the SDK.</summary>
     public string RuntimePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "sdk-runtime.js");
     public string EsbuildPath { get; set; } = "esbuild";
+
+    /// <summary>The <c>dotnet</c> host that runs dcms-csc, the C# compiler of a build (ADR 0030).</summary>
+    public string DotnetPath { get; set; } = "dotnet";
+    public string CSharpCompilerPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "csc", "dcms-csc.dll");
+
+    /// <summary>RLIMIT_DATA for dcms-csc; its GC is capped 256 MB below. A typical build peaks at ~230 MB.</summary>
+    public int CSharpDataLimitMegabytes { get; set; } = 1_024;
 
     /// <summary>Functions running at once. Callers cap each tenant below this.</summary>
     public int MaxSessions { get; set; } = 4;

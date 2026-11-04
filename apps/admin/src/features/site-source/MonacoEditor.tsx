@@ -85,10 +85,12 @@ export function MonacoEditor() {
       openCodeEditor(source, resource, selectionOrPosition) {
         const path = pathOfUri(resource.toString());
         const model = modelsRef.current.get(path);
-        if (!model) return false;
-        useVfs.getState().open(path);
-        source.setModel(model);
-        source.updateOptions({ readOnly: isToolchainFile(path) || isGeneratedFile(path) });
+        // The generated SDK (.dcms/, ADR 0030) is no file of the repository: shown read-only, with no tab.
+        const generated = !model && path.startsWith('.dcms/') ? monaco.editor.getModel(resource) : null;
+        if (!model && !generated) return false;
+        if (model) useVfs.getState().open(path);
+        source.setModel(model ?? generated);
+        source.updateOptions({ readOnly: !!generated || isToolchainFile(path) || isGeneratedFile(path) });
         if (selectionOrPosition) {
           if ('startLineNumber' in selectionOrPosition) {
             source.setSelection(selectionOrPosition);

@@ -19,9 +19,18 @@ COPY samples/ samples/
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm install --frozen-lockfile && pnpm --filter @dcms/admin build
 
+# The IDE's C# language service (ADR 0030): Roslyn on .NET's WebAssembly runtime, served as
+# static files under /csharp/ and loaded by the console's csharp.worker.ts on the first .cs file.
+FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0 AS csharp
+WORKDIR /src
+COPY Directory.Build.props Directory.Packages.props global.json ./
+COPY src/ src/
+RUN dotnet publish src/Functions/Dcms.Functions.LanguageWorker/Dcms.Functions.LanguageWorker.csproj -c Release -o /out
+
 FROM nginx:alpine AS runtime
 COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/admin/dist /usr/share/nginx/html
+COPY --from=csharp /out/wwwroot /usr/share/nginx/html/csharp
 COPY apps/admin/docker-entrypoint.sh /docker-entrypoint.d/00-dcms-runtime-config.sh
 RUN chmod +x /docker-entrypoint.d/00-dcms-runtime-config.sh
 EXPOSE 80

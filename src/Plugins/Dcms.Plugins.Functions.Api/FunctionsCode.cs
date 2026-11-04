@@ -16,7 +16,8 @@ public sealed record CodeRef(string? Branch = null);
 
 public sealed record CodeFiles(IReadOnlyDictionary<string, string> Files);
 
-public sealed record CodeSdk(string Typings);
+/// <param name="CSharp">The C# half, Sdk.g.cs (ADR 0030): ctx.Db.&lt;App&gt;.&lt;Table&gt; with its row records, ctx.Plugins.</param>
+public sealed record CodeSdk(string Typings, string? CSharp = null);
 
 /// <param name="Branch">The working branch to commit to (<c>main</c> when omitted); never <c>release</c>.</param>
 /// <param name="Put">Files to write, by path: <c>functions/{name}.ts</c> is the function <c>{name}</c>.</param>
@@ -47,7 +48,7 @@ public sealed record CodeTestResult(string Status, JsonNode? Result, string? Err
 /// branch, check it, ship it to release (which builds), deploy the build. Each step needs its
 /// own permission, and deploying needs everything the functions use (definer's rights).
 /// </summary>
-[DcmsContract("functions.code", 1, Description = "Write, check, test and deploy a Functions app's TypeScript functions.")]
+[DcmsContract("functions.code", 1, Description = "Write, check, test and deploy a Functions app's TypeScript and C# functions.")]
 public interface IFunctionsCode
 {
     [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
@@ -56,13 +57,16 @@ public interface IFunctionsCode
 
     [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
         Description = "Every file of a branch of the app's repository (main by default). Each functions/{name}.ts is one function: "
-            + "it must `export default defineFunction({...})` from \"@dcms/functions\" and may import other files of the repository, nothing else.")]
+            + "it must `export default defineFunction({...})` from \"@dcms/functions\" and may import other files of the repository, nothing else. "
+            + "A C# function is a public class deriving from Function<TIn, TOut> marked [Function(\"name\")] in any .cs file, its triggers and uses "
+            + "as attributes ([OnRow], [Http], [UsesTable], …); a repository may hold both languages.")]
     Task<CodeFiles> ReadFilesAsync(CodeRef input, CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "The TypeScript declarations of \"@dcms/functions\" for this environment: defineFunction, the triggers (on.row, on.message, "
             + "on.schedule, …), `uses` (the capability grant: tables and verbs, contracts, egress hosts, secrets, messages) and the context: "
-            + "ctx.db.<app>.<table> typed from the published tables, ctx.plugins, ctx.http.fetch, ctx.secrets, ctx.messages, ctx.jobs, ctx.log. Read it before writing code.")]
+            + "ctx.db.<app>.<table> typed from the published tables, ctx.plugins, ctx.http.fetch, ctx.secrets, ctx.messages, ctx.jobs, ctx.log. "
+            + "Also the C# half (csharp): ctx.Db.<App>.<Table> and its row records, for .cs files. Read it before writing code.")]
     Task<CodeSdk> SdkAsync(CancellationToken ct);
 
     [Operation(OpRisk.Safe, Permission = FunctionsPermissions.Edit, Expose = OpExposure.Admin | OpExposure.Ai,

@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!--
+    The .NET runtime a C# function runs on (ADR 0030): Mono on WebAssembly, booted by
+    script-runner's dotnet-harness.js inside the same permission-less Deno process a TypeScript
+    function gets. The tenant's assembly arrives with the start message and is loaded here.
+
+    The BCL is a curated, fully rooted set: the whole BCL needs ~900 MB of RLIMIT_DATA in Deno,
+    this set fits the 640 MB a TypeScript run gets. The build compiles tenant code against exactly
+    these assemblies (CuratedAssemblies.txt, read by Dcms.ScriptRunner.CSharp), so a type outside
+    the set is a compile error, never a load failure at run time.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <!-- Rooted whole, the curated BCL warns about its own reflection; none of it is ours to fix. -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!-- The JS interop attributes are browser-only; this only ever runs there. -->
+    <!-- Stable file names: dotnet-harness.js imports them statically. No .br/.gz: nothing serves them. -->
+    <!-- Trimming turns both off; tenant code serializes its own types and deserves real exception messages. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+    <WasmFingerprintAssets>false</WasmFingerprintAssets>
+    <CompressionEnabled>false</CompressionEnabled>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- Loading the tenant's assembly is reflection the trimmer cannot see; what it may use is
+         rooted whole (the curated set and Dcms.Functions), so nothing it needs is trimmed away. -->
+    <NoWarn>$(NoWarn);IL2026;IL2072;IL3050</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dcms.Functions\Dcms.Functions.csproj" />
+    <TrimmerRootAssembly Include="Dcms.Functions" />
+    <None Include="CuratedAssemblies.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ReadCuratedAssemblies" BeforeTargets="PrepareForPublish;PrepareForBuild">
+    <ReadLinesFromFile File="CuratedAssemblies.txt">
+      <Output TaskParameter="Lines" ItemName="CuratedLine" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <TrimmerRootAssembly Include="@(CuratedLine)" Condition="'%(Identity)' != '' And !$([System.String]::Copy('%(Identity)').StartsWith('#'))" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    resources.js: every .wasm of the runtime as a `with { type: "bytes" }` import, which Deno loads
+    with the module graph and so without a read permission (dotnet-harness.js). Generated, because
+    the set of assemblies is whatever the trimmer kept.
+  -->
+  <Target Name="WriteResourcesModule" AfterTargets="Publish">
+    <ItemGroup>
+      <_DcmsWasm Include="$(PublishDir)wwwroot/_framework/*.wasm" />
+      <_DcmsResourceLine Include="export const files = {" />
+      <_DcmsResourceLine Include="@(_DcmsWasm->'  &quot;%(Filename)%(Extension)&quot;: (await import(&quot;./_framework/%(Filename)%(Extension)&quot;, { with: { type: &quot;bytes&quot; } })).default,')" />
+      <_DcmsResourceLine Include="};" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PublishDir)wwwroot/resources.js" Lines="@(_DcmsResourceLine)" Overwrite="true" />
+  </Target>
+
+</Project>

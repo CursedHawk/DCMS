@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    dcms-csc: the C# half of a Functions build (ADR 0030), started by script-runner per build.
+    Beside it, refs/ holds what tenant code compiles against: the framework's reference
+    assemblies (filtered at run time to the curated set the sandbox ships, per
+    CuratedAssemblies.txt) and Dcms.Functions.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dcms-csc</AssemblyName>
+    <RootNamespace>Dcms.Functions.Compilation</RootNamespace>
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <ProjectReference Include="$(DcmsSrcRoot)Functions\Dcms.Functions\Dcms.Functions.csproj" />
+  </ItemGroup>
+
+  <Target Name="CopyTenantReferences" AfterTargets="Build">
+    <ItemGroup>
+      <_DcmsTenantRef Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App' Or '%(Filename)' == 'Dcms.Functions'" />
+      <_DcmsTenantRef Include="$(DcmsSrcRoot)Functions\Dcms.Functions.WasmHost\CuratedAssemblies.txt" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_DcmsTenantRef)" DestinationFolder="$(OutDir)refs" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PublishTenantReferences" AfterTargets="Publish">
+    <ItemGroup>
+      <_DcmsTenantRefOut Include="$(OutDir)refs/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_DcmsTenantRefOut)" DestinationFolder="$(PublishDir)refs" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -56,7 +56,7 @@ export function functionsTools(base: string): ToolSpec<TenantToolContext>[] {
       input_schema: {
         type: 'object',
         properties: {
-          function: { type: 'string', description: 'The function: functions/{name}.ts is {name}.' },
+          function: { type: 'string', description: 'The function\'s name: functions/{name}.ts is {name}; a C# class is the name in its [Function("name")].' },
           input: { description: 'What the function receives as its input.' },
         },
         required: ['function'],
@@ -81,12 +81,17 @@ export function functionsTools(base: string): ToolSpec<TenantToolContext>[] {
     {
       name: 'functions_sdk',
       description:
-        'The TypeScript declarations of "@dcms/functions" for this environment: defineFunction, the triggers, `uses` (the capability grant), and the context with ctx.db.<app>.<table> typed from the published tables. Read it before writing a function.',
-      input_schema: { type: 'object', properties: {}, additionalProperties: false },
-      describe: () => 'read the SDK',
-      run: async () => {
-        const { typings } = await api.get<{ typings: string }>(`${base}/sdk`);
-        return { content: typings.length > 60_000 ? `${typings.slice(0, 60_000)}\n… (truncated)` : typings };
+        'The SDK as generated for this environment. "ts": the declarations of "@dcms/functions" (defineFunction, the triggers, `uses`, the context with ctx.db.<app>.<table> typed from the published tables). "cs": Sdk.g.cs, the C# half (ctx.Db.<App>.<Table> and its row records, ctx.Plugins); the static C# API is described in your instructions. Read it before writing a function.',
+      input_schema: {
+        type: 'object',
+        properties: { language: { type: 'string', enum: ['ts', 'cs'], description: 'Which half; "ts" when left out.' } },
+        additionalProperties: false,
+      },
+      describe: (input) => `read the ${input.language === 'cs' ? 'C# ' : ''}SDK`,
+      run: async (input) => {
+        const { typings, csharp } = await api.get<{ typings: string; csharp?: string }>(`${base}/sdk`);
+        const text = input.language === 'cs' ? (csharp ?? '') : typings;
+        return { content: text.length > 60_000 ? `${text.slice(0, 60_000)}\n… (truncated)` : text };
       },
     },
   ];

@@ -1,0 +1,21 @@
+# The BCL a C# function may use (ADR 0030): shipped whole in the sandbox and the only references
+# the build compiles tenant code against. Adding one costs memory in every C# run: re-measure
+# RLIMIT_DATA (script-runner's dotnet limit) when this list grows.
+System.Private.CoreLib
+System.Runtime
+System.Collections
+System.Collections.Concurrent
+System.Collections.Immutable
+System.Collections.NonGeneric
+System.Console
+System.Diagnostics.StackTrace
+System.Linq
+System.Memory
+System.ObjectModel
+System.Reflection.Metadata
+System.Runtime.Numerics
+System.Security.Cryptography
+System.Text.Encodings.Web
+System.Text.Json
+System.Text.RegularExpressions
+System.Web.HttpUtility

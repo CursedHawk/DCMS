@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!--
+    The web IDE's C# language service (ADR 0030): Roslyn on .NET's WebAssembly runtime, in a Web
+    Worker of the console (apps/admin's csharp/ client). It compiles the way dcms-csc does
+    (FunctionCompilation.cs is the same file) against the same references, embedded below, so
+    what the editor accepts the build accepts. It runs in the member's browser: no server cost,
+    nothing of the tenant's leaves the page.
+
+    Untrimmed: Roslyn's MEF composition finds its parts by reflection, which trimming breaks.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>false</PublishTrimmed>
+    <WasmFingerprintAssets>false</WasmFingerprintAssets>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <ProjectReference Include="..\Dcms.Functions\Dcms.Functions.csproj" />
+    <Compile Include="$(DcmsSrcRoot)Services\Dcms.ScriptRunner.CSharp\FunctionCompilation.cs" Link="FunctionCompilation.cs" />
+  </ItemGroup>
+
+  <!--
+    What tenant code compiles against, embedded: the framework's reference assemblies named in
+    CuratedAssemblies.txt, and Dcms.Functions with its XML docs (what hover shows).
+  -->
+  <Target Name="EmbedTenantReferences" AfterTargets="ResolveAssemblyReferences" BeforeTargets="PrepareResourceNames">
+    <ReadLinesFromFile File="$(DcmsSrcRoot)Functions\Dcms.Functions.WasmHost\CuratedAssemblies.txt">
+      <Output TaskParameter="Lines" ItemName="_DcmsCuratedLine" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <_DcmsCurated Include="@(_DcmsCuratedLine)" Condition="!$([System.String]::Copy('%(Identity)').StartsWith('#'))" />
+      <_DcmsFrameworkRef Include="@(ReferencePath->'%(Filename)')" OriginalPath="%(Identity)"
+                         Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
+      <_DcmsUncurated Include="@(_DcmsFrameworkRef)" Exclude="@(_DcmsCurated)" />
+      <_DcmsTenantRef Include="@(_DcmsFrameworkRef)" Exclude="@(_DcmsUncurated)" />
+      <EmbeddedResource Include="%(_DcmsTenantRef.OriginalPath)" LogicalName="refs/%(_DcmsTenantRef.Identity).dll" />
+      <EmbeddedResource Include="$(DcmsSrcRoot)Functions\Dcms.Functions\bin\$(Configuration)\$(TargetFramework)\Dcms.Functions.dll" LogicalName="refs/Dcms.Functions.dll" />
+      <EmbeddedResource Include="$(DcmsSrcRoot)Functions\Dcms.Functions\bin\$(Configuration)\$(TargetFramework)\Dcms.Functions.xml" LogicalName="refs/Dcms.Functions.xml" />
+    </ItemGroup>
+  </Target>
+
+</Project>

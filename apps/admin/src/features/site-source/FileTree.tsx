@@ -183,7 +183,7 @@ export function FileTree() {
 
   const submitNew = () => {
     const name = newName.trim();
-    if (name) createFile(name);
+    if (name) createFile(name, csharpFunctionStarter(name));
     setNewName('');
     setAdding(false);
   };
@@ -401,4 +401,31 @@ export function FileTree() {
       </div>
     </div>
   );
+}
+
+/**
+ * A new functions/<Name>.cs starts as a C# function (ADR 0030): the class named by the file, the
+ * function by its kebab-case. Any other new file starts empty.
+ */
+function csharpFunctionStarter(path: string): string | undefined {
+  const match = /^functions\/([A-Za-z_][A-Za-z0-9_]*)\.cs$/.exec(path.replace(/^\/+/, ''));
+  if (!match) return undefined;
+  const type = match[1][0].toUpperCase() + match[1].slice(1);
+  const name = type.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/_/g, '-').toLowerCase();
+  return [
+    'namespace Functions;',
+    '',
+    `[Function("${name}")]`,
+    '[Http(Access.User)]',
+    `public sealed class ${type} : Function<JsonNode, object>`,
+    '{',
+    '    public override async Task<object> Run(JsonNode input, Context ctx)',
+    '    {',
+    '        await Task.CompletedTask;',
+    '        ctx.Log.Info("called with", input);',
+    '        return new { message = "Hello from C#" };',
+    '    }',
+    '}',
+    '',
+  ].join('\n');
 }

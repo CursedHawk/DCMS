@@ -56,13 +56,17 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
 
     private async Task<JsonObject> RunAsync(WebSocket socket, JsonObject start, Relay relay, CancellationToken ct)
     {
-        if (Text(start["type"]) != "start" || Text(start["bundle"]) is not { } bundle)
+        // deno-ts: an esbuild bundle (ADR 0029). dotnet: a compiled assembly and the class to run,
+        // on .NET's WebAssembly runtime inside the same permission-less Deno (ADR 0030).
+        var dotnet = Text(start["runtime"]) == "dotnet";
+        var code = dotnet ? Text(start["assembly"]) : Text(start["bundle"]);
+        if (Text(start["type"]) != "start" || code is null || (dotnet && Text(start["class"]) is null))
         {
             return Done("error", error: "The session must begin with a start message.");
         }
-        if (bundle.Length > _o.MaxBundleChars)
+        if (code.Length + (Text(start["pdb"])?.Length ?? 0) > _o.MaxBundleChars)
         {
-            return Done("limit", error: $"A function's bundle is at most {_o.MaxBundleChars:N0} characters.");
+            return Done("limit", error: $"A function's code is at most {_o.MaxBundleChars:N0} characters.");
         }
         var limits = start["limits"] as JsonObject;
         var timeout = TimeSpan.FromMilliseconds(Clamp(limits?["timeoutMs"], 100, _o.MaxSessionTimeoutMs, 30_000));
@@ -75,9 +79,15 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
         {
             // Deno's own start-up reserves most of the data limit (see DataLimitMegabytes); the
             // function's heap, and as much again off it for buffers, come on top.
+            // .NET's runtime is one large Wasm module: V8's optimizing tier needs ~900 MB of data
+            // limit to compile it, its baseline tier fits a TypeScript run's (ADR 0030). The bytes
+            // imports are how its files load without a read permission (dotnet-harness.js).
             process = Confined.Start(_o.DenoPath,
-                ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
-                 $"--v8-flags=--max-old-space-size={heap}", _o.SessionHarnessPath],
+                dotnet
+                    ? ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock", "--unstable-raw-imports",
+                       $"--v8-flags=--max-old-space-size={heap},--liftoff-only", _o.DotnetHarnessPath]
+                    : ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
+                       $"--v8-flags=--max-old-space-size={heap}", _o.SessionHarnessPath],
                 (_o.DataLimitMegabytes + 2L * heap) * 1024 * 1024,
                 new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName });
 
@@ -88,14 +98,25 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
 
             try
             {
-                await WriteLineAsync(process, new JsonObject
-                {
-                    ["type"] = "start",
-                    ["mode"] = Text(start["mode"]) == "describe" ? "describe" : "run",
-                    ["bundle"] = bundle,
-                    ["input"] = start["input"]?.DeepClone(),
-                    ["context"] = start["context"]?.DeepClone(),
-                }, deadline.Token);
+                await WriteLineAsync(process, dotnet
+                    ? new JsonObject
+                    {
+                        ["type"] = "start",
+                        ["mode"] = "run",
+                        ["assembly"] = code,
+                        ["pdb"] = Text(start["pdb"]),
+                        ["class"] = Text(start["class"]),
+                        ["input"] = start["input"]?.DeepClone(),
+                        ["context"] = start["context"]?.DeepClone(),
+                    }
+                    : new JsonObject
+                    {
+                        ["type"] = "start",
+                        ["mode"] = Text(start["mode"]) == "describe" ? "describe" : "run",
+                        ["bundle"] = code,
+                        ["input"] = start["input"]?.DeepClone(),
+                        ["context"] = start["context"]?.DeepClone(),
+                    }, deadline.Token);
             }
             catch (IOException)
             {
@@ -216,7 +237,9 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
                 case "done":
                     if (message["ok"]?.GetValueKind() != JsonValueKind.True)
                     {
-                        return Done("error", error: Text(message["error"]) ?? "The function failed.");
+                        // .NET reports running out of its memory itself, as an exception it survives.
+                        return Done(message["limit"]?.GetValueKind() == JsonValueKind.True ? "limit" : "error",
+                            error: Text(message["error"]) ?? "The function failed.");
                     }
                     var result = message["result"]?.DeepClone();
                     if ((result?.ToJsonString().Length ?? 0) > _o.MaxResultChars)

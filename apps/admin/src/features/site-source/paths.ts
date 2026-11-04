@@ -48,6 +48,8 @@ export function languageOf(path: string): string {
       return 'html';
     case 'md':
       return 'markdown';
+    case 'cs':
+      return 'csharp';
     default:
       return 'plaintext';
   }

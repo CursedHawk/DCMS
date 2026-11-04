@@ -4,6 +4,7 @@ import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import { registerCSharp } from './csharp/client';
 
 // One-time Monaco configuration shared by every DCMS source editor — the Mode B
 // IDE and the Mode A builder's code view. All language intelligence
@@ -82,6 +83,9 @@ export function setupMonaco(): typeof monaco {
   });
 
   defineThemes();
+
+  // C# (ADR 0030): Roslyn in its own worker, started by the first C# model.
+  registerCSharp(monaco);
 
   return monaco;
 }

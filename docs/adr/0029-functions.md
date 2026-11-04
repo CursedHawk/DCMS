@@ -179,7 +179,7 @@ A function imports only:
 - its repository's own files;
 - `@dcms/functions`.
 
-All I/O goes through the SDK. The `runtime` field (`deno-ts`) leaves room for other languages; nothing beyond it is built now.
+All I/O goes through the SDK. The `runtime` field (`deno-ts`) leaves room for other languages: C# (`dotnet`) came next, in [0030](0030-csharp-functions.md).
 
 ## Alternatives rejected
 

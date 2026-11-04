@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The static half of the C# SDK for tenant functions (ADR 0030), what sdk-runtime.js is for
+    TypeScript. Tenant code compiles against it and runs with it inside the sandbox
+    (Dcms.Functions.WasmHost); the workspace-specific half, Sdk.g.cs, is generated per environment
+    and compiled together with the tenant's code. No dependencies beyond the curated BCL the
+    sandbox ships: anything else would fail at run time.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Dcms.Functions</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The docs are what the IDE shows on hover; a member without one is not an error. -->
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.Functions.WasmHost" />
+    <InternalsVisibleTo Include="Dcms.UnitTests" />
+  </ItemGroup>
+
+</Project>

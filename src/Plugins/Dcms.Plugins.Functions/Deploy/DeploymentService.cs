@@ -72,6 +72,10 @@ public sealed class DeploymentService(
             It must `export default defineFunction({ ... })` from `"@dcms/functions"`, and may import other
             files of this repository. Merge into `release` to build; deploy the build from the app's Deployments.
 
+            Functions may be C# too, beside TypeScript: a public class deriving from `Function<TIn, TOut>`,
+            marked `[Function("name")]`, in any `.cs` file, its triggers and uses as attributes
+            (`[OnRow]`, `[Http]`, `[UsesTable]`, …). A new `functions/<Name>.cs` in the editor starts as one.
+
             """,
     };
 

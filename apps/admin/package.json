@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "csharp:worker": "dotnet publish ../../src/Functions/Dcms.Functions.LanguageWorker -c Release -o ../../artifacts/csharp-worker --nologo && rm -rf public/csharp && mkdir -p public && cp -r ../../artifacts/csharp-worker/wwwroot public/csharp",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run"

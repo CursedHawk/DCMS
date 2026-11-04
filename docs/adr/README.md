@@ -35,3 +35,4 @@ as their implementation phase lands.
 - [0026](0026-environments.md) — Environments are tenants of one workspace; configuration moves between them as reviewed migrations
 - [0028](0028-environments-as-a-dimension.md) — Environments are a dimension of one tenant: shared media and members, per-environment configuration and content
 - [0029](0029-functions.md) — Functions: tenant-written TypeScript in a repository, a generated SDK, and host calls out of a credential-free sandbox; replaces Dynamic Apps flows
+- [0030](0030-csharp-functions.md) — C# functions: Roslyn-compiled IL on .NET's WebAssembly runtime inside the same Deno sandbox, a generated C# SDK, Roslyn in the browser for the IDE

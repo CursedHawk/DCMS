@@ -11,14 +11,23 @@ namespace Dcms.ScriptRunner;
 /// The generated <c>@dcms/functions</c> declarations for the instance's environment, a TypeScript
 /// module of <c>export declare …</c>: what the code is checked against.
 /// </param>
-public sealed record BuildRequest(Dictionary<string, string> Files, string SdkTypes);
+/// <param name="SdkCSharp">The generated C# half of the SDK (Sdk.g.cs), for a repository's <c>.cs</c> files (ADR 0030).</param>
+public sealed record BuildRequest(Dictionary<string, string> Files, string SdkTypes, string? SdkCSharp = null);
 
 public sealed record BuildDiagnostic(string Message, string? File = null, int? Line = null, int? Column = null, string? Code = null);
 
 /// <param name="Definition">What <c>defineFunction</c> was given, less the handler: triggers, access, uses, limits.</param>
-public sealed record BuiltFunction(string Name, string Bundle, JsonNode? Definition);
+/// <param name="Bundle">deno-ts: the bundle. dotnet: empty; the code is the build's <see cref="BuildResult.Assembly"/>.</param>
+/// <param name="Runtime"><c>deno-ts</c> or <c>dotnet</c>.</param>
+/// <param name="File">Where it is defined, for problems found in its definition.</param>
+/// <param name="Class">dotnet: the class to run, by its full name.</param>
+public sealed record BuiltFunction(string Name, string Bundle, JsonNode? Definition,
+    string Runtime = FunctionBuilder.TypeScript, string? File = null, string? Class = null);
 
-public sealed record BuildResult(bool Ok, IReadOnlyList<BuildDiagnostic> Diagnostics, IReadOnlyList<BuiltFunction> Functions)
+/// <param name="Assembly">The repository's C# compiled, base64: one assembly every C# function of the build runs from.</param>
+/// <param name="Pdb">Its portable PDB, base64: a function's errors name their file and line with it.</param>
+public sealed record BuildResult(bool Ok, IReadOnlyList<BuildDiagnostic> Diagnostics, IReadOnlyList<BuiltFunction> Functions,
+    string? Assembly = null, string? Pdb = null)
 {
     public static BuildResult Failed(params BuildDiagnostic[] diagnostics) => new(false, diagnostics, []);
 }
@@ -39,6 +48,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
 {
     public const string FunctionsDirectory = "functions";
     public const string SdkModule = "@dcms/functions";
+    public const string TypeScript = "deno-ts";
+    public const string Dotnet = "dotnet";
 
     private readonly ScriptRunnerOptions _o = options.Value;
 
@@ -64,6 +75,10 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     [GeneratedRegex(@"\[ERROR\] (?<msg>[^\n]+)\n\s*\n\s*(?<file>[^\s:]+):(?<line>\d+):(?<col>\d+):")]
     private static partial Regex EsbuildDiagnostic();
 
+    /// <summary>
+    /// A repository may mix languages (ADR 0030): its TypeScript and its C# build side by side and
+    /// one build holds both, as long as no two functions share a name.
+    /// </summary>
     public async Task<BuildResult> BuildAsync(BuildRequest request, CancellationToken ct)
     {
         if (Validate(request) is { } refused)
@@ -72,6 +87,110 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         }
 
         await _gate.WaitAsync(ct);
+        try
+        {
+            var ts = await BuildTypeScriptAsync(request, ct);
+            var cs = request.Files.Keys.Any(IsCSharp) ? await BuildCSharpAsync(request, ct) : null;
+            var diagnostics = ts.Diagnostics.Concat(cs?.Diagnostics ?? []).ToList();
+            var functions = ts.Functions.Concat(cs?.Functions ?? []).ToList();
+            foreach (var twice in functions.GroupBy(f => f.Name).Where(g => g.Count() > 1))
+            {
+                diagnostics.Add(new BuildDiagnostic(
+                    $"Two functions are called '{twice.Key}': {string.Join(" and ", twice.Select(f => f.File))}.", twice.Last().File));
+            }
+            if (diagnostics.Count == 0 && functions.Count == 0)
+            {
+                diagnostics.Add(new BuildDiagnostic(
+                    $"There are no functions: each is a file in {FunctionsDirectory}/, such as {FunctionsDirectory}/hello.ts, or a C# class marked [Function(\"name\")]."));
+            }
+            return diagnostics.Count > 0
+                ? new BuildResult(false, diagnostics, [])
+                : new BuildResult(true, [], functions, cs?.Assembly, cs?.Pdb);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private static bool IsCSharp(string path) => path.EndsWith(".cs", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The repository's C#, compiled by dcms-csc (ADR 0030) under the same confinement as Deno:
+    /// Roslyn reads no file but the request and runs none of the tenant's code, but a crafted
+    /// source can still cost it memory and time, which the limits below bound.
+    /// </summary>
+    private async Task<BuildResult> BuildCSharpAsync(BuildRequest request, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(_o.BuildTimeoutMs);
+        using var process = Confined.Start(_o.DotnetPath, [_o.CSharpCompilerPath],
+            _o.CSharpDataLimitMegabytes * 1024L * 1024,
+            new Dictionary<string, string>
+            {
+                // The GC's own ceiling, under the kernel's: it collects harder instead of being killed.
+                ["DOTNET_GCHeapHardLimit"] = $"0x{(_o.CSharpDataLimitMegabytes - 256L) * 1024 * 1024:x}",
+                ["DOTNET_gcServer"] = "0",
+                ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
+            });
+        var stdout = Confined.ReadBoundedAsync(process.StandardOutput, 3 * _o.MaxBundleChars, () => Confined.Kill(process));
+        _ = Confined.ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null);
+        try
+        {
+            await process.StandardInput.WriteAsync(new JsonObject
+            {
+                ["files"] = new JsonObject(request.Files.Where(f => IsCSharp(f.Key))
+                    .Select(f => KeyValuePair.Create<string, JsonNode?>(f.Key, f.Value))),
+                ["sdk"] = request.SdkCSharp ?? "",
+            }.ToJsonString().AsMemory(), deadline.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Confined.Kill(process);
+            return BuildResult.Failed(new BuildDiagnostic($"Compiling the C# took longer than {_o.BuildTimeoutMs / 1000} s."));
+        }
+        catch (IOException)
+        {
+            // It ended before reading its input: its exit code says why, below.
+        }
+        var output = await stdout;
+        var result = process.ExitCode == 0 ? JsonNode.Parse(output) as JsonObject : null;
+        if (result is null)
+        {
+            // The exit code only: its stderr can quote the code it was compiling.
+            logger.LogWarning("dcms-csc exited with {ExitCode}", process.ExitCode);
+            return BuildResult.Failed(new BuildDiagnostic(process.ExitCode is 134 or 137 || output.Length == 0
+                ? "Compiling the C# ran out of memory or failed; try again, and if it keeps failing, split up the largest files."
+                : "Compiling the C# failed."));
+        }
+        var diagnostics = (result["diagnostics"] as JsonArray ?? [])
+            .Select(d => new BuildDiagnostic(
+                d?["message"]?.GetValue<string>() ?? "",
+                d?["file"]?.GetValue<string>() is { } file && InRepository(file) ? file : null,
+                d?["line"]?.GetValue<int>(), d?["column"]?.GetValue<int>(), d?["code"]?.GetValue<string>()))
+            .ToList();
+        if (diagnostics.Count > 0 || result["ok"]?.GetValue<bool>() != true)
+        {
+            return new BuildResult(false, diagnostics.Count > 0 ? diagnostics : [new BuildDiagnostic("Compiling the C# failed.")], []);
+        }
+        var assembly = result["assembly"]?.GetValue<string>();
+        var pdb = result["pdb"]?.GetValue<string>();
+        if ((assembly?.Length ?? 0) + (pdb?.Length ?? 0) > _o.MaxBundleChars)
+        {
+            return BuildResult.Failed(new BuildDiagnostic($"The compiled C# is at most {_o.MaxBundleChars:N0} characters."));
+        }
+        var functions = (result["functions"] as JsonArray ?? [])
+            .Select(f => new BuiltFunction(f!["name"]!.GetValue<string>(), "", f["definition"]?.DeepClone(), Dotnet,
+                f["file"]?.GetValue<string>(), f["class"]?.GetValue<string>()))
+            .ToList();
+        return new BuildResult(true, [], functions, assembly, pdb);
+    }
+
+    /// <summary>The repository's TypeScript; nothing at all when it has no <c>functions/*.ts</c>.</summary>
+    private async Task<BuildResult> BuildTypeScriptAsync(BuildRequest request, CancellationToken ct)
+    {
         var root = Directory.CreateTempSubdirectory("fn-build-");
         try
         {
@@ -104,9 +223,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                     }
                 }
             }
-            if (entries.Count == 0)
+            if (diagnostics.Count == 0 && entries.Count == 0)
             {
-                diagnostics.Add(new BuildDiagnostic($"There are no functions: each is a file in {FunctionsDirectory}/, such as {FunctionsDirectory}/hello.ts."));
+                return new BuildResult(true, [], []);
             }
             if (diagnostics.Count > 0)
             {
@@ -156,7 +275,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                         diagnostics.Add(new BuildDiagnostic(error, entry));
                         continue;
                     }
-                    functions.Add(new BuiltFunction(name, bundle, definition));
+                    functions.Add(new BuiltFunction(name, bundle, definition, TypeScript, entry));
                 }
                 return diagnostics.Count > 0 ? new BuildResult(false, diagnostics, []) : new BuildResult(true, [], functions);
             }
@@ -175,7 +294,6 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             {
                 logger.LogWarning(e, "Could not delete {Build}", root.FullName);
             }
-            _gate.Release();
         }
     }
 
@@ -189,7 +307,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         {
             return BuildResult.Failed(new BuildDiagnostic($"A build takes at most {_o.MaxBuildFiles:N0} files."));
         }
-        if (request.Files.Sum(f => (long)f.Value.Length) + (request.SdkTypes?.Length ?? 0) > _o.MaxBuildBytes)
+        if (request.Files.Sum(f => (long)f.Value.Length) + (request.SdkTypes?.Length ?? 0) + (request.SdkCSharp?.Length ?? 0) > _o.MaxBuildBytes)
         {
             return BuildResult.Failed(new BuildDiagnostic($"A build takes at most {_o.MaxBuildBytes / (1024 * 1024)} MB of code."));
         }

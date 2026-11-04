@@ -41,6 +41,7 @@ import {
   useVfs,
 } from '../site-source';
 import type { SiteTemplate } from '../site-source/ide';
+import { SDK_URI } from '../site-source/csharp/client';
 import { type IdeCommand, modifierLabel } from './commands';
 import { IdeCommandPalette, type PaletteMode } from './IdeCommandPalette';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
@@ -156,16 +157,26 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
     const { module, path } = repo.types;
     let disposed = false;
     let lib: { dispose(): void } | undefined;
-    void api.get<{ typings: string }>(path).then(({ typings }) => {
+    let sdk: { dispose(): void } | undefined;
+    void api.get<{ typings: string; csharp?: string }>(path).then(({ typings, csharp }) => {
       if (disposed) return;
-      lib = setupMonaco().languages.typescript.typescriptDefaults.addExtraLib(
+      const monaco = setupMonaco();
+      lib = monaco.languages.typescript.typescriptDefaults.addExtraLib(
         typings,
         `file:///node_modules/${module}/index.d.ts`,
       );
+      // The C# half (ADR 0030): a read-only model Roslyn compiles with the repository's .cs
+      // files, and where go to definition on ctx.Db.<App>.<Table> lands.
+      if (csharp !== undefined) {
+        const uri = monaco.Uri.parse(SDK_URI);
+        monaco.editor.getModel(uri)?.dispose();
+        sdk = monaco.editor.createModel(csharp, 'csharp', uri);
+      }
     });
     return () => {
       disposed = true;
       lib?.dispose();
+      sdk?.dispose();
     };
   }, [repo?.types]);
 

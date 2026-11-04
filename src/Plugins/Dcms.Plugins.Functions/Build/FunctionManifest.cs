@@ -48,6 +48,9 @@ public sealed record ManifestProblem(string Function, string Message);
 public static partial class FunctionManifest
 {
     public const string Runtime = "deno-ts";
+
+    /// <summary>C# on .NET's WebAssembly runtime (ADR 0030); <see cref="Runtime"/> is TypeScript's.</summary>
+    public const string Dotnet = "dotnet";
     public const int MaxFunctions = 200;
 
     private static readonly string[] Events = ["form.submitted", "visitor.registered", "user.invited", "user.activated"];

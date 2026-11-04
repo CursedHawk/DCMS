@@ -68,9 +68,9 @@ internal sealed class FunctionsCodeContract : IFunctionsCode
     {
         var http = services.GetRequiredService<IHttpContextAccessor>().HttpContext;
         var authz = services.GetRequiredService<IAuthorizationService>();
-        var typings = await services.GetRequiredService<SdkTypings>().GenerateAsync(ct, http is null ? null : async permission =>
+        var model = await services.GetRequiredService<SdkTypings>().ModelAsync(ct, http is null ? null : async permission =>
             (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(permission))).Succeeded);
-        return new CodeSdk(typings);
+        return new CodeSdk(SdkTypings.TypeScript(model), SdkTypings.CSharp(model));
     }
 
     public async Task<CodeWritten> WriteFilesAsync(CodeWrite input, CancellationToken ct)

@@ -1,6 +1,6 @@
 import { languageOf, uriOf } from '../../site-source/paths';
 import type { BuildProblem } from '../preview/problems';
-import { isCheckable, problemKey, toTypeProblems, type TsDiagnostic } from './typeCheck';
+import { isCheckable, positionAt, problemKey, toTypeProblems, type TsDiagnostic } from './typeCheck';
 
 /**
  * The half that talks to Monaco's TypeScript worker.
@@ -78,6 +78,16 @@ async function collect(checkable: readonly string[]): Promise<BuildProblem[] | n
       // worker was given, and `workspace.read` truncates a long file, which would shift every
       // line number past the cut.
       const text = model.getValue();
+
+      if (languageOf(path) === 'csharp') {
+        // Roslyn's worker (ADR 0030), compiling the way the server's build does.
+        const { csharpDiagnostics } = await import('../../site-source/csharp/client');
+        for (const d of await csharpDiagnostics(model)) {
+          const { line, column } = positionAt(text, d.start);
+          problems.push({ severity: d.severity, text: `${d.code}: ${d.message}`, file: path, line, column, lineText: text.split('\n')[line - 1] });
+        }
+        continue;
+      }
 
       const getWorker =
         languageOf(path) === 'javascript'

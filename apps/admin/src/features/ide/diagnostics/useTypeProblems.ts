@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useVfs } from '../../site-source/vfs';
+import { onCSharpReady } from '../../site-source/csharp/client';
 import type { BuildProblem } from '../preview/problems';
 import { checkTypes } from './checkTypes';
 import { isCheckable } from './typeCheck';
@@ -20,6 +21,9 @@ import { isCheckable } from './typeCheck';
 export function useTypeProblems(enabled = true): BuildProblem[] {
   const [problems, setProblems] = useState<BuildProblem[]>([]);
   const rev = useVfs((s) => s.rev);
+  // C#'s language service boots slower than a check waits (ADR 0030): look again once it is up.
+  const [csharpReady, setCSharpReady] = useState(0);
+  useEffect(() => onCSharpReady(() => setCSharpReady((n) => n + 1)), []);
   const openTabs = useVfs((s) => s.openTabs);
 
   // The tab list identity changes on every reorder; its content is what matters here.
@@ -46,7 +50,7 @@ export function useTypeProblems(enabled = true): BuildProblem[] {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [enabled, paths, rev]);
+  }, [enabled, paths, rev, csharpReady]);
 
   return problems;
 }

@@ -113,10 +113,10 @@ export function toTypeProblems(
   return problems;
 }
 
-/** Files the TypeScript worker knows about. Everything else has no types to check. */
+/** Files a language service checks: TypeScript's worker, or Roslyn's for C# (ADR 0030). */
 export function isCheckable(path: string): boolean {
   const language = languageOf(path);
-  return language === 'typescript' || language === 'javascript';
+  return language === 'typescript' || language === 'javascript' || language === 'csharp';
 }
 
 /**

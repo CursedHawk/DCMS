@@ -3,6 +3,13 @@ WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props global.json ./
 COPY src/ src/
 RUN dotnet publish src/Services/Dcms.ScriptRunner/Dcms.ScriptRunner.csproj -c Release -o /app
+# C# functions (ADR 0030): .NET's WebAssembly runtime, the curated BCL and dotnet-harness.js, run
+# by the same Deno as TypeScript. Only its wwwroot is needed; ScriptRunner__DotnetHarnessPath's
+# default points into it.
+RUN dotnet publish src/Functions/Dcms.Functions.WasmHost/Dcms.Functions.WasmHost.csproj -c Release -o /tmp/wasmhost \
+    && cp -r /tmp/wasmhost/wwwroot /app/dotnet
+# ...and dcms-csc, which compiles them at build time, with refs/: what tenant C# compiles against.
+RUN dotnet publish src/Services/Dcms.ScriptRunner.CSharp/Dcms.ScriptRunner.CSharp.csproj -c Release -o /app/csc
 
 # Deno runs the flow scripts (ADR 0025). Pinned by digest: a Deno upgrade is a security
 # upgrade -- its permission checks are the sandbox -- so it happens on purpose, in a commit,
