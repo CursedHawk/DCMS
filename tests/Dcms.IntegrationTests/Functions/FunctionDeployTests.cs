@@ -617,6 +617,14 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
             .ConfigurePrimaryHttpMessageHandler(() => _runner!.Server.CreateHandler()));
         builder.ConfigureTestServices(services =>
         {
+            // These tests route the apps' events, run the queue and tick schedules themselves; the
+            // host's own workers doing it too raced them: a run or an event in another's hands when
+            // the drain looked made it end early, and a tick taken first left the test none.
+            foreach (var worker in new[] { typeof(RunWorker), typeof(Dcms.Plugins.DynamicApps.Automation.AutomationWorker) })
+            {
+                services.Remove(services.Single(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                                                     && d.ImplementationType == worker));
+            }
             services.AddSingleton<FunctionSocketFactory>(_ => ct =>
                 _runner!.Server.CreateWebSocketClient().ConnectAsync(new Uri(_runner.Server.BaseAddress, "session"), ct));
             services.AddHttpClient(HostCalls.EgressClientName).ConfigurePrimaryHttpMessageHandler(() => _egress);

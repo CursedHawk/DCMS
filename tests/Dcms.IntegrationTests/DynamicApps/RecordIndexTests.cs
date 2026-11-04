@@ -143,7 +143,8 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
 
     private static async Task WaitAsync(Func<Task<bool>> condition, CancellationToken ct, string what)
     {
-        for (var i = 0; i < 120; i++)
+        // The worker takes every tenant's indexes in turn: in a full run, the suite's other apps queue ahead.
+        for (var i = 0; i < 360; i++)
         {
             if (await condition())
             {

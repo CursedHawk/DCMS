@@ -56,7 +56,9 @@ public sealed class ScriptSandboxTests(ScriptSandboxTests.Deno deno) : IClassFix
         return new DenoSandbox(Options.Create(options), NullLogger<DenoSandbox>.Instance);
     }
 
-    private Task<RunResult> Run(string code, string ctx = "{}", int timeoutMs = 2_000, string language = "ts") =>
+    // The runner's ceiling, not production's 2 s: a cold Deno start on a loaded CI runner took longer,
+    // and ended scripts that were meant to fail some other way. The time limit is tested on its own.
+    private Task<RunResult> Run(string code, string ctx = "{}", int timeoutMs = 5_000, string language = "ts") =>
         Sandbox().RunAsync(new RunRequest(code, JsonNode.Parse(ctx), language, timeoutMs), TestContext.Current.CancellationToken);
 
     [DockerFact]
