@@ -616,6 +616,12 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
                  { "op": "create", "type": "flow", "value": { "apiName": "on_new", "displayName": "On new",
                    "trigger": { "event": "flow.event.company.new" },
                    "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "event {{ event.payload.name }}" } } } ] } },
+                 { "op": "create", "type": "flow", "value": { "apiName": "weekly", "displayName": "Weekly",
+                   "trigger": { "event": "schedule", "everyMinutes": 10080 },
+                   "steps": [ { "id": "count", "action": "records.query@1", "input": { "table": "deals" } } ] } },
+                 { "op": "create", "type": "flow", "value": { "apiName": "welcome_user", "displayName": "Welcome user",
+                   "trigger": { "event": "user.invited" },
+                   "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "invited {{ event.payload.email }}" } } } ] } },
                  { "op": "create", "type": "flow", "value": { "apiName": "on_publish", "displayName": "On publish",
                    "trigger": { "event": "revision.published" },
                    "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "published {{ event.payload.number }}" } } } ] } },
@@ -645,7 +651,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         var api = "/api/admin/plugins/automations/_functions";
         var live = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().Single();
         live.GetProperty("status").GetString().Should().Be("Active", live.ToString());
-        live.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo("crm-on-company", "crm-on-new", "crm-on-publish", "crm-sum");
+        live.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo("crm-on-company", "crm-on-new", "crm-on-publish", "crm-sum", "crm-weekly", "crm-welcome-user");
 
         // What the flows did, the functions do: a row starts one, whose message starts the other.
         await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/companies", slug, owner, new { name = "Acme Corp" }), ct), ct);

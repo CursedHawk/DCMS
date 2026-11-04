@@ -49,8 +49,11 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
         // A flow on revision.published was told of each publish: the model, which needed nothing.
         "plugin:dynamic-apps:model-read",
         FunctionsPermissions.Deploy, Dcms.Shared.Security.PlatformPermissions.ContentRead,
-        // visitor.lookup was a built-in action: it needed nothing.
+        // visitor.lookup was a built-in action, and the platform events reached flows as they
+        // happened: none needed anything. Functions read each with its owner's read permission.
         Dcms.Plugins.VisitorAuth.Api.VisitorPermissions.Read,
+        Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersRead,
+        Dcms.Plugins.Forms.Api.FormsPermissions.SubmissionsRead,
     ];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -246,16 +249,7 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
     }
 
     /// <summary>What an app's functions may be vouched for: what its flows could do.</summary>
-    private static HashSet<string> Allowed(App app)
-    {
-        var allowed = Implicit.Concat(app.Export.Vouched).ToHashSet(StringComparer.Ordinal);
-        if (allowed.Contains(Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersManage))
-        {
-            // The provider looked users and groups up itself; written out, the function does.
-            allowed.Add(Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersRead);
-        }
-        return allowed;
-    }
+    private static HashSet<string> Allowed(App app) => Implicit.Concat(app.Export.Vouched).ToHashSet(StringComparer.Ordinal);
 
     private static async Task RetireAsync(IPluginContext plugin, IEnumerable<App> apps, bool retired, CancellationToken ct)
     {

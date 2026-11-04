@@ -164,7 +164,7 @@ As built (F7):
   The code is committed on a branch cut from `release`, so nothing on `main` rides along. An `automations` app whose `release` holds code the migration did not write gets the converted flows on `flows-for-review` instead, for a person to deploy; its flows keep running until then.
 
   A failure after step 3 switches the flows back on. An app with a flow the converter cannot write keeps its flows and is logged.
-- **Vouched for what flows could do.** Nobody deploys this deployment, so it is vouched for no more than the flows' implicit reach: their records, `functions:deploy`, `content:read`, visitor reads, and what their revision's publisher was checked for (`UsersRead` added where `UsersManage` was).
+- **Vouched for what flows could do.** Nobody deploys this deployment, so it is vouched for no more than the flows' implicit reach: their records, `functions:deploy`, `content:read`, the reads of the platform events they triggered on (visitors, users, form submissions), and what their revision's publisher was checked for. Each app's functions may need no more than that app's share.
 - **One difference stays.** A flow retried from the step that failed; a function is retried whole. A record a failed run created is created again on the retry.
 
 ### No third-party imports in v1

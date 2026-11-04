@@ -158,7 +158,7 @@ public static partial class FlowConverter
                 case AppEvent.RevisionPublished:
                     return ($"on.app({Str(app)}).published()", new Started("app", t.Event));
                 case "schedule":
-                    return ($"on.every({Str($"{Math.Clamp(t.EveryMinutes ?? 60, 5, 7 * 24 * 60)}m")})",
+                    return ($"on.every({Str(Interval(Math.Clamp(t.EveryMinutes ?? 60, 5, 7 * 24 * 60)))})",
                         new Started("schedule", "schedule"));
                 case "manual":
                     // Started by a person, or by another flow: now jobs.enqueue, functions.invoke or a manual run.
@@ -173,6 +173,10 @@ public static partial class FlowConverter
         }
 
         private string Topic(string name) => $"{app}.{name}";
+
+        /// <summary>The largest whole unit: on.every takes at most four digits (a week is "7d", not "10080m").</summary>
+        private static string Interval(int minutes) =>
+            minutes % 1440 == 0 ? $"{minutes / 1440}d" : minutes % 60 == 0 ? $"{minutes / 60}h" : $"{minutes}m";
 
         private TableDef? TableOf(Guid? id) => config.Tables.FirstOrDefault(t => t.Id == id);
 
