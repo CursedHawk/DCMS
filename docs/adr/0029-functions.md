@@ -128,7 +128,7 @@ As built (F7):
 - A function's input is a POST's body, else the query. It answers with any JSON (200), or with `respond(status, body, headers)`, whose headers are limited to an allowlist (no cookies or CORS). A function that fails answers 500 with no detail, and its run is recorded. Successful HTTP runs are not recorded, so a public endpoint cannot flood the history.
 - `?async=1` enqueues the run as a tracked job and answers 202 with its id.
 - At most 4 HTTP runs per tenant at once on a replica; past that, 503.
-- Not yet: HTTP functions in the tenant's OpenAPI document. content-api cannot read deployments, so this needs its own read path.
+- The live deployment's HTTP functions are in the tenant's OpenAPI document and generated client (F13): each as `GET` and `POST` `/fn/{name}`, client `api.{instance}.fn.{name}.get|post`, with who may call it and the `X-Api-Key` header where keys are accepted. content-api cannot read deployments, so it asks admin-api's `/api/internal/functions/live` (same `dcms.functions` scope) and remembers the answer for 30 s; the live deployment's number is the instance's API version, so a deploy rebuilds cached documents.
 
 ### AI
 

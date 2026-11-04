@@ -137,6 +137,18 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         boom.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         (await boom.Content.ReadAsStringAsync(ct)).Should().NotContain("secret detail");
 
+        // The site's OpenAPI document (and so its generated client) has what is callable over HTTP, and only that.
+        var paths = (await (await Call(HttpMethod.Get, "/api/openapi.json")).Content.ReadFromJsonAsync<JsonObject>(ct))!["paths"]!.AsObject();
+        paths["/api/fn/fn/hello"]!["post"]!["x-dcms-client"]!.AsArray().Select(p => p!.GetValue<string>()).Should().Equal("fn", "hello", "post");
+        paths["/api/fn/fn/partner"]!["get"]!["parameters"]![0]!["name"]!.GetValue<string>().Should().Be("X-Api-Key");
+        paths.ContainsKey("/api/fn/fn/internal").Should().BeFalse();
+        using (var scope = admin.Services.CreateScope())
+        {
+            var live = await LiveFunctions.ReadAsync(scope.ServiceProvider.GetRequiredService<FunctionsDbContext>(), tenantId, tenantId, instanceId, ct);
+            live.Deployment.Should().Be(1);
+            live.Functions.Select(f => f.Name).Should().BeEquivalentTo(["hello", "made", "partner", "members", "boom"]);
+        }
+
         // Signed-in only, called anonymously.
         (await Call(HttpMethod.Get, "/api/fn/fn/members")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 

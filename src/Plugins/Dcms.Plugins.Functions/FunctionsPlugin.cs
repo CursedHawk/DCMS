@@ -209,8 +209,17 @@ public sealed class FunctionsPlugin : IPlugin
         if (host.IsAdmin)
         {
             InvokeEndpoint.Map(app);
+            LiveFunctions.Map(app);
         }
     }
+
+    /// <summary>The live deployment's HTTP functions, for the tenant's document and generated client.</summary>
+    public async Task<OpenApiFragment> BuildOpenApiFragmentAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct) =>
+        LiveFunctions.Fragment(instance, await LiveFunctions.GetAsync(instance, services, ct), Manifest);
+
+    /// <summary>The live deployment's number: a deploy or rollback changes the API.</summary>
+    public async Task<string?> ApiVersionAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct) =>
+        (await LiveFunctions.GetAsync(instance, services, ct))?.Deployment.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/_functions/…</c>.</summary>
     public void MapAdminEndpoints(IPluginEndpointBuilder endpoints) => Endpoints.AdminEndpoints.Map(endpoints);
