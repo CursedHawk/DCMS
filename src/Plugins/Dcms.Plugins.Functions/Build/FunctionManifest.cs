@@ -60,6 +60,9 @@ public static partial class FunctionManifest
     [GeneratedRegex(@"^[a-z0-9][a-z0-9._-]{0,127}$")]
     private static partial Regex Topic();
 
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,62}$")]
+    private static partial Regex AppName();
+
     [GeneratedRegex(@"^[a-z][a-z0-9.-]{0,63}@\d{1,3}$")]
     private static partial Regex ContractId();
 
@@ -149,6 +152,8 @@ public static partial class FunctionManifest
     public static string? TriggerPermission(JsonObject trigger) => trigger["kind"]?.GetValue<string>() switch
     {
         "row" or "relation" => "plugin:dynamic-apps:data-read",
+        // What a publish delivers is the revision's number and hash: the model, not its records.
+        "app" => "plugin:dynamic-apps:model-read",
         "event" => trigger["name"]?.GetValue<string>() switch
         {
             "form.submitted" => Dcms.Plugins.Forms.Api.FormsPermissions.SubmissionsRead,
@@ -299,6 +304,13 @@ public static partial class FunctionManifest
                 if (Text(trigger["event"], 16, "on.relation event", problems) is not ("created" or "deleted"))
                     problems.Add("on.relation: the event is created or deleted.");
                 break;
+            case "app":
+                Known(trigger, problems, "on.app: ", "kind", "app", "event");
+                if (!AppName().IsMatch(Text(trigger["app"], 63, "on.app", problems) ?? ""))
+                    problems.Add("on.app: the app is its address, such as crm.");
+                if (Text(trigger["event"], 16, "on.app event", problems) is not "published")
+                    problems.Add("on.app: the event is published.");
+                break;
             case "message":
                 Known(trigger, problems, "on.message: ", "kind", "topic");
                 if (!Topic().IsMatch(Text(trigger["topic"], 128, "on.message", problems) ?? ""))
@@ -326,7 +338,7 @@ public static partial class FunctionManifest
                     problems.Add($"on.event: one of {string.Join(", ", Events)}.");
                 break;
             default:
-                problems.Add($"'{kind}' is not a trigger: use on.row, on.relation, on.message, on.schedule, on.every or on.event.");
+                problems.Add($"'{kind}' is not a trigger: use on.row, on.relation, on.app, on.message, on.schedule, on.every or on.event.");
                 break;
         }
         return problems.Count == count;

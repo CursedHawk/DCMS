@@ -13,8 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Dcms.Plugins.Functions.Runtime;
 
 /// <summary>
-/// <c>dynamic-apps.event-sink@1</c> for one Functions instance: a committed row or relation event
-/// of an app in this environment starts every function of the live deployment triggered by it.
+/// <c>dynamic-apps.event-sink@1</c> for one Functions instance: a committed row or relation event,
+/// or a publish, of an app in this environment starts every function of the live deployment triggered by it.
 /// The run carries the event's correlation, one level deeper, so a cascade is counted and stopped.
 /// </summary>
 internal sealed class AppEventSink(IServiceProvider services, IPluginContext context) : IAppEventSink
@@ -22,12 +22,18 @@ internal sealed class AppEventSink(IServiceProvider services, IPluginContext con
     public async Task<int> DeliverAsync(AppEventDelivery input, CancellationToken ct)
     {
         var (app, evt) = (input.App, input.Event);
-        var (kind, verb) = evt.EventName.Split('.') is [var k, var v] && k is "row" or "relation" ? (k, v) : ("", "");
+        var (kind, verb) = evt.EventName == AppEvent.RevisionPublished ? ("app", "published")
+            : evt.EventName.Split('.') is [var k, var v] && k is "row" or "relation" ? (k, v) : ("", "");
         if (kind == "" || context.Instance is not { } instance)
         {
             return 0;
         }
-        var target = kind == "row" ? $"{app}.{evt.Entity?.Type}" : $"{app}.{evt.Payload["relationship"]?.GetValue<string>()}";
+        var target = kind switch
+        {
+            "row" => $"{app}.{evt.Entity?.Type}",
+            "relation" => $"{app}.{evt.Payload["relationship"]?.GetValue<string>()}",
+            _ => app,
+        };
 
         using var rls = RlsScope.Environment(context.TenantId, context.EnvironmentId);
         var db = services.GetRequiredService<FunctionsDbContext>();
@@ -48,6 +54,7 @@ internal sealed class AppEventSink(IServiceProvider services, IPluginContext con
                 ["event"] = evt.EventName,
                 ["table"] = kind == "row" ? target : null,
                 ["relationship"] = kind == "relation" ? target : null,
+                ["app"] = app,
                 ["id"] = evt.Entity?.Id?.ToString(),
                 ["changedFields"] = JsonSerializer.SerializeToNode(evt.ChangedFields),
             };
@@ -67,7 +74,7 @@ internal sealed class AppEventSink(IServiceProvider services, IPluginContext con
 
     private static bool Matches(JsonObject trigger, string kind, string target, string verb, IReadOnlyList<string> changed) =>
         trigger["kind"]?.GetValue<string>() == kind
-        && trigger[kind == "row" ? "table" : "relationship"]?.GetValue<string>() == target
+        && trigger[kind switch { "row" => "table", "relation" => "relationship", _ => "app" }]?.GetValue<string>() == target
         && trigger["event"]?.GetValue<string>() == verb
         && (trigger["fields"] is not JsonArray { Count: > 0 } fields || fields.Any(f => changed.Contains(f?.GetValue<string>() ?? "")));
 }

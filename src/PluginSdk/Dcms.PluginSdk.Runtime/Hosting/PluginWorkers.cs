@@ -15,6 +15,7 @@ using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NATS.Client.JetStream;
@@ -30,7 +31,7 @@ public static class PluginWorkerServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDcmsPluginWorkers(this IServiceCollection services)
     {
-        services.AddSingleton<PluginHandlerRunner>();
+        services.TryAddSingleton<PluginHandlerRunner>();
         services.AddHostedService<PluginEventConsumer>();
         services.AddHostedService<PluginJobConsumer>();
         services.AddHostedService<PluginJobScheduler>();

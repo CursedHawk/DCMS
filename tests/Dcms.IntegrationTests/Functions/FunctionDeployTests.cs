@@ -616,6 +616,9 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
                  { "op": "create", "type": "flow", "value": { "apiName": "on_new", "displayName": "On new",
                    "trigger": { "event": "flow.event.company.new" },
                    "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "event {{ event.payload.name }}" } } } ] } },
+                 { "op": "create", "type": "flow", "value": { "apiName": "on_publish", "displayName": "On publish",
+                   "trigger": { "event": "revision.published" },
+                   "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "published {{ event.payload.number }}" } } } ] } },
                  { "op": "create", "type": "flow", "value": { "apiName": "sum", "displayName": "Sum",
                    "steps": [ { "id": "add", "action": "script.run@1",
                                 "input": { "code": "export default function main(ctx) { return ctx.args.a + ctx.args.b; }", "args": { "a": "{{ input.a }}", "b": "{{ input.b * 10 }}" } } },
@@ -637,11 +640,12 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         // One pass: the flows are functions of a new Automations app, live; a second finds nothing to do.
         var sweep = ActivatorUtilities.CreateInstance<FlowMigration>(host.Services);
         (await sweep.SweepAsync(ct)).Should().Be(1);
+        var moved = DateTimeOffset.UtcNow;
         (await sweep.SweepAsync(ct)).Should().Be(0);
         var api = "/api/admin/plugins/automations/_functions";
         var live = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().Single();
         live.GetProperty("status").GetString().Should().Be("Active", live.ToString());
-        live.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo("crm-on-company", "crm-on-new", "crm-sum");
+        live.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo("crm-on-company", "crm-on-new", "crm-on-publish", "crm-sum");
 
         // What the flows did, the functions do: a row starts one, whose message starts the other.
         await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/companies", slug, owner, new { name = "Acme Corp" }), ct), ct);
@@ -650,7 +654,22 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         var deals = (await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_records/deals", slug, owner), ct), ct))
             .GetProperty("items").EnumerateArray().Select(d => d.GetProperty("title").GetString()).ToList();
         var errors = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/runs?function=crm-on-company", slug, owner), ct), ct);
-        deals.Should().BeEquivalentTo(["ACME CORP deal", "event Acme Corp"], errors.ToString());
+        // (The publish that made the flows was still unrouted when they moved: its function took it.)
+        deals.Where(t => !t!.StartsWith("published ", StringComparison.Ordinal)).Should().BeEquivalentTo(["ACME CORP deal", "event Acme Corp"], errors.ToString());
+
+        // A flow on each publish is a function on each publish.
+        var current = await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_model", slug, owner), ct), ct);
+        var again = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", slug, owner, new
+        {
+            expectedHash = current.GetProperty("hash").GetString(),
+            operations = JsonDocument.Parse("""[{ "op": "update", "type": "table", "target": "deals", "value": { "displayName": "Opportunity" } }]""").RootElement,
+        }), ct), ct);
+        var published = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", slug, owner,
+            new { expectedHash = again.GetProperty("draft").GetProperty("hash").GetString() }), ct), ct);
+        await DrainAsync(host, tenantId, ct);
+        var titles = (await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_records/deals", slug, owner), ct), ct))
+            .GetProperty("items").EnumerateArray().Select(d => d.GetProperty("title").GetString()).ToList();
+        titles.Should().Contain($"published {published.GetProperty("revision").GetProperty("number").GetInt32()}", published.ToString());
         var converted = (await RunsAsync(tenantId, ct)).Where(r => r.Function == "crm-on-company").ToList();
         converted.Should().HaveCount(2).And.OnlyContain(r => r.Status == "Succeeded", "mail, a notification and content are the SDK's now too");
 
@@ -660,12 +679,13 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         sum.GetProperty("result").GetProperty("add").GetInt32().Should().Be(32);
         sum.GetProperty("result").TryGetProperty("text", out _).Should().BeFalse("its condition did not hold");
 
-        // And the flows themselves start no more.
+        // And the flows themselves start no more (the shared test host may have routed one before they moved).
         await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """SELECT count(*) FROM apps.flow_runs WHERE "TenantId" = @tenant""";
+        cmd.CommandText = """SELECT count(*) FROM apps.flow_runs WHERE "TenantId" = @tenant AND "CreatedAt" > @moved""";
         cmd.Parameters.AddWithValue("tenant", tenantId);
+        cmd.Parameters.AddWithValue("moved", moved);
         ((long)(await cmd.ExecuteScalarAsync(ct))!).Should().Be(0);
     }
 

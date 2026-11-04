@@ -84,6 +84,7 @@ export const on = Object.freeze({
     created: () => ({ kind: "relation", relationship, event: "created" }),
     deleted: () => ({ kind: "relation", relationship, event: "deleted" }),
   }),
+  app: (app) => ({ published: () => ({ kind: "app", app, event: "published" }) }),
   message: (topic) => ({ kind: "message", topic }),
   schedule: (cron) => ({ kind: "schedule", cron }),
   every: (interval) => ({ kind: "every", interval }),

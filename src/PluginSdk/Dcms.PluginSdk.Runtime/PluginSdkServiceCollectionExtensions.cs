@@ -103,6 +103,9 @@ public static class PluginSdkServiceCollectionExtensions
         services.AddSingleton<IPluginCatalog>(registry);
         services.AddSingleton<PluginRouteTable>();
         services.AddSingleton<OpenApiAssembler>();
+        // Plugin code outside a request's own context -- a job, an event, or a route acting for
+        // another instance (Functions' HTTP invoke) -- in every role, not only the worker's.
+        services.TryAddSingleton<Hosting.PluginHandlerRunner>();
         AddPluginContexts(services);
 
         foreach (var plugin in registry.Plugins)

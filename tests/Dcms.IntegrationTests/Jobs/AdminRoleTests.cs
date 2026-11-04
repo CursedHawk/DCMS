@@ -30,6 +30,8 @@ public class AdminRoleTests(AdminApiFixture fixture)
         var hosted = HostedNames(api.Services);
 
         hosted.Should().NotContain(Background);
+        // Routes run plugin code for another instance too (Functions' HTTP invoke): the runner is everywhere.
+        api.Services.GetRequiredService<Dcms.PluginSdk.Runtime.Hosting.PluginHandlerRunner>().Should().NotBeNull();
         hosted.Should().Contain("JobLiveUpdates", "the replica holding the sockets pushes to them");
     }
 

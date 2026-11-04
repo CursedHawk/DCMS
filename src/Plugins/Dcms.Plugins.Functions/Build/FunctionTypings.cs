@@ -29,6 +29,8 @@ public static class FunctionTypings
             deleted(options?: Record<string, never>): Trigger;
           };
           relation(relationship: string): { created(): Trigger; deleted(): Trigger };
+          /** A Dynamic Apps app, by its address: published() when a new configuration goes live (input: number, hash, previous). */
+          app(app: string): { published(): Trigger };
           /** A message another function emitted, or one posted to the app's /fn/_messages/{topic}. */
           message(topic: string): Trigger;
           /** A cron expression (5 fields, UTC), at most every 5 minutes. */

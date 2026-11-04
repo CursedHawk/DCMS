@@ -21,6 +21,12 @@ public static partial class FlowConverter
 {
     public const string HelpersPath = "lib/flow.ts";
 
+    /// <summary>The platform events flows could start on; functions take the same names (on.event).</summary>
+    private static readonly HashSet<string> PlatformEvents = new(StringComparer.Ordinal)
+    {
+        "visitor.registered", "form.submitted", "user.invited", "user.activated",
+    };
+
     /// <param name="UserAuth">The workspace's User Authentication app, for the user-auth actions.</param>
     /// <param name="VisitorAuth">Its Visitor accounts app, for the visitor actions.</param>
     public sealed record Providers(string? UserAuth = null, string? VisitorAuth = null);
@@ -149,15 +155,17 @@ public static partial class FlowConverter
                     if (relationships.Count == 0) throw new FlowConversionException($"flow '{flow.ApiName}': its trigger's relationship is gone.");
                     return (string.Join(", ", relationships.Select(r => $"on.relation({Str($"{app}.{r.ApiName}")}).{verb}()")), new Started("relation", t.Event));
                 }
+                case AppEvent.RevisionPublished:
+                    return ($"on.app({Str(app)}).published()", new Started("app", t.Event));
                 case "schedule":
-                    return ($"on.every({Str($"{Math.Clamp(t.EveryMinutes ?? 60, AutomationLimits.MinScheduleMinutes, AutomationLimits.MaxScheduleMinutes)}m")})",
+                    return ($"on.every({Str($"{Math.Clamp(t.EveryMinutes ?? 60, 5, 7 * 24 * 60)}m")})",
                         new Started("schedule", "schedule"));
                 case "manual":
                     // Started by a person, or by another flow: now jobs.enqueue, functions.invoke or a manual run.
                     return ("", new Started("manual", "manual"));
                 case var e when e.StartsWith(AppEvent.FlowEventPrefix, StringComparison.Ordinal):
                     return ($"on.message({Str(Topic(e[AppEvent.FlowEventPrefix.Length..]))})", new Started("message", e));
-                case var e when PlatformEventBridge.Events.Contains(e):
+                case var e when PlatformEvents.Contains(e):
                     return ($"on.event({Str(e)})", new Started("event", e));
                 default:
                     throw new FlowConversionException($"flow '{flow.ApiName}': functions have no trigger like '{t.Event}'.");

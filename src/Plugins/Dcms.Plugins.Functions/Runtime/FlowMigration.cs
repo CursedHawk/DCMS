@@ -46,6 +46,8 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
     private static readonly string[] Implicit =
     [
         "plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write", "plugin:dynamic-apps:data-delete",
+        // A flow on revision.published was told of each publish: the model, which needed nothing.
+        "plugin:dynamic-apps:model-read",
         FunctionsPermissions.Deploy, Dcms.Shared.Security.PlatformPermissions.ContentRead,
         // visitor.lookup was a built-in action: it needed nothing.
         Dcms.Plugins.VisitorAuth.Api.VisitorPermissions.Read,
