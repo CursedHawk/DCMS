@@ -1,0 +1,10 @@
+import { loadProfile, targets } from './lib/config.mjs';
+import { edgeSession } from './lib/auth.mjs';
+import { AdminApi } from './lib/api.mjs';
+const profile = await loadProfile('vps1', { overrides: {} });
+const t = targets(profile);
+const session = await edgeSession({ admin: t.admin, username: profile.auth.username, password: profile.auth.password });
+const api = new AdminApi({ base: t.admin, session }).forTenant('da-stress');
+const t0 = Date.now();
+const r = await api.post('/api/admin/contracts/functions.code@1/Check?instance=fnload&plane=admin', {});
+console.log(Date.now() - t0, 'ms', JSON.stringify(r).slice(0, 600));

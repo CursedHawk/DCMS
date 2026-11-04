@@ -133,7 +133,12 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 ["DOTNET_gcServer"] = "0",
                 ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
             });
-        var stdout = Confined.ReadBoundedAsync(process.StandardOutput, 3 * _o.MaxBundleChars, () => Confined.Kill(process));
+        var overflowed = false;
+        var stdout = Confined.ReadBoundedAsync(process.StandardOutput, 3 * _o.MaxBundleChars, () =>
+        {
+            overflowed = true;
+            Confined.Kill(process);
+        });
         _ = Confined.ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null);
         try
         {
@@ -156,6 +161,10 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             // It ended before reading its input: its exit code says why, below.
         }
         var output = await stdout;
+        if (overflowed)
+        {
+            return BuildResult.Failed(new BuildDiagnostic($"The compiled C# is at most {_o.MaxBundleChars:N0} characters."));
+        }
         var result = process.ExitCode == 0 ? JsonNode.Parse(output) as JsonObject : null;
         if (result is null)
         {
@@ -307,7 +316,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         {
             return BuildResult.Failed(new BuildDiagnostic($"A build takes at most {_o.MaxBuildFiles:N0} files."));
         }
-        if (request.Files.Sum(f => (long)f.Value.Length) + (request.SdkTypes?.Length ?? 0) + (request.SdkCSharp?.Length ?? 0) > _o.MaxBuildBytes)
+        // The C# SDK is not counted: dcms-csc compiles only the part the repository declares.
+        if (request.Files.Sum(f => (long)f.Value.Length) + (request.SdkTypes?.Length ?? 0) > _o.MaxBuildBytes)
         {
             return BuildResult.Failed(new BuildDiagnostic($"A build takes at most {_o.MaxBuildBytes / (1024 * 1024)} MB of code."));
         }

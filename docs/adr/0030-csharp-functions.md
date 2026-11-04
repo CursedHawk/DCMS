@@ -69,6 +69,10 @@ A function is a public class deriving from `Function<TIn, TOut>` and marked `[Fu
   - as C# 14 extension properties on `Context`;
   - contract operations take and give JSON, their schema in the doc comment.
 - It is served at `GET …/_functions/sdk.cs` and in `/_functions/sdk` as `csharp`.
+- The build compiles a **pruned** `Sdk.g.cs`: only the tables in the repository's `[UsesTable]` and the contracts in its `[UsesContracts]` (`SdkPruning`).
+  - A large workspace's SDK is megabytes (2.8 M characters for the stress tenant). Compiled whole, it overflowed the build's output and would ride along in every run.
+  - The broker refuses undeclared tables anyway, so using one is now a compile error whose message says how to declare it.
+  - The editor keeps the whole SDK for discovery, and is the one place it is more lenient than the build.
 
 ### The IDE: Roslyn in the browser
 

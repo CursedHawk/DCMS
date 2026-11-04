@@ -32,7 +32,7 @@ if (files.Count == 0)
 }
 
 var trees = files.OrderBy(f => f.Key, StringComparer.Ordinal).Select(f => FunctionCompilation.Parse(f.Key, f.Value)).ToList();
-trees.Add(FunctionCompilation.Parse(FunctionCompilation.SdkPath, request["sdk"]?.GetValue<string>() ?? ""));
+trees.Add(FunctionCompilation.Parse(FunctionCompilation.SdkPath, SdkPruning.Prune(request["sdk"]?.GetValue<string>() ?? "", trees)));
 trees.Add(FunctionCompilation.Parse(FunctionCompilation.UsingsPath, FunctionCompilation.GlobalUsings));
 
 var refs = Path.Combine(AppContext.BaseDirectory, "refs");
@@ -59,7 +59,7 @@ void Report(string message, Location? location = null, string? code = null)
 
 foreach (var d in compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Take(200))
 {
-    Report(d.GetMessage(System.Globalization.CultureInfo.InvariantCulture), d.Location, d.Id);
+    Report(d.GetMessage(System.Globalization.CultureInfo.InvariantCulture) + SdkPruning.Hint(d), d.Location, d.Id);
 }
 
 // Native interop. The sandbox would contain it anyway (there is no native library to reach but

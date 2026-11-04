@@ -37,6 +37,33 @@ export default defineFunction({
   },
 });
 `,
+  // The same two in C# (ADR 0030): .NET's WebAssembly runtime in the same sandbox.
+  'functions/CsPing.cs': `namespace LoadTest;
+
+public record PingInput(string? N);
+
+[Function("cs-ping", Description = "Load test: answers at once, in C#.")]
+[Http(Access.Public)]
+public sealed class CsPing : Function<PingInput, object>
+{
+    public override Task<object> Run(PingInput input, Context ctx) => Task.FromResult<object>(new { ok = true, n = input?.N });
+}
+`,
+  'functions/CsWork.cs': `namespace LoadTest;
+
+[Function("cs-work", Description = "Load test: about 50 ms of work, in C#.")]
+[Http(Access.Public)]
+public sealed class CsWork : Function<JsonNode, object>
+{
+    public override Task<object> Run(JsonNode input, Context ctx)
+    {
+        var until = DateTime.UtcNow.AddMilliseconds(50);
+        long x = 0;
+        while (DateTime.UtcNow < until) x++;
+        return Task.FromResult<object>(new { ok = true, x });
+    }
+}
+`,
 };
 
 async function main() {
@@ -68,7 +95,7 @@ async function main() {
     if (build?.status === 'Failed') throw new Error(`build ${build.number} failed: ${build.error}`);
     if (build?.status === 'Ready') {
       const live = await code('Deploy', { number: build.number });
-      log(`deployment ${live.number} is ${live.status}: GET|POST /api/${slug}/fn/ping|work on ${tenant}`);
+      log(`deployment ${live.number} is ${live.status}: GET|POST /api/${slug}/fn/ping|work|cs-ping|cs-work on ${tenant}`);
       return;
     }
     await sleep(2000);

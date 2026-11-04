@@ -260,7 +260,7 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
                 var owner = created.Owner;
                 await ctx.Plugins.Forms.FormsSubmissions.List(new { page = 2 });
                 return new { created.Id, created.Name, created.Employees, created.Version, owner, card = created.IdCard };
-                """), sdk: sdk, broker: (op, args) =>
+                """, """[UsesTable("crm.companies", "create")] [UsesContracts("forms.submissions@1")]"""), sdk: sdk, broker: (op, args) =>
             {
                 calls.Add(args!.ToJsonString());
                 return op == "db"
@@ -269,6 +269,11 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
             });
 
         run.Done["status"]!.GetValue<string>().Should().Be("ok", run.Done.ToJsonString() + "\n" + sdk);
+
+        // The build compiles only what is declared: an undeclared table is a compile error saying so.
+        var undeclared = await Build(new() { ["functions/F.cs"] = Function("users", "return await ctx.Db.Crm.Users.Count();") }, sdk);
+        undeclared.Ok.Should().BeFalse();
+        undeclared.Diagnostics.Should().Contain(d => d.Code == "CS1061" && d.Message.Contains("[UsesTable(\"app.table\""));
         calls.Should().Equal(
             """{"path":["crm","companies","create"],"args":[{"name":"Acme","employees":12,"active":true,"tags":["b2b"]}]}""",
             """{"path":["forms","forms.submissions","list"],"args":[{"page":2}]}""");
