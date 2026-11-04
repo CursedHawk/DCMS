@@ -82,8 +82,8 @@ if [ "$SEED" = "1" ]; then
 fi
 
 FIXTURES="$REPO/loadtest/fixtures/$PROFILE.json"
-# dynamicapps reads its own fixtures (seed/dynamic-apps.mjs) and fails at init without them.
-[ "$SCENARIO" = "dynamicapps" ] || [ -f "$FIXTURES" ] || {
+# dynamicapps and functions bring their own (seed/dynamic-apps.mjs, seed/functions.mjs).
+[ "$SCENARIO" = "dynamicapps" ] || [ "$SCENARIO" = "functions" ] || [ -f "$FIXTURES" ] || {
     echo "no fixtures for '$PROFILE'. Run with --seed, or: node loadtest/seed/provision.mjs --env $ENVNAME" >&2
     exit 2
 }
