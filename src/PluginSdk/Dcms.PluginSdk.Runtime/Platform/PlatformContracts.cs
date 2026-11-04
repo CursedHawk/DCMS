@@ -29,7 +29,6 @@ public static class PlatformContracts
         // wins); every other host keeps the id, so manifests and their RepoPushed subscriptions
         // validate the same everywhere, and refuses the calls.
         builder.AddPlatformContract<IPluginRepos, NoRepos>();
-        builder.AddPlatformContract<IPluginInstances, NoInstances>();
 
         if (plane == PluginPlane.Admin)
         {
@@ -56,12 +55,6 @@ public static class PlatformContracts
         public Task<RepoCommitResult> CommitAsync(RepoCommit input, CancellationToken ct) => throw Refused();
         public Task<RepoMergeResult> MergeAsync(RepoMerge input, CancellationToken ct) => throw Refused();
         public Task<RepoAdoptResult> AdoptAsync(RepoAdopt input, CancellationToken ct) => throw Refused();
-    }
-
-    private sealed class NoInstances : IPluginInstances
-    {
-        public Task<InstanceRef> EnsureOwnAsync(InstanceEnsure input, CancellationToken ct) =>
-            throw new InvalidOperationException("dcms.instances@1 is available in admin-api only.");
     }
 
     private sealed class SitePlaneSecrets : IPluginSecrets

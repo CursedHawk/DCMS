@@ -5,7 +5,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Dcms.IntegrationTests.Automation;
 using Dcms.IntegrationTests.Cms;
 using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Http;
@@ -25,8 +24,8 @@ namespace Dcms.IntegrationTests.Functions;
 /// it in the real sandbox. API keys are made, scoped and revoked through the admin's routes.
 /// </summary>
 [Collection(ContentFlowCollection.Name)]
-public sealed class FunctionHttpTests(ContentFlowFixture fixture, ScriptSandboxTests.Deno deno, FunctionRunnerTests.Esbuild esbuild)
-    : IClassFixture<ScriptSandboxTests.Deno>, IClassFixture<FunctionRunnerTests.Esbuild>, IAsyncLifetime
+public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary deno, FunctionRunnerTests.Esbuild esbuild)
+    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IAsyncLifetime
 {
     private WebApplicationFactory<ScriptRunnerApp::Program>? _runner;
 

@@ -21,8 +21,8 @@ public enum JobStatus
 /// One unit of background work, tenant or platform, and how far along it is (ADR 0024).
 ///
 /// <para><b>The ledger, not the queue.</b> Where the work actually waits depends on the kind:
-/// <c>JOBS</c> for the generic workers, <c>MEDIA</c>/<c>SITES</c> for theirs, <c>apps.flow_runs</c>
-/// for Dynamic Apps. This row is what every one of them reports into, so a person can see all of
+/// <c>JOBS</c> for the generic workers, <c>MEDIA</c>/<c>SITES</c> for theirs, <c>functions.runs</c>
+/// for Functions. This row is what every one of them reports into, so a person can see all of
 /// it in one place.</para>
 ///
 /// <para><b>A null <see cref="TenantId"/> is a platform job.</b> Both RLS policies already do the

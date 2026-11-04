@@ -17,15 +17,14 @@ using Dcms.Shared.Data;
 namespace Dcms.Plugins.DynamicApps.Automation;
 
 /// <summary>
-/// The automation engine's background loops, in admin-api (ADR 0021): one routes outbox events
-/// to the flows they trigger and starts due schedules, the other claims runnable runs and
-/// executes them. Each repeats at once while it finds a full batch, else waits for the tick. The database is the queue throughout: rows are claimed with
-/// <c>FOR UPDATE SKIP LOCKED</c> (runs additionally with a lease), so any number of replicas
-/// share the work and a crashed one's runs are picked up when its lease ends.
+/// Dynamic Apps' background loop, in admin-api's worker role: it hands each committed row and
+/// relation event in the outbox to whatever runs on an app's events (Functions, ADR 0029), keeps
+/// the indexes behind sortable and filterable fields in line with what is published, and clears
+/// routed events after a week. The outbox is claimed with <c>FOR UPDATE SKIP LOCKED</c>, so any
+/// number of replicas share it. Flows, which this once also ran, are functions now.
 ///
-/// <para>Each tenant's work runs through <see cref="PluginHandlerRunner"/>: its tenant scope,
-/// the check that the instance is still enabled, its plugin context and its audit flush. The
-/// cross-tenant claims run under <see cref="RlsScope.Platform"/>, the explicit widening.</para>
+/// <para>Each tenant's events go through <see cref="PluginHandlerRunner"/>: its tenant scope, the
+/// check that the instance is still enabled, its plugin context and its audit flush.</para>
 /// </summary>
 public sealed class AutomationWorker(
     IServiceProvider services,
@@ -36,9 +35,6 @@ public sealed class AutomationWorker(
     private static readonly TimeSpan Tick = TimeSpan.FromSeconds(1);
     private const int OutboxBatch = 100;
     private const int MaxOutboxAttempts = 10;
-    private const int ScheduleBatch = 50;
-    private const int Concurrency = 4;
-    private static readonly TimeSpan Lease = AutomationLimits.MaxDuration * 2;
 
     private DateTimeOffset _nextCleanup = DateTimeOffset.UtcNow.AddMinutes(5);
 
@@ -48,17 +44,10 @@ public sealed class AutomationWorker(
     private DateTimeOffset _nextIndexSync = DateTimeOffset.UtcNow.AddSeconds(5);
     private string? _indexedRevisions;
 
-    /// <summary>
-    /// Two loops: routing (with schedules and cleanup) and running. Apart, so a long routing pass
-    /// over a backlog does not hold runs back; each goes again at once while it finds full batches.
-    /// Paced by the tick alone, they were capped at 100 events and 4 runs a second whatever the
-    /// host could do — an import's 84k events took 14 minutes to route on vps1.
-    /// </summary>
-    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
         LoopAsync(async ct =>
         {
             var routed = await RouteAsync(ct);
-            await ScheduleAsync(ct);
             if (DateTimeOffset.UtcNow >= _nextCleanup)
             {
                 await CleanupAsync(ct);
@@ -74,8 +63,7 @@ public sealed class AutomationWorker(
                 }
             }
             return routed == OutboxBatch;
-        }, stoppingToken),
-        RunSlotsAsync(stoppingToken));
+        }, stoppingToken);
 
     /// <summary>Runs <paramref name="pass"/> every tick, and again at once while it reports more waiting.</summary>
     private async Task LoopAsync(Func<CancellationToken, Task<bool>> pass, CancellationToken stoppingToken)
@@ -206,7 +194,7 @@ public sealed class AutomationWorker(
         return more;
     }
 
-    // ------------------------------------------------------------------ outbox → runs
+    // ------------------------------------------------------------------ outbox → functions
 
     private const string ClaimOutboxSql = """
         SELECT * FROM apps.outbox
@@ -216,7 +204,7 @@ public sealed class AutomationWorker(
         LIMIT 100
         """;
 
-    /// <summary>Hands each pending event to its instance's router. Routing is idempotent, so a crash before the stamp only repeats work.</summary>
+    /// <summary>Hands each pending event to what runs on its app's events. Delivery is idempotent by event id, so a crash before the stamp only repeats work.</summary>
     public async Task<int> RouteAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
@@ -240,9 +228,7 @@ public sealed class AutomationWorker(
                     {
                         await runner.RunAsync(message.TenantId, DynamicAppsPlugin.PluginId, message.InstanceId, async (context, sp) =>
                         {
-                            await sp.GetRequiredService<FlowRunQueue>().RouteAsync(evt, ct);
-                            // Then everything else that runs on the app's events (functions). Each is
-                            // idempotent by event id, so a retry of this message repeats nothing.
+                            // Each sink is idempotent by event id, so a retry of this message repeats nothing.
                             // ponytail: one call per sink per event; batch them if imports make routing slow.
                             foreach (var sink in context.Contracts.GetAll<IAppEventSink>())
                             {
@@ -269,133 +255,9 @@ public sealed class AutomationWorker(
         return pending.Count;
     }
 
-    // ------------------------------------------------------------------ schedules → runs
-
-    private sealed class DueSchedule
-    {
-        public Guid TenantId { get; init; }
-        public Guid EnvironmentId { get; init; }
-        public Guid InstanceId { get; init; }
-        public Guid FlowId { get; init; }
-        public DateTimeOffset Due { get; init; }
-    }
-
-    // Only this class's own integers are formatted into these statements.
-    private static readonly string ClaimSchedulesSql = $"""
-        WITH due AS (
-            SELECT "Id", "NextRunAt" FROM apps.flow_schedules
-            WHERE "NextRunAt" <= now() ORDER BY "NextRunAt" FOR UPDATE SKIP LOCKED LIMIT {ScheduleBatch})
-        UPDATE apps.flow_schedules s
-        SET "NextRunAt" = GREATEST(s."NextRunAt" + make_interval(mins => s."EveryMinutes"), now())
-        FROM due WHERE s."Id" = due."Id"
-        RETURNING s."TenantId", s."EnvironmentId", s."InstanceId", s."FlowId", due."NextRunAt" AS "Due"
-        """;
-
-    private static readonly string ClaimRunsSql = $"""
-        UPDATE apps.flow_runs r
-        SET "Status" = 'Running', "Attempts" = r."Attempts" + 1, "LeaseUntil" = now() + make_interval(secs => {(int)Lease.TotalSeconds}),
-            "StartedAt" = COALESCE(r."StartedAt", now())
-        WHERE r."Id" IN (
-            SELECT "Id" FROM apps.flow_runs
-            WHERE ("Status" = 'Pending' AND "NextAttemptAt" <= now()) OR ("Status" = 'Running' AND "LeaseUntil" < now())
-            ORDER BY "NextAttemptAt" FOR UPDATE SKIP LOCKED LIMIT {"{0}"})
-        RETURNING r."Id", r."TenantId", r."EnvironmentId", r."InstanceId"
-        """;
-
-    /// <summary>Starts every schedule that is due and moves it to its next time, missed ticks collapsed into one.</summary>
-    public async Task<int> ScheduleAsync(CancellationToken ct)
-    {
-        List<DueSchedule> due;
-        using (var scope = services.CreateScope())
-        using (RlsScope.Platform())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
-            due = await db.Database.SqlQueryRaw<DueSchedule>(ClaimSchedulesSql).ToListAsync(ct);
-        }
-        foreach (var schedule in due)
-        {
-            try
-            {
-                using var environment = RlsScope.Environment(schedule.TenantId, schedule.EnvironmentId);
-                await runner.RunAsync(schedule.TenantId, DynamicAppsPlugin.PluginId, schedule.InstanceId,
-                    (_, sp) => sp.GetRequiredService<FlowRunQueue>().StartScheduledAsync(schedule.FlowId, schedule.Due, ct), ct);
-            }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
-            {
-                logger.LogWarning(ex, "Could not start scheduled flow {FlowId}.", schedule.FlowId);
-            }
-        }
-        return due.Count;
-    }
-
-    // ------------------------------------------------------------------ runs
-
-    private sealed class ClaimedRun
-    {
-        public Guid Id { get; init; }
-        public Guid TenantId { get; init; }
-        public Guid EnvironmentId { get; init; }
-        public Guid InstanceId { get; init; }
-    }
-
-    /// <summary>
-    /// Keeps <see cref="Concurrency"/> runs going (<see cref="RunSlots"/>). Claiming four and waiting
-    /// for all four let one slow script hold three slots idle: 10 % of runs at the 2 s script limit cut
-    /// 14.2 runs/s to 4.1 (load test 2026-10-21, finding 7).
-    /// </summary>
-    private Task RunSlotsAsync(CancellationToken stoppingToken) => RunSlots.RunAsync(
-        Concurrency,
-        ClaimRunsAsync,
-        run => ExecuteAsync(run, stoppingToken),
-        Tick,
-        ex => logger.LogWarning(ex, "Dynamic Apps automation pass failed; retrying."),
-        stoppingToken);
-
-    /// <summary>Claims up to <paramref name="max"/> runnable runs: due pending ones, and running ones whose lease ran out.</summary>
-    private async Task<IReadOnlyCollection<ClaimedRun>> ClaimRunsAsync(int max, CancellationToken ct)
-    {
-        using var scope = services.CreateScope();
-        using var platform = RlsScope.Platform();
-        var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
-        return await db.Database.SqlQueryRaw<ClaimedRun>(ClaimRunsSql, max).ToListAsync(ct);
-    }
-
-    private async Task ExecuteAsync(ClaimedRun run, CancellationToken ct)
-    {
-        try
-        {
-            using var environment = RlsScope.Environment(run.TenantId, run.EnvironmentId);
-            var ran = await runner.RunAsync(run.TenantId, DynamicAppsPlugin.PluginId, run.InstanceId,
-                (_, sp) => sp.GetRequiredService<FlowExecutor>().RunAsync(run.Id, ct), ct);
-            if (!ran)
-            {
-                await EndAsync(run, FlowRunStatus.Terminated, "The app was switched off or removed before the run started.");
-            }
-        }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
-        {
-            // The executor records step failures itself; reaching here is the engine failing.
-            // The lease ends and another pass picks the run up, within its attempts.
-            logger.LogWarning(ex, "Flow run {RunId} could not be executed.", run.Id);
-        }
-    }
-
-    private async Task EndAsync(ClaimedRun run, FlowRunStatus status, string error)
-    {
-        using var scope = services.CreateScope();
-        using var rls = RlsScope.Environment(run.TenantId, run.EnvironmentId);
-        var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
-        // Set-based: a run that never started has no audit entry of its own to carry.
-        await db.FlowRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s
-            .SetProperty(r => r.Status, status)
-            .SetProperty(r => r.Error, error)
-            .SetProperty(r => r.LeaseUntil, (DateTimeOffset?)null)
-            .SetProperty(r => r.FinishedAt, DateTimeOffset.UtcNow));
-    }
-
     // ------------------------------------------------------------------ retention
 
-    /// <summary>Routed events after a week, finished runs after thirty days.</summary>
+    /// <summary>Routed events after a week.</summary>
     private async Task CleanupAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
@@ -403,16 +265,10 @@ public sealed class AutomationWorker(
         var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditRecorder>();
         using var bulk = scope.ServiceProvider.GetRequiredService<AuditScope>().SuppressBulkCapture();
-        var events = DateTimeOffset.UtcNow.AddDays(-7);
-        var runs = DateTimeOffset.UtcNow.AddDays(-30);
-        var oldRuns = db.FlowRuns.IgnoreTenantFilter().Where(r => r.FinishedAt < runs).Select(r => r.Id);
-        var steps = await db.FlowRunSteps.IgnoreTenantFilter().Where(s => oldRuns.Contains(s.RunId)).ExecuteDeleteAsync(ct);
-        var deletedRuns = await db.FlowRuns.IgnoreTenantFilter().Where(r => r.FinishedAt < runs).ExecuteDeleteAsync(ct);
-        var deletedEvents = await db.Outbox.Where(m => m.SentAt < events).ExecuteDeleteAsync(ct);
-        if (deletedRuns + deletedEvents > 0)
+        var deletedEvents = await db.Outbox.Where(m => m.SentAt < DateTimeOffset.UtcNow.AddDays(-7)).ExecuteDeleteAsync(ct);
+        if (deletedEvents > 0)
         {
-            audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.retention")
-                .With("runs", deletedRuns).With("steps", steps).With("events", deletedEvents);
+            audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.retention").With("events", deletedEvents);
             await audit.FlushAsync(ct);
         }
     }

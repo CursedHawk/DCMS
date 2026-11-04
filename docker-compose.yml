@@ -617,9 +617,8 @@ services:
       context: .
       dockerfile: src/Services/Dcms.ScriptRunner/Dockerfile
     <<: *service-defaults
-    # Two concurrent flow scripts (ScriptRunner__MaxConcurrency) and four functions
-    # (ScriptRunner__MaxSessions) at ~100-300 MB each under their RLIMIT_DATA, one build (the type
-    # checker, up to ~900 MB), plus the host. Raise them together.
+    # Four functions (ScriptRunner__MaxSessions) at ~100-300 MB each under their RLIMIT_DATA, one
+    # build (the type checker, up to ~900 MB), plus the host. Raise them together.
     mem_limit: "${SCRIPT_RUNNER_MEM_LIMIT:-1536m}"
     read_only: true
     tmpfs:

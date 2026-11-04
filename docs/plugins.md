@@ -212,46 +212,6 @@ or overruns `Plugins:HookTimeoutMs` (2 s) is logged and skipped. Only a provider
 may run its hooks, and it decides what to keep of the result — Forms re-filters rewritten data to
 the form's declared fields.
 
-### Offering actions to Dynamic Apps flows
-
-A plugin can give tenant-built automations ([dynamic-apps.md](dynamic-apps.md)) something to
-do by providing `automation.actions@1` (`IAutomationActionProvider` in
-`Dcms.Plugins.DynamicApps.Api`):
-
-```csharp
-provides: [ContractProvision.Of<IAutomationActionProvider, MyActions>()],
-```
-
-- **`ListAsync`** returns descriptors: a name, a major version, a description, a risk, an
-  input JSON Schema, and optionally a **permission**. A descriptor may also set
-  `OutputSchema`, a JSON Schema of what the action returns. The flow editor uses it to type
-  `steps.<id>` for script steps. Without it, a later step can still read the output; the editor
-  just calls it `unknown`.
-- **`ExecuteAsync`** runs one action for a flow step. It receives the rendered input, the
-  step's idempotency key (the same on every retry), and the app instance and run ids.
-
-Rules for providers:
-
-- **Prefix action names** with your plugin id (`visitor-auth.set-attributes`). Names under
-  another prefix, or that clash with a built-in action, are ignored.
-- **Never change what an action means** within a major version. Offer `@2` alongside `@1`.
-- **Throw `ContractValidationException`** for a failure that the same input would repeat. The
-  step then fails without retrying, while anything else is retried.
-- **Set the permission** your plugin asks of an admin who does the same thing by hand.
-  VisitorAuth's is `plugin:visitor-auth:manage`. Whoever publishes an app whose flows use the
-  action, directly or through a flow they can start, must hold it. So must anyone who starts
-  such a flow by hand. The revision records what was checked, and at run time an action whose
-  permission is not on the record does not run. Without it, the
-  right to publish an app would quietly include your plugin's rights.
-- **Calls go through the contract runtime**, audited like any plugin-to-plugin call. Your
-  plugin's own rules still apply: VisitorAuth refuses private attributes from a flow just as
-  it does from any other caller.
-
-A flow naming an action that no enabled provider offers fails validation, so it cannot
-publish. Typed events reach flows by a different path: Dynamic Apps subscribes to
-`visitor.registered` and `form.submitted` itself, and forwards each to the apps that have a
-flow on it.
-
 ### Enterprise users: who is signed in, and what they may do
 
 With User Authentication enabled ([user-auth.md](user-auth.md)), a site request can carry a
@@ -269,7 +229,7 @@ optional to consume:
 - `visitors.identity@1` is provided too, so code written for visitors sees enterprise users
   as visitors. Ask every provider: `context.Contracts.CurrentVisitorAsync(ct)`.
 
-Dynamic Apps is the worked example: `AppUserResources` lists tables and manual flows, and its
+Dynamic Apps is the worked example: `AppUserResources` lists tables, and its
 public routes load the user's permissions once per request. A plugin with no finer need than "a
 signed-in user" or "these groups" needs nothing: the site's path rules at the edge cover
 `/api/{slug}` like any other path.

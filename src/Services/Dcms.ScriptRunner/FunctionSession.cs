@@ -13,8 +13,8 @@ namespace Dcms.ScriptRunner;
 /// <c>{"type":"call"}</c> it is sent with <c>{"type":"reply"}</c>, receives the function's
 /// <c>{"type":"log"}</c> lines as they happen, and finally one <c>{"type":"done","status":"ok"|"error"|"limit"}</c>.
 ///
-/// <para>The function runs in a fresh Deno process with no permissions, exactly as a flow script
-/// does (<see cref="DenoSandbox"/>): this host only relays. It holds no credentials and reaches
+/// <para>The function runs in a fresh Deno process with no permissions (<see cref="Confined"/>):
+/// this host only relays. It holds no credentials and reaches
 /// nothing, so what a call may do is decided by the caller's broker, never here. What is decided
 /// here is how much a run may take of this shared box: wall time, heap, host calls, bytes moved
 /// through them, log and result size. Past any of them the process is killed and the run ends as

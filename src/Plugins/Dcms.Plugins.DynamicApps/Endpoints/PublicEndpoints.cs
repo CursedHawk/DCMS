@@ -25,8 +25,6 @@ internal static class PublicEndpoints
 {
     private const string Public = "The app's public API: what it allows is each table's public access, enforced per call.";
 
-    private const int MaxFlowInput = 16 * 1024;
-
     public static void Map(IPluginEndpointBuilder endpoints)
     {
         endpoints.MapGet("/_model", async (RuntimeModelProvider models, CancellationToken ct) =>
@@ -73,28 +71,6 @@ internal static class PublicEndpoints
                 }))
             .WithoutPermission(Public)
             .AuditAs("record.created");
-
-        // A manual flow, started from the site by a signed-in user holding flow:{name}:run on this
-        // app. It runs as any manual flow does (definer's rights, ADR 0021); one that uses an action
-        // needing a member permission cannot be started from here at all, since a site user holds none.
-        endpoints.MapPost("/flows/{flow}/run", (string flow, StartFlowRequest? body, RecordService records, FlowRunService runs,
-                IPluginContext context, HttpContext http, CancellationToken ct) =>
-                Write(records, context, http, ct, async () =>
-                {
-                    if (!records.Members.Contains($"flow:{flow}:run"))
-                    {
-                        return Results.Json(new { error = $"Starting '{flow}' needs a role that allows it." },
-                            statusCode: records.Visitor is null ? StatusCodes.Status401Unauthorized : StatusCodes.Status403Forbidden);
-                    }
-                    var input = body?.Input ?? [];
-                    if (input.ToJsonString().Length > MaxFlowInput)
-                    {
-                        return Results.Json(new { error = "That input is too large." }, statusCode: StatusCodes.Status413PayloadTooLarge);
-                    }
-                    return Results.Accepted(value: new StartFlowResult(await runs.StartAsync(flow, input, ct)));
-                }))
-            .WithoutPermission("Started by a signed-in user holding the flow's run permission on this app (users.access@1), checked per call.")
-            .AuditAs("flow.started");
 
         endpoints.MapPatch("/data/{table}/{id:guid}", (string table, Guid id, JsonObject values, RecordService records, IPluginContext context,
                 HttpContext http, CancellationToken ct) =>

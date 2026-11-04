@@ -35,7 +35,7 @@ then has two screens:
 | Resource | What to know |
 | --- | --- |
 | Table | `apiName` (lowercase snake_case) is the identity in the API; the display name is just a label. |
-| Field | Types: text, longText, integer, decimal, boolean, date, dateTime, email, url, choice, multiChoice, media, json. Flags: required, unique, searchable, sortable, filterable, readOnly (only flows may set it), hiddenFromPublic. |
+| Field | Types: text, longText, integer, decimal, boolean, date, dateTime, email, url, choice, multiChoice, media, json. Flags: required, unique, searchable, sortable, filterable, readOnly (only automations, which are functions, may set it), hiddenFromPublic. |
 | Relationship | Many-to-one (a lookup field on the source table), one-to-one, or many-to-many. Has an `onDelete` rule. |
 | Choice set | Named options that choice fields share. |
 | View | A saved filter, sort and column list over a table; one view per table is the default. |
@@ -49,7 +49,7 @@ indexes; validation warns (`index-limit`) when its flags want more. Booleans, mu
 lookups are not indexed. Flag only what lists really sort and filter by: every index costs writes.
 
 **Renaming a field's api name once it is published is refused.** Add a new field and mark the
-old one deprecated instead: clients and flows depend on the name.
+old one deprecated instead: clients and functions depend on the name.
 
 ### Changing a model without losing data
 
@@ -76,177 +76,18 @@ suggests the relationship with `copyFrom`.
 On the Records screen, choice fields can be changed straight from the list, and the list can
 be filtered by picking some of a choice field's options.
 
-## Automations (flows)
+## Automations
 
-A flow is a **trigger**, an optional **condition** and up to 50 **steps**.
+Automation is code now: a **Functions** app's TypeScript functions, triggered by an app's
+row and relation events, its publishes, messages, schedules, platform events or HTTP, and
+reaching its tables through a typed SDK generated from this model ([ADR 0029](adr/0029-functions.md)).
+An app's configuration screen has a **Functions** tab: the functions its tables trigger or
+use, a link to their code, and "Automate with AI".
 
-### Triggers
-
-| Trigger | Fires when |
-| --- | --- |
-| `row.created`, `row.updated`, `row.deleted` | A record in the trigger's table changes. `row.updated` can be narrowed to a list of fields. |
-| `relation.created`, `relation.deleted` | A many-to-many link is added or removed. |
-| `revision.published` | The app is published. |
-| `flow.event.<name>` | Another flow announces it with `event.publish@1`. |
-| `visitor.registered` | A visitor signs up on the site. This needs the Visitor accounts plugin. |
-| `form.submitted` | A form of the Forms plugin is sent. `event.payload.data` holds what was sent. |
-| `user.invited`, `user.activated` | A site user is invited, or accepts (or first signs in through a trusted provider). `event.payload.email` holds their email. This needs the User Authentication plugin. |
-| `schedule` | Every N minutes, from 5 minutes up to one week. |
-| `manual` | A person starts the flow, or another flow does with `flow.invoke@1`. |
-
-### Expressions and templates
-
-Conditions and `{{ }}` holes in step inputs use a small expression language.
-
-- **Names** an expression can read:
-  - `event`: the whole envelope, with `event.payload`;
-  - `row` and `previous`: the changed record, and the changed fields' old values;
-  - `changedFields`;
-  - `input`: the input of a manual flow;
-  - `steps.<id>`: an earlier step's output;
-  - `run`.
-- **Operators:** `== != < <= > >= && || ! in + - * / % ?:`.
-- **Functions:** `len lower upper trim contains startsWith endsWith coalesce string number
-  round now today addDays addHours join`.
-
-Example: `row.amount >= 10000 && row.stage != 'lost'`.
-
-Evaluation is bounded in steps and string size, and it has no way out of the run's data. Inside
-an email's `html`, every template value is HTML-encoded and the whole body is sanitized.
-
-**In the flow editor** a condition is a code field that knows the language and the app:
-
-- **Completion:**
-  - names and functions;
-  - after `row.` and `previous.`, the trigger table's fields, lookups and system columns (`id`,
-    `version`, `created_at`, …), taken from the draft being edited;
-  - after `steps.`, the steps before it;
-  - after `run.` and `event.`, their members.
-- **Hovers and argument hints** explain each function.
-- **Problems are underlined** while you type: syntax errors, unknown names, and a call with the
-  wrong number of arguments.
-
-The server supplies all of this:
-
-- `GET /_automation/language` lists the functions and names.
-- `POST /_automation/check` parses an expression **without evaluating it** and locates its
-  problems.
-
-A save refuses exactly what the editor underlines, because the validator runs the same check.
-
-**Write with AI.** The flow editor opens with a box for describing, in your own words, what the
-flow should do. For example: *"When a deal is won, email its owner and notify the team."*
-
-- **What the AI works from.** The workspace's own AI provider writes the whole flow: trigger,
-  condition and steps. It writes against this app's tables, fields and action catalog, and the
-  language reference the assistant uses.
-- **The server checks it first.** It resolves the names and validates the flow like a saved
-  change. An answer it refuses goes back to the AI once, with the reason.
-- **Nothing is saved.** The result fills in the form, with a short note on what the flow does
-  and any issues still to fix. You review it and press *Save*.
-- **Ask again to change it.** The box then asks for a change: the AI gets the flow as the form
-  holds it and changes only what you asked. *Undo* puts back what was there before.
-- **What it costs.** Each request uses the workspace's AI quota (`POST /_automation/compose`,
-  needs *model-write*). A saved flow keeps its api name, because other flows and the site invoke
-  it by that name.
-
-**Steps** are edited one card per step:
-
-- its id and action;
-- a condition, with the same completion as the flow's, where `steps.` offers only the steps
-  before it;
-- its input as JSON, checked and completed against the action's input schema.
-
-A script step adds a TypeScript editor. *Edit all steps as JSON* switches to the whole list as
-one document and back.
-
-### Actions
-
-The Automation tab lists every action available to flows. The built-in actions are:
-
-- `records.create|update|delete|lookup|query@1`
-- `flow.invoke@1` and `event.publish@1`
-- `dcms.email.send@1` and `dcms.notifications.raise@1`
-- `content.get|list@1`
-- `visitor.lookup@1`
-- `script.run@1` (see below)
-
-Other plugins can add actions through `automation.actions@1`; see
-[plugins.md](plugins.md#offering-actions-to-dynamic-apps-flows). With Visitor accounts
-installed, for example, flows also get `visitor-auth.set-attributes@1`; with User Authentication,
-`user-auth.invite@1`, `user-auth.add-to-group@1` and `user-auth.remove-from-group@1` (people by
-email, groups by id or name; each needs *Manage site users*).
-
-A provider's action can require that plugin's own permission;
-`visitor-auth.set-attributes@1`, for example, needs *Edit visitor profiles*. Publishing an app
-vouches for every flow in it, including flows that can set such a flow off (`flow.invoke`,
-`event.publish`, or writing a table its row trigger watches). So:
-
-- Publishing or rolling back an app whose flows use such an action needs the permission, even
-  for an unrelated edit. Validation reports `action-not-permitted` naming the flows.
-- Starting such a flow by hand needs it too.
-- The permissions checked are stored with the revision. At run time an action runs only if its
-  permission was checked when the revision went live; otherwise the step fails and the app must
-  be published again by someone who holds it.
-
-Once published, a flow acts with the publisher's say-so for everyone who can trigger it: for
-example, members who write records, or visitors where public access allows. Choose its trigger
-with that in mind. A provider can only offer actions named after itself.
-
-An action is named with its major version. Its meaning never changes within that version.
-
-### Script steps
-
-`script.run@1` runs a TypeScript or JavaScript function for logic the expression language cannot
-express, such as loops, maps over lists or a few lines of computation:
-
-```json
-{ "id": "score", "action": "script.run@1",
-  "input": { "language": "ts", "args": { "limit": "{{ input.limit }}" },
-             "code": "export default function main(ctx) { return { hot: ctx.row.amount > ctx.args.limit } }" } }
-```
-
-- **Input:** `main(ctx)` receives `event`, `row`, `previous`, `changedFields`, `input`, `steps`,
-  `run`, and `args`, which is the step's `args` with its templates rendered.
-- **Output:** the JSON value `main` returns is the step's output (`steps.score.hot`).
-- **`code` is not a template.** A `{{` in it stays as written; pass values in through `args`.
-- **A script is pure.** It cannot fetch, read or write files, see the environment or start
-  processes. Anything with a side effect stays a catalog action, so idempotency, write limits and
-  permissions apply as usual.
-- **Limits:** 64,000 characters of code, 2 seconds, a 64 MB heap and 64,000 characters of
-  output. Passing one ends the run *terminated*. A thrown error fails the step and is not
-  retried.
-- **The run history records** the code's hash and length, not the source, which lives in the
-  revision.
-- **The editor types `ctx`** from this app: `ctx.row` as the trigger table's record, and
-  `ctx.steps.<id>` from each earlier step's output schema (for example `records.query` gives
-  `{ items: DealsRow[]; total; totalCapped }`). The declarations come from
-  `POST /_automation/typings`. They are only a guide: the server strips types and never checks
-  them.
-
-Scripts run in `script-runner`, a separate service: one zero-permission Deno process per run, in
-a container with no credentials and no network beyond the flow executors. See
-[ADR 0025](adr/0025-flow-scripts.md).
-
-### Runs, limits and retries
-
-- **Each run is pinned** to the revision and flow definition that started it. The run history
-  shows every step with its input, output, error and timing, plus the chain of runs that one
-  original action set off.
-- **Failure handling** depends on the cause:
-  - A step that fails on bad input or a missing record fails the run at once.
-  - Passing trouble, such as the database or a rate limit, is retried up to three attempts.
-  - A step whose record another write changed first (two runs updating the same company) reads
-    again: the earlier read-only steps (`records.lookup`, `records.query`, …) run again and the
-    step is retried, up to five times. Writes before it are not repeated.
-  - A failed run can be retried by hand. That needs the `flows-run` permission.
-- **Read-modify-write needs the version.** A flow that adds to a running total reads the record,
-  then writes the sum. Pass the version it read, and a write that another run beat is refused
-  and done again with fresh values instead of overwriting that run's sum:
-  `"values": { "total_won": "{{ coalesce(steps.company.total_won, 0) + row.amount }}", "version": "{{ steps.company.version }}" }`.
-- **Limits** stop runaway cascades: 5 flows deep, 20 runs per original action, 100 record
-  writes and 60 seconds per run. Each record of an import, bulk update or bulk delete is its
-  own original action. A run stopped by a limit ends as *terminated* and records the reason.
+**Flows were retired into functions** (2026-11-04): each environment's flows became the
+functions of its `automations` Functions app, with the same triggers, conditions and steps.
+Flows can no longer be created or changed: a change set creating or updating one is refused,
+while deleting an old one is allowed. Old revisions still carry flows as data; nothing runs them.
 
 ## Records and the public API
 
@@ -297,10 +138,9 @@ a container with no credentials and no network beyond the flow executors. See
   A role holding `dynamic-apps:{slug}:table:{table}:read|create|update|delete` lets its holders do
   that through the site API whatever the table's public access, on every record. On a table with
   row access rules it reaches only the rows the rules let its holders read, unless the role has
-  **Bypass row-level access** (Access → Roles in User Authentication). A role holding
-  `dynamic-apps:{slug}:flow:{flow}:run` lets them start that manual flow with
-  `POST /api/{slug}/flows/{flow}/run` (`{ "input": { … } }`, at most 16 KB). The role editor lists
-  every published table and manual flow.
+  **Bypass row-level access** (Access → Roles in User Authentication). The role editor lists
+  every published table. Something a site user starts is a function callable over HTTP with
+  `access: { http: ["role"] }`.
 
 ## The assistant
 
@@ -314,36 +154,28 @@ under the same permissions. It works through two contracts: `dynamic-apps.config
   unless the assistant's mode allows them.
 - **Every change it makes is stamped** with its conversation and run id. A revision shows
   that it came from the assistant, and the audit log shows which tool call made each change.
-- **It writes flows from the language the server parses.** `GetFlowLanguage` gives it:
-  - the expression functions and names;
-  - how templates render;
-  - the `script.run@1` contract;
-  - with a flow and a step, the same TypeScript declarations of `ctx` that the editor uses.
-
-  Its conditions and scripts then pass the same validation as yours.
+- **Automation it writes as functions**, through the Functions app's `functions.code@1`
+  (the app's Functions tab, "Automate with AI").
 - **Ask AI where something went wrong:**
-  - on a failed or terminated run in the run history;
   - on the issues that block a publish.
 
   Either one opens the assistant with the question written out in the message box, and you
   choose whether to send it.
-- **A flow it changes while you have that flow open** puts a notice in the editor. Saving
-  would replace its change, so the notice offers to load the new version.
 
 A good request names the outcome, for example: *"Add a B2B CRM: companies, contacts and deals
-with a stage choice; email the deal owner when a deal over 10 000 is won."*
+with a stage choice; a function that emails the deal owner when a deal over 10 000 is won."*
 
 ## Operations
 
 - **Storage:** everything lives in the shared Postgres schema `apps`, under row-level
   security.
-  - The outbox and the flow-schedule queue are drained across tenants.
-  - Routed events are kept for 7 days, and finished runs for 30.
+  - The outbox of row, relation and publish events is drained across tenants, to the
+    functions on them; routed events are kept for 7 days.
 - **Indexes:** `apps.sync_record_indexes`, a function the migration creates with the owner's
   rights, makes and drops them (admin-api's own role may create no index). Builds are not
   concurrent, so each holds writes to `apps.records` while it reads the table; the worker makes at
   most 4 per call, gives up on a lock after 500 ms and on a call after 15 s, and the platform spends at most 2 minutes an hour (and a tenth of the time) on index DDL; logs carry index names and SQLSTATEs only. A tenant gets at most 128 indexes across its apps.
-- **Where it runs:** the automation worker runs inside admin-api, with no extra service. The
-  database is its queue (`FOR UPDATE SKIP LOCKED` with a lease), so replicas share the work.
-- **Traces:** spans are `dcms.dynamicapp.query|mutation|flow|flow.step`. They are tagged with
-  tenant, instance, table, revision, flow id and version, run, step, action and status.
+- **Where it runs:** the worker runs inside admin-api's worker role, with no extra service. The
+  outbox is claimed with `FOR UPDATE SKIP LOCKED`, so replicas share it.
+- **Traces:** spans are `dcms.dynamicapp.query|mutation`, tagged with tenant, instance, table,
+  revision and status.

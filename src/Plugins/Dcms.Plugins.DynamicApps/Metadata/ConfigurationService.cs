@@ -326,7 +326,6 @@ public sealed class ConfigurationService(
         app.PublishedRevisionId = draft.Id;
         app.DraftRevisionId = null;
         Published(app, draft, previous);
-        await SyncSchedulesAsync(config, ct);
 
         Declare(draft, "revision.published", ai).With("previous", previous?.Number);
         await db.SaveChangesAsync(ct);
@@ -408,7 +407,6 @@ public sealed class ConfigurationService(
         app.PublishedRevisionId = revision.Id;
         await RecordChangesAsync(revision, ConfigDiff.Between(liveConfig, config), source, ct, ai);
         Published(app, revision, live);
-        await SyncSchedulesAsync(config, ct);
 
         Declare(revision, "revision.rolled_back", ai).With("from", live.Number).With("to", target.Number);
         await db.SaveChangesAsync(ct);
@@ -694,40 +692,6 @@ public sealed class ConfigurationService(
         return draft;
     }
 
-    /// <summary>
-    /// Makes the schedule rows match the configuration going live, in the publish's transaction.
-    /// A schedule whose interval did not change keeps its next due time, so publishing an
-    /// unrelated change neither skips nor repeats a tick.
-    /// </summary>
-    private async Task SyncSchedulesAsync(AppConfig config, CancellationToken ct)
-    {
-        var instanceId = InstanceId;
-        var wanted = config.Flows
-            .Where(f => f.Enabled && f.Trigger.Event == "schedule" && f.Trigger.EveryMinutes is > 0)
-            .ToDictionary(f => f.Id, f => f.Trigger.EveryMinutes!.Value);
-        var existing = await db.FlowSchedules.Where(s => s.InstanceId == instanceId).ToListAsync(ct);
-        foreach (var schedule in existing)
-        {
-            if (!wanted.TryGetValue(schedule.FlowId, out var every))
-            {
-                db.FlowSchedules.Remove(schedule);
-            }
-            else if (schedule.EveryMinutes != every)
-            {
-                schedule.EveryMinutes = every;
-                schedule.NextRunAt = clock.GetUtcNow().AddMinutes(every);
-            }
-        }
-        foreach (var (flowId, every) in wanted.Where(w => existing.All(s => s.FlowId != w.Key)))
-        {
-            db.FlowSchedules.Add(new FlowSchedule
-            {
-                Id = Guid.NewGuid(), InstanceId = instanceId, FlowId = flowId, EveryMinutes = every,
-                NextRunAt = clock.GetUtcNow().AddMinutes(every),
-            });
-        }
-    }
-
     /// <summary>The <c>revision.published</c> event, in the publish's own transaction.</summary>
     private void Published(DynamicApp app, AppRevision revision, AppRevision? previous) =>
         events.Add(db, revision.Number, Api.AppEvent.RevisionPublished, new Api.AppEventEntity("app", app.Id), new JsonObject
@@ -760,10 +724,7 @@ public sealed class ConfigurationService(
         return previous;
     }
 
-    /// <summary>
-    /// <see cref="ConfigValidator.Validate"/> against the actions this tenant's flows can use: the
-    /// built-in ones, and, once a flow names another, what <c>automation.actions@1</c> providers offer.
-    /// </summary>
+    /// <summary><see cref="ConfigValidator.Validate"/>, against what is live.</summary>
     public async Task<IReadOnlyList<ConfigIssue>> IssuesAsync(AppConfig config, AppConfig? published, CancellationToken ct) =>
         (await CheckAsync(config, published, ct)).Issues;
 
@@ -807,59 +768,9 @@ public sealed class ConfigurationService(
     /// <summary>Above this, a dry run leaves a new unique rule to publish rather than read every record for it.</summary>
     public const int MaxRecordsForDryUnique = 20_000;
 
-    /// <summary>
-    /// The issues, and the provider permissions the configuration's flows need — all held by
-    /// the person checking, or an <c>action-not-permitted</c> issue says which are not.
-    /// Publishing vouches for every flow, not only the changed ones: a flow is steered by what
-    /// surrounds it (its table's public access, the flows that start it) as much as by itself.
-    /// </summary>
-    private async Task<(List<ConfigIssue> Issues, List<string> Permissions)> CheckAsync(AppConfig config, AppConfig? published, CancellationToken ct)
-    {
-        if (config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action)))
-        {
-            return (ConfigValidator.Validate(config, published).ToList(), []);
-        }
-        var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
-        var issues = ConfigValidator.Validate(config, published, offered.Keys.ToHashSet(StringComparer.Ordinal)).ToList();
-        var needs = ActionCatalog.PermissionsByFlow(config, offered);
-        var held = new List<string>();
-        foreach (var permission in needs.Values.SelectMany(p => p).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
-        {
-            if (await HoldsAsync(permission))
-            {
-                held.Add(permission);
-                continue;
-            }
-            foreach (var flow in needs.Where(n => n.Value.Contains(permission)).Select(n => n.Key))
-            {
-                issues.Add(new ConfigIssue(IssueSeverity.Error, "action-not-permitted", $"flows.{flow}",
-                    $"This flow uses, or can start a flow that uses, an action needing the {permission} permission, which you do not have."));
-            }
-        }
-        return (issues, held);
-    }
-
-    /// <summary>
-    /// Refuses starting a published flow by hand when it uses, or can set off, an action whose
-    /// permission the person lacks: a manual flow takes its input from whoever starts it.
-    /// </summary>
-    /// <exception cref="ContractValidationException">The person lacks one of the permissions.</exception>
-    public async Task EnsureMayStartAsync(string flow, CancellationToken ct)
-    {
-        if (await GetPublishedAsync(ct) is not { } live
-            || live.Config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action)))
-        {
-            return;
-        }
-        var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
-        foreach (var permission in ActionCatalog.PermissionsByFlow(live.Config, offered).GetValueOrDefault(flow) ?? [])
-        {
-            if (!await HoldsAsync(permission))
-            {
-                throw new ContractValidationException($"Starting '{flow}' needs the {permission} permission: it uses, or can start a flow that uses, an action that requires it.");
-            }
-        }
-    }
+    /// <summary>The issues; nothing in a configuration needs vouching since flows are functions (ADR 0029).</summary>
+    private Task<(List<ConfigIssue> Issues, List<string> Permissions)> CheckAsync(AppConfig config, AppConfig? published, CancellationToken ct) =>
+        Task.FromResult((ConfigValidator.Validate(config, published).ToList(), new List<string>()));
 
     /// <summary>
     /// Whether the member behind this request holds a permission; false outside a request, and on
@@ -887,14 +798,9 @@ public sealed class ConfigurationService(
     /// <summary>Permissions an import was given as already checked; null outside one.</summary>
     private IReadOnlySet<string>? _vouched;
 
-    /// <summary>Every permission the configuration's flows need their publisher to hold.</summary>
-    public async Task<IReadOnlyCollection<string>> NeededPermissionsAsync(string snapshot, CancellationToken ct)
-    {
-        var config = ConfigJson.Parse(snapshot);
-        if (config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action))) return [];
-        var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
-        return ActionCatalog.PermissionsByFlow(config, offered).Values.SelectMany(p => p).Distinct(StringComparer.Ordinal).ToList();
-    }
+    /// <summary>What applying a configuration needs vouched beyond publishing: nothing, now flows are functions.</summary>
+    public Task<IReadOnlyCollection<string>> NeededPermissionsAsync(string snapshot, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyCollection<string>>([]);
 
     private async Task<bool> HoldsAsync(string permission)
     {

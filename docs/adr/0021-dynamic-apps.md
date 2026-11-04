@@ -1,6 +1,6 @@
 # ADR 0021: Dynamic Apps: a tenant-defined application runtime inside the plugin boundary
 
-**Status:** accepted (2026-10-06) · being implemented (kanban epic #208)
+**Status:** accepted (2026-10-06). The flow engine (automations) is superseded by [ADR 0029](0029-functions.md): flows were retired into functions on 2026-11-04.
 
 ## Context
 

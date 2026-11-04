@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -56,8 +55,6 @@ public sealed class VisitorAuthPlugin : IPlugin
         [
             ContractProvision.Of<IVisitorIdentity, VisitorIdentity>(),
             ContractProvision.Of<IVisitorProfiles, VisitorProfiles>(),
-            // Lets Dynamic Apps flows set shared profile attributes.
-            ContractProvision.Of<IAutomationActionProvider, VisitorAutomationActions>(),
         ],
         consumes: [ContractRequirement.Of<IPluginEvents>()],
         dataSets:

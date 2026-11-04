@@ -527,9 +527,6 @@ public sealed class TenantDeleter(
         // Dynamic Apps: every application's configuration history (ADR 0021). Changes before the
         // revisions they belong to, revisions before the app rows that point at them.
         await SweepAsync(apps, manifest, ct,
-            ("apps.FlowRunSteps", () => apps.FlowRunSteps.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.FlowRuns", () => apps.FlowRuns.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("apps.FlowSchedules", () => apps.FlowSchedules.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.SiteViewDefaults", () => apps.SiteViewDefaults.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.SiteViews", () => apps.SiteViews.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Outbox", () => apps.Outbox.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),

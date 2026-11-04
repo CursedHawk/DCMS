@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
-using Dcms.IntegrationTests.Automation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ScriptRunnerApp::Dcms.ScriptRunner;
@@ -18,8 +17,8 @@ namespace Dcms.IntegrationTests.Functions;
 /// test answers as a broker would, and every way out — of the sandbox, of the repository, past a
 /// limit — is refused.
 /// </summary>
-public sealed class FunctionRunnerTests(ScriptSandboxTests.Deno deno, FunctionRunnerTests.Esbuild esbuild)
-    : IClassFixture<ScriptSandboxTests.Deno>, IClassFixture<FunctionRunnerTests.Esbuild>
+public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esbuild esbuild)
+    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>
 {
     /// <summary>
     /// The esbuild binary of the version script-runner's Dockerfile pins: the repo's pnpm copy when

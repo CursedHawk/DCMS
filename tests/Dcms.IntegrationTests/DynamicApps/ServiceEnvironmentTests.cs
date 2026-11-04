@@ -67,8 +67,8 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
             var scope = fixture.Admin.Services.CreateScope();
             using var rls = RlsScope.Environment(tenantId, devId);
             var factory = scope.ServiceProvider.GetRequiredService<PluginContextFactory>();
-            var instance = await factory.FindAnyInstanceAsync(tenantId, "crm", ct);
-            var context = await factory.CreateAsync(tenantId, "dynamic-apps", instance, PluginActor.Anonymous, ct);
+            // Functions reach another environment's tables this way (links.records).
+            var context = await factory.CreateAsync(tenantId, "functions", null, PluginActor.Anonymous, ct);
             return await context.Contracts.LinkedAsync<IDynamicAppsRecords>("sales", "crm", ct);
         }
 
@@ -99,71 +99,6 @@ public sealed class ServiceEnvironmentTests(ContentFlowFixture fixture)
         await FluentActions.Awaiting(() => records.QueryRecordsAsync(new TableQuery("companies",
                 new RecordQuery { Filter = new RecordFilter { Field = "owner.name", Op = "eq", Value = "x" } }), ct))
             .Should().ThrowAsync<ContractAccessDeniedException>().WithMessage("*reaches another through a lookup*");
-    }
-
-    [DockerFact]
-    public async Task A_flow_calls_an_operation_of_another_environments_app_through_a_contracts_link_and_nothing_more()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var app = await AppHarness.CreateAsync(fixture, ct);
-        var billing = (await (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/environments", app.Owner, app.Tenant,
-            body: new { name = "billing", service = true, empty = true }), ct)).Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
-        var inBilling = $"{app.Tenant}/billing";
-        var invoices = await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/instances", app.Owner, inBilling,
-            body: new { pluginId = "blog", slug = "invoices", name = "Invoices", config = "{}" }), ct), ct);
-        var item = await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/content", app.Owner, inBilling,
-            body: new { pluginInstanceId = invoices.GetProperty("id").GetGuid(), contentType = "post", slug = "march", data = new { title = "March invoices" } }), ct), ct);
-        await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/content/{item.GetProperty("id").GetGuid()}/publish", app.Owner, inBilling), ct), ct);
-        var production = (await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/environments", app.Owner, app.Tenant), ct), ct))
-            .GetProperty("workspaceId").GetGuid();
-
-        // What billing offers is listed for whoever sets the link up.
-        var offered = await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/environments/{billing}/offers", app.Owner, app.Tenant), ct), ct);
-        offered.EnumerateArray().Single(i => i.GetProperty("slug").GetString() == "invoices").GetProperty("operations").EnumerateArray()
-            .Select(o => o.GetProperty("grant").GetString()).Should().Contain(["blog.posts/Get", "blog.posts/List"]);
-
-        await app.PublishAsync("""
-            [ { "op": "create", "type": "flow", "value": { "apiName": "invoice", "displayName": "Invoice",
-                "steps": [ { "id": "get", "action": "environment.contract.call@1",
-                             "input": { "environment": "billing", "app": "invoices", "contract": "blog.posts", "operation": "Get", "input": { "slug": "march" } } } ] } } ]
-            """, ct);
-        async Task<JsonElement> RunAsync()
-        {
-            var runId = (await app.JsonAsync(HttpMethod.Post, "/_automation/flows/invoice/run", ct, new { input = new { } }, HttpStatusCode.Accepted))
-                .GetProperty("runId").GetString();
-            for (var i = 0; i < 120; i++)
-            {
-                var run = await app.JsonAsync(HttpMethod.Get, $"/_automation/runs/{runId}", ct);
-                if (run.GetProperty("run").GetProperty("status").GetString() is "succeeded" or "failed") return run;
-                await Task.Delay(250, ct);
-            }
-            throw new Xunit.Sdk.XunitException("Timed out waiting for the automation worker.");
-        }
-        Task<HttpResponseMessage> Link(params string[] grants) => app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{production}/links",
-            app.Owner, app.Tenant, body: new { kind = "contracts", targetEnvironmentId = billing, targetKey = "invoices", grants }), ct);
-
-        var refused = await RunAsync();
-        refused.GetProperty("run").GetProperty("status").GetString().Should().Be("failed");
-        refused.GetProperty("run").GetProperty("error").GetString().Should().Contain("no link");
-
-        // Only operations billing's app really has, and offers to other environments: never a
-        // Dynamic Apps model change or an all-table record write (production's crm, from billing).
-        (await Link("blog.posts/Delete")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/environments/{billing}/links", app.Owner, app.Tenant,
-            body: new { kind = "contracts", targetEnvironmentId = production, targetKey = "crm", grants = new[] { "dynamic-apps.records/DeleteRecord" } }), ct))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await Link("forms.submissions/List")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        // A link granting List does not grant Get.
-        var listOnly = await JsonOk(await Link("blog.posts/List"), ct);
-        (await RunAsync()).GetProperty("run").GetProperty("error").GetString().Should().Contain("does not grant blog.posts/Get");
-        await JsonOk(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Delete, $"/api/admin/environments/{production}/links/{listOnly.GetProperty("id").GetGuid()}",
-            app.Owner, app.Tenant), ct), ct);
-
-        await JsonOk(await Link("blog.posts/Get"), ct);
-        var ran = await RunAsync();
-        ran.GetProperty("run").GetProperty("status").GetString().Should().Be("succeeded", ran.ToString());
-        ran.ToString().Should().Contain("March invoices", "billing's post, read as billing");
     }
 
     private static async Task<JsonElement> JsonOk(HttpResponseMessage res, CancellationToken ct)

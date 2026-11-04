@@ -7,9 +7,9 @@ namespace Dcms.Plugins.DynamicApps.Data;
 
 /// <summary>
 /// What a tenant can give its site users on this app (users.resources@1, ADR 0022): each
-/// published table's read, create, update and delete — on every record, not only their own — and
-/// each manual flow's run. The keys are <c>dynamic-apps:{slug}:table:{apiName}:{action}</c> and
-/// <c>…:flow:{apiName}:run</c>; renaming a table or flow is renaming the permission.
+/// published table's read, create, update and delete — on every record, not only their own. The
+/// keys are <c>dynamic-apps:{slug}:table:{apiName}:{action}</c>; renaming a table is renaming the
+/// permission.
 /// </summary>
 /// <remarks>
 /// Reads the model by this provider's own instance, not through <see cref="RuntimeModelProvider"/>:
@@ -31,10 +31,6 @@ public sealed class AppUserResources(IPluginContext context, AppsDbContext db, I
                 new UserResourceAction("update", "Update"),
                 new UserResourceAction("delete", "Delete"),
             ]));
-        }
-        foreach (var flow in config?.Flows.Where(f => f.Enabled && f.Trigger.Event == "manual") ?? [])
-        {
-            resources.Add(new UserResource($"flow:{flow.ApiName}", flow.DisplayName, [new UserResourceAction("run", "Run")]));
         }
         return new UserResourceCatalog(DynamicAppsPlugin.PluginId, instance.Slug, instance.Name, resources);
     }

@@ -5,11 +5,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The expression language's rules in TypeScript, written into the repository of flows converted to functions (ADR 0029). -->
-    <EmbeddedResource Include="Automation\FlowHelpers.ts" LogicalName="FlowHelpers.ts" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.DynamicApps.Api\Dcms.Plugins.DynamicApps.Api.csproj" />
     <!-- First-party: owns the apps schema (ADR 0021). -->

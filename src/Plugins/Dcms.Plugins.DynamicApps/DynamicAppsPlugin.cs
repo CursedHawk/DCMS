@@ -75,8 +75,6 @@ public sealed class DynamicAppsPlugin : IPlugin
             new PermissionDefinition("data-delete", "Delete application records"),
             new PermissionDefinition("data-import", "Import application records in bulk",
                 "Create up to 1,000 records at once from rows or a CSV file, or up to 100,000 as a background job."),
-            new PermissionDefinition("flows-run", "Run automations",
-                "Start a flow by hand and retry failed runs."),
         ],
         // The control and data planes as contract operations: the admin and AI agents (when the
         // instance opts in) call the same services the admin routes do.
@@ -86,17 +84,11 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractProvision.Of<IDynamicAppsRecords, Ai.DynamicAppsContracts>(),
             // The same records for automations, plugin-to-plugin only: Functions (ADR 0029).
             ContractProvision.Of<IDynamicAppsAutomation, Ai.AutomationRecords>(),
-            // Tables and manual flows a tenant can give its site users through roles (ADR 0022).
+            // Tables a tenant can give its site users through roles (ADR 0022).
             ContractProvision.Of<IUserResources, AppUserResources>(),
         ],
-        // What flow actions reach, always through these contracts: never another plugin's tables.
         consumes:
         [
-            ContractRequirement.Of<IPluginEmail>(),
-            // "Write with AI" in the flow editor, with the workspace's own provider and quota.
-            ContractRequirement.Of<IPluginAi>(),
-            ContractRequirement.Of<IPluginNotifications>(),
-            ContractRequirement.Of<IPluginContent>(),
             // Throttles the public API's writes.
             ContractRequirement.Of<IPluginCache>(),
             ContractRequirement.Of<IVisitorProfiles>(optional: true),
@@ -106,38 +98,22 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IUserAccess>(optional: true),
             // A signed-in enterprise user's groups, for row rules matching user.groups.
             ContractRequirement.Of<IUserIdentity>(optional: true),
-            // Flows trigger on user.invited and user.activated.
-            ContractRequirement.Of<IUserDirectory>(optional: true),
             // Whom a site user can share a saved view with (#297).
             ContractRequirement.Of<IUserPeople>(optional: true),
-            // Flows trigger on form.submitted and read what was sent.
-            ContractRequirement.Of<IFormSubmissions>(optional: true),
-            // Actions other plugins offer to flows.
-            ContractRequirement.Of<IAutomationActionProvider>(optional: true),
             // Imports and bulk changes too large for a request: stored, then run as tracked jobs.
             ContractRequirement.Of<IPluginBlobs>(),
             ContractRequirement.Of<IPluginTrackedJobs>(),
-            // Another environment's tables, through a tables link (ADR 0028): environment.records.* actions.
-            ContractRequirement.Of<IDynamicAppsRecords>(optional: true),
             // Committed events also go to whatever else runs on them: Functions (ADR 0029).
             ContractRequirement.Of<IAppEventSink>(optional: true),
         ],
         jobs: [JobDeclaration.Of<Data.RecordBulkJob>(Data.RecordBulkJob.Name)],
-        // Other plugins' events, forwarded to the flows that trigger on them.
-        subscribes:
-        [
-            EventSubscription.Of<VisitorRegistered, PlatformEventBridge>(),
-            EventSubscription.Of<FormSubmitted, PlatformEventBridge>(),
-            EventSubscription.Of<UserInvited, PlatformEventBridge>(),
-            EventSubscription.Of<UserActivated, PlatformEventBridge>(),
-        ],
         // The data and the control plane, as screens of each app (admin/src).
         adminScreens:
         [
             AdminScreen.Settings,
             new AdminScreen("configuration", "Configuration", AdminScreenScope.Instance, Permission: "model-read", IconName: "Blocks",
                 Titles: new Dictionary<string, string> { ["cs"] = "Konfigurace" },
-                Description: "Tables, relationships, views, automations, public access and revisions.")
+                Description: "Tables, relationships, views, public access and revisions.")
             {
                 Section = AdminScreenSection.Admin,
             },
@@ -162,10 +138,6 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddScoped<RuntimeModelProvider>();
         services.AddScoped<RecordService>();
         services.AddSingleton<RecordCounts>();
-        services.AddScoped<FlowRunQueue>();
-        services.AddScoped<FlowExecutor>();
-        services.AddScoped<FlowRunService>();
-        services.AddScoped<FlowComposer>();
         if (host.IsAdmin)
         {
             // Applications' configuration moves between a workspace's environments (ADR 0026).
@@ -176,13 +148,6 @@ public sealed class DynamicAppsPlugin : IPlugin
         if (host.IsAdmin && host.RunsBackgroundWork)
         {
             services.AddHostedService<AutomationWorker>();
-            // script.run@1 (ADR 0025). Reachable only from the flow executors' network.
-            services.AddHttpClient(ScriptRunAction.HttpClientName, client =>
-            {
-                client.BaseAddress = new Uri(host.Configuration["Services:ScriptRunner"] ?? "http://localhost:5095");
-                // Above the script's own 2 s: a run may wait its turn behind the runner's concurrency limit.
-                client.Timeout = TimeSpan.FromSeconds(15);
-            });
         }
     }
 
@@ -212,6 +177,5 @@ public sealed class DynamicAppsPlugin : IPlugin
     {
         ModelEndpoints.Map(endpoints);
         RecordEndpoints.Map(endpoints);
-        AutomationEndpoints.Map(endpoints);
     }
 }

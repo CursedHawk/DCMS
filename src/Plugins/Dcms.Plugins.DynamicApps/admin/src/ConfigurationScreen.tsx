@@ -22,18 +22,17 @@ import {
 import { ConfirmDialog } from './ConfirmDialog';
 import { useAppState, useModelAction, useWorkingConfig, type ValidationResultLike } from './api';
 import { ModelTab } from './model/ModelTab';
-import { AutomationTab } from './automation/AutomationTab';
 import { AccessTab } from './AccessTab';
 import { FunctionsTab } from './FunctionsTab';
 import { RevisionsTab } from './RevisionsTab';
 import { PublishDialog } from './PublishDialog';
 import { deepLink } from './deepLink';
 
-const TABS = ['model', 'automation', 'functions', 'access', 'revisions'];
+const TABS = ['model', 'functions', 'access', 'revisions'];
 
 /**
- * The application's control plane (instance screen "configuration"): its tables, automations,
- * public access and revisions. Everything here edits the draft — the live app changes only when
+ * The application's control plane (instance screen "configuration"): its tables, the functions
+ * on them, public access and revisions. Everything here edits the draft — the live app changes only when
  * the draft is published — and the assistant beside it works on the same draft, so the two can
  * be used together.
  */
@@ -70,17 +69,14 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
   const draft = state.data?.draft ?? null;
   const published = state.data?.published ?? null;
 
-  // A flow open in the editor: the assistant reads the language (and that flow's script typings) before touching it.
-  const selectedFlow = working.data?.config.flows.find((f) => f.id === selection)?.apiName ?? null;
   const context = useMemo(
     () => ({
       area: 'data-platform',
       summary: `the ${instance!.name} app's configuration (Dynamic Apps instance "${slug}"), ${tab} tab; `
-        + (draft ? `draft revision ${draft.number} is open` : published ? `revision ${published.number} is live, no draft open` : 'nothing published yet')
-        + (selectedFlow ? `; the flow "${selectedFlow}" is selected — read it, and the flow language for it, before changing its conditions, templates or scripts` : ''),
+        + (draft ? `draft revision ${draft.number} is open` : published ? `revision ${published.number} is live, no draft open` : 'nothing published yet'),
       selection: [instance!.id, ...(selection ? [selection] : []), ...(draft ? [draft.id] : [])],
     }),
-    [instance, slug, tab, draft, published, selection, selectedFlow],
+    [instance, slug, tab, draft, published, selection],
   );
   usePluginAiContext(context);
 
@@ -148,7 +144,6 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="model">{t('tabs.model')}</TabsTrigger>
-          <TabsTrigger value="automation">{t('tabs.automation')}</TabsTrigger>
           <TabsTrigger value="functions">{t('tabs.functions')}</TabsTrigger>
           <TabsTrigger value="access">{t('tabs.access')}</TabsTrigger>
           <TabsTrigger value="revisions">
@@ -157,9 +152,6 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
         </TabsList>
         <TabsContent value="model">
           <ModelTab slug={slug} config={config} editable={mayEdit} onSelect={setSelection} />
-        </TabsContent>
-        <TabsContent value="automation">
-          <AutomationTab slug={slug} config={config} editable={mayEdit} onSelect={setSelection} />
         </TabsContent>
         <TabsContent value="functions">
           <FunctionsTab slug={slug} appName={instance?.name ?? slug} />

@@ -16,5 +16,4 @@ public static class DynamicAppsPermissions
     public const string DataWrite = $"plugin:{PluginId}:data-write";
     public const string DataDelete = $"plugin:{PluginId}:data-delete";
     public const string DataImport = $"plugin:{PluginId}:data-import";
-    public const string FlowsRun = $"plugin:{PluginId}:flows-run";
 }

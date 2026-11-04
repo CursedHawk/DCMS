@@ -1,6 +1,6 @@
 # ADR 0025: Flow scripts run in a separate, credential-free Deno sandbox
 
-**Status:** accepted (2026-10-16) · in progress (kanban epic #313)
+**Status:** superseded by [ADR 0029](0029-functions.md) (2026-11-04). Flows, and their script steps, are functions now; the sandbox lives on as script-runner's function sessions.
 
 ## Context
 

@@ -205,51 +205,6 @@ export interface PublishResult {
   issues: ConfigIssue[];
 }
 
-export interface FlowActionInfo {
-  key: string;
-  id: string;
-  major: number;
-  description: string;
-  risk: 'read' | 'safe' | 'dangerous';
-  inputSchema: Record<string, unknown>;
-  /** JSON Schema of the output, when the action declares one; the script editor types steps.<id> with it. */
-  outputSchema?: Record<string, unknown> | null;
-}
-
-export interface FlowRunSummary {
-  id: string;
-  flow: string;
-  revision: number;
-  status: 'pending' | 'running' | 'succeeded' | 'skipped' | 'failed' | 'terminated';
-  trigger: string;
-  attempts: number;
-  depth: number;
-  writes: number;
-  correlationId: string;
-  causationId?: string;
-  error?: string;
-  createdAt: string;
-  startedAt?: string;
-  finishedAt?: string;
-}
-
-export interface FlowRunDetail {
-  run: FlowRunSummary;
-  triggerEvent: Record<string, unknown> | null;
-  steps: {
-    stepId: string;
-    attempt: number;
-    action: string;
-    status: FlowRunSummary['status'];
-    input: unknown;
-    output: unknown;
-    error?: string;
-    startedAt: string;
-    finishedAt?: string;
-  }[];
-  chain: FlowRunSummary[];
-}
-
 export type RecordRow = Record<string, unknown> & { id: string; version: number; created_at: string; updated_at: string };
 
 export interface RecordPage {
@@ -388,29 +343,6 @@ export function usePublicModel(slug: string, enabled: boolean) {
   });
 }
 
-/** One built-in expression function (Expressions.FunctionDocs). */
-export interface ExpressionFunction {
-  name: string;
-  signature: string;
-  description: string;
-  minArgs: number;
-  maxArgs: number;
-  returns: string;
-}
-
-export interface ExpressionLanguage {
-  functions: ExpressionFunction[];
-  variables: string[];
-  maxSourceChars: number;
-}
-
-/** A problem in an expression, by 0-based offsets [start, end). */
-export interface ExpressionProblem {
-  message: string;
-  start: number;
-  end: number;
-}
-
 /**
  * Opens the assistant with a question ready to send — when it can act on this app: inside the
  * console, with the app's AI tools on. Otherwise null, and the screen's own Ask AI offers to
@@ -420,73 +352,6 @@ export function useAskAssistant(): ((prompt: string) => void) | null {
   const open = useOpenAssistant();
   const { instance } = usePluginScreen();
   return open && instance?.aiToolsEnabled !== false ? (prompt: string) => open(prompt) : null;
-}
-
-/** The expression language as the server parses it: what the flow editor completes and explains. */
-export function useExpressionLanguage(slug: string) {
-  const api = usePluginApi();
-  return useQuery({
-    queryKey: [rootKey(slug), 'expression-language'],
-    queryFn: () => api.get<ExpressionLanguage>(instancePath(slug, '/_automation/language')),
-    staleTime: Infinity,
-  });
-}
-
-/** The server's verdict on one expression — parsed, never evaluated. */
-export function useCheckExpression(slug: string) {
-  const api = usePluginApi();
-  return (source: string) =>
-    api.post<{ problems: ExpressionProblem[] }>(instancePath(slug, '/_automation/check'), { source }).then((r) => r.problems);
-}
-
-/** A flow the workspace's AI wrote from a request, for the editor to fill in — never saved by this. */
-export interface FlowComposition {
-  flow: FlowDef;
-  note: string | null;
-  issues: ConfigIssue[];
-}
-
-/** "Write with AI": the request, and the flow as the editor holds it now (what a follow-up changes). */
-export function useComposeFlow(slug: string) {
-  const api = usePluginApi();
-  return (request: string, flow: unknown) =>
-    api.post<FlowComposition>(instancePath(slug, '/_automation/compose'), { request, flow });
-}
-
-/** The TypeScript a script step's ctx is typed with, for the flow as it is being edited. */
-export function useFlowTypings(slug: string) {
-  const api = usePluginApi();
-  return (flow: unknown, atStepId: string) =>
-    api.post<{ typings: string }>(instancePath(slug, '/_automation/typings'), { flow, atStepId }).then((r) => r.typings);
-}
-
-export function useActions(slug: string) {
-  const api = usePluginApi();
-  return useQuery({
-    queryKey: [rootKey(slug), 'actions'],
-    queryFn: () => api.get<FlowActionInfo[]>(instancePath(slug, '/_automation/actions')),
-    staleTime: 10 * 60_000,
-  });
-}
-
-export function useRuns(slug: string, flow: string | null, status: string | null) {
-  const api = usePluginApi();
-  const query = new URLSearchParams({ pageSize: '50' });
-  if (flow) query.set('flow', flow);
-  if (status) query.set('status', status);
-  return useQuery({
-    queryKey: [rootKey(slug), 'runs', flow, status],
-    queryFn: () => api.get<{ items: FlowRunSummary[]; total: number }>(instancePath(slug, `/_automation/runs?${query}`)),
-  });
-}
-
-export function useRun(slug: string, id: string | null) {
-  const api = usePluginApi();
-  return useQuery({
-    queryKey: [rootKey(slug), 'run', id],
-    queryFn: () => api.get<FlowRunDetail>(instancePath(slug, `/_automation/runs/${id}`)),
-    enabled: id !== null,
-  });
 }
 
 export interface ImportResult {

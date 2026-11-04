@@ -53,6 +53,11 @@ public static class ChangeApplier
         for (var i = 0; i < operations.Count; i++)
         {
             var op = operations[i];
+            if (op.Type == "flow" && op.Op != "delete")
+            {
+                // ADR 0029: automation is code now. Old flows may still be deleted.
+                throw new ContractValidationException($"operations[{i}]: flows are functions now; write one in a Functions app.");
+            }
             try
             {
                 // Shape-checks just what this operation wrote, so a bad property is reported

@@ -90,9 +90,6 @@ public static class TenantUsageMap
             [("apps", "records")] = new("dynamicApps", "records"),
             [("apps", "relation_links")] = new("dynamicApps", "records"),
             [("apps", "unique_keys")] = new("dynamicApps", "records"),
-            [("apps", "flow_runs")] = new("dynamicApps", "automation"),
-            [("apps", "flow_run_steps")] = new("dynamicApps", "automation"),
-            [("apps", "flow_schedules")] = new("dynamicApps", "automation"),
             [("functions", "deployments")] = Plugin("functions"),
             [("functions", "runs")] = Plugin("functions"),
             [("functions", "api_keys")] = Plugin("functions"),
@@ -122,7 +119,6 @@ public static class TenantUsageMap
         ["auditLog"] = "Audit log",
         ["configuration"] = "App configuration and history",
         ["records"] = "Records",
-        ["automation"] = "Automation runs",
         ["views"] = "Saved views on your sites",
         ["plugin:content"] = "Content of deleted plugins",
     };

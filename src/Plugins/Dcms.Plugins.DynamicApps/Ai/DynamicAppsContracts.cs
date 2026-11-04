@@ -27,7 +27,6 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
 {
     private readonly ConfigurationService _config;
     private readonly RecordService _records;
-    private readonly FlowRunService _runs;
     private readonly RuntimeModelProvider _models;
     private readonly IPluginContext _context;
     private readonly AiTrace? _ai;
@@ -38,8 +37,6 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
         _config = ActivatorUtilities.CreateInstance<ConfigurationService>(services, context, events);
         _models = ActivatorUtilities.CreateInstance<RuntimeModelProvider>(services, context);
         _records = ActivatorUtilities.CreateInstance<RecordService>(services, context, _models, events);
-        var queue = ActivatorUtilities.CreateInstance<FlowRunQueue>(services, context, _config);
-        _runs = ActivatorUtilities.CreateInstance<FlowRunService>(services, context, queue, _config);
         _context = context;
         _ai = Trace(http.HttpContext);
     }
@@ -91,8 +88,6 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
                 $"{TableName(r.SourceTableId)}.{r.ApiName} -> {TableName(r.TargetTableId)} ({Camel(r.Kind)}{(r.InverseApiName is { } i ? $", inverse {i}" : "")}{(r.Required ? ", required" : "")}, onDelete {Camel(r.OnDelete)})").ToList(),
             config.ChoiceSets.Select(c => $"{c.ApiName}: {string.Join(", ", c.Options.Select(o => o.Value))}").ToList(),
             config.Views.Select(v => $"{TableName(v.TableId)}.{v.ApiName}{(v.IsDefault ? " (default)" : "")}").ToList(),
-            config.Flows.Select(f =>
-                $"{f.ApiName}: {f.Trigger.Event}{(f.Trigger.TableId is { } t ? $" on {TableName(t)}" : "")}, {f.Steps.Count} step(s){(f.Enabled ? "" : ", disabled")}").ToList(),
             doc is null ? [] : await _config.IssuesAsync(config, state.Published is null ? null : (await _config.GetPublishedAsync(ct))?.Config, ct));
     }
 
@@ -105,34 +100,6 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
             table,
             config.Relationships.Where(r => r.SourceTableId == table.Id || r.TargetTableId == table.Id).ToList(),
             config.Views.Where(v => v.TableId == table.Id).ToList());
-    }
-
-    public async Task<FlowDef> GetFlowAsync(FlowRequest input, CancellationToken ct) =>
-        ((await DocumentAsync(input.Revision, ct))?.Config ?? new AppConfig()).Flows.FirstOrDefault(f => f.ApiName == input.Flow)
-        ?? throw new ContractValidationException($"There is no flow '{input.Flow}'.");
-
-    public Task<IReadOnlyList<FlowActionInfo>> ListActionsAsync(CancellationToken ct) => _runs.ActionsAsync(ct);
-
-    public async Task<FlowLanguage> GetFlowLanguageAsync(FlowLanguageRequest input, CancellationToken ct)
-    {
-        string? typings = null;
-        if (input.Flow is { } name)
-        {
-            var config = (await DocumentAsync(null, ct))?.Config ?? new AppConfig();
-            var flow = config.Flows.FirstOrDefault(f => f.ApiName == name) ?? throw new ContractValidationException($"There is no flow '{name}'.");
-            if (input.Step is { } step && flow.Steps.All(s => s.Id != step))
-            {
-                throw new ContractValidationException($"Flow '{name}' has no step '{step}'.");
-            }
-            typings = FlowTypings.Generate(config, flow, input.Step, await ActionCatalog.WithProvidersAsync(_context, ct));
-        }
-        return new FlowLanguage(
-            Expressions.FunctionDocs.Select(f => new FlowFunction(f.Key, f.Value.Signature, f.Value.Description, f.Value.Returns)).ToList(),
-            [.. ConfigValidator.FlowVariables],
-            FlowLanguageText.Expressions,
-            FlowLanguageText.Templates,
-            FlowLanguageText.Scripts,
-            typings);
     }
 
     public Task<RevisionPage> ListRevisionsAsync(CancellationToken ct) => _config.ListRevisionsAsync(1, 50, ct);
@@ -157,24 +124,6 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
     public Task<PublishResult> PublishDraftAsync(ExpectedHashRequest input, CancellationToken ct) => _config.PublishAsync(input.ExpectedHash, ct, _ai);
 
     public Task<PublishResult> RollbackAsync(RollbackRequest input, CancellationToken ct) => _config.RollbackAsync(input, Source, ct, _ai);
-
-    // ------------------------------------------------------------------ automation
-
-    public Task<FlowRunPage> ListRunsAsync(RunQuery input, CancellationToken ct) => _runs.ListAsync(input.Flow, input.Status, input.Page, 20, ct);
-
-    public async Task<FlowRunDetail> GetRunAsync(RunRequest input, CancellationToken ct) =>
-        await _runs.GetAsync(input.Id, ct) ?? throw new ContractValidationException($"There is no run {input.Id}.");
-
-    public async Task<StartFlowResult> StartFlowAsync(StartFlowCall input, CancellationToken ct) =>
-        new(await _runs.StartAsync(input.Flow, input.Input ?? [], ct));
-
-    public async Task RetryRunAsync(RunRequest input, CancellationToken ct)
-    {
-        if (!await _runs.RetryAsync(input.Id, ct))
-        {
-            throw new ContractValidationException($"There is no run {input.Id}.");
-        }
-    }
 
     // ------------------------------------------------------------------ records
 

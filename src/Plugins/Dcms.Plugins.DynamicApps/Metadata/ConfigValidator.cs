@@ -52,8 +52,8 @@ public static partial class ConfigValidator
     [GeneratedRegex("^[a-z][a-z0-9_]{0,62}$")]
     private static partial Regex ApiNamePattern();
 
-    /// <param name="actions">The action keys flows may use; the built-in ones when null (see <see cref="Automation.ActionCatalog.WithProvidersAsync"/>).</param>
-    public static IReadOnlyList<ConfigIssue> Validate(AppConfig config, AppConfig? published = null, IReadOnlySet<string>? actions = null)
+    /// <remarks>Flows are not checked: they are functions now (ADR 0029), and old ones stay in revisions as data until moved.</remarks>
+    public static IReadOnlyList<ConfigIssue> Validate(AppConfig config, AppConfig? published = null)
     {
         var issues = new List<ConfigIssue>();
         void Error(string code, string path, string message) => issues.Add(new(IssueSeverity.Error, code, path, message));
@@ -250,7 +250,6 @@ public static partial class ConfigValidator
         }
 
         CheckRules(config, tables, Error, Warn);
-        CheckFlows(config, tables, actions ?? Automation.ActionCatalog.Keys, Error);
         CheckCopies(config, published, Error);
 
         if (published is not null)
@@ -265,21 +264,6 @@ public static partial class ConfigValidator
             .ToList();
     }
 
-    /// <summary>What a flow's conditions and inputs may read.</summary>
-    public static readonly IReadOnlySet<string> FlowVariables = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "event", "row", "previous", "changedFields", "input", "steps", "run",
-    };
-
-    private static readonly string[] RowEvents = ["row.created", "row.updated", "row.deleted"];
-    private static readonly string[] RelationEvents = ["relation.created", "relation.deleted"];
-
-    [GeneratedRegex("^[a-z][a-z0-9_]{0,40}$")]
-    private static partial Regex StepIdPattern();
-
-    [GeneratedRegex("^flow\\.event\\.[a-z][a-z0-9_.-]{0,62}$")]
-    private static partial Regex FlowEventPattern();
-
     /// <summary>The table a <c>…_id</c> field seems to point at: <c>company_id</c> or <c>primary_company_id</c> → <c>companies</c>.</summary>
     private static TableDef? ReferencedTable(AppConfig config, string fieldName)
     {
@@ -292,124 +276,6 @@ public static partial class ConfigValidator
         string[] Forms(string s) => [s, s + "s", s + "es", s.EndsWith('y') ? s[..^1] + "ies" : s];
         var names = Forms(stem).Concat(Forms(last)).ToHashSet(StringComparer.Ordinal);
         return config.Tables.FirstOrDefault(t => names.Contains(t.ApiName));
-    }
-
-    private static void CheckFlows(AppConfig config, Dictionary<Guid, TableDef> tables, IReadOnlySet<string> actions, Action<string, string, string> error)
-    {
-        Duplicates(config.Flows.Select(f => f.ApiName), "flows", "flow", error);
-        var relationships = config.Relationships.DistinctBy(r => r.Id).ToDictionary(r => r.Id);
-        foreach (var flow in config.Flows)
-        {
-            var path = $"flows.{flow.ApiName}";
-            Name(flow.ApiName, path, error);
-            Label(flow.DisplayName, path, error);
-
-            var trigger = flow.Trigger;
-            var isRow = RowEvents.Contains(trigger.Event);
-            var isRelation = RelationEvents.Contains(trigger.Event);
-            var known = isRow || isRelation || trigger.Event is "revision.published" or "schedule" or "manual"
-                        || FlowEventPattern().IsMatch(trigger.Event) || Automation.PlatformEventBridge.Events.Contains(trigger.Event);
-            if (!known)
-            {
-                error("invalid-trigger", path, $"'{trigger.Event}' is not a trigger: use row.created/updated/deleted, relation.created/deleted, revision.published, flow.event.<name>, visitor.registered, form.submitted, user.invited, user.activated, schedule or manual.");
-            }
-            if (isRow != (trigger.TableId is not null))
-            {
-                error("invalid-trigger", path, isRow ? "A row trigger names its table." : "Only a row trigger names a table.");
-            }
-            else if (trigger.TableId is { } tableId && !tables.ContainsKey(tableId))
-            {
-                error("unknown-table", path, $"The trigger's table {tableId} does not exist.");
-            }
-            if (trigger.RelationshipId is { } relationshipId
-                && (!isRelation || !relationships.TryGetValue(relationshipId, out var link) || link.Kind != RelationshipKind.ManyToMany))
-            {
-                error("invalid-trigger", path, "Only a relation trigger names a relationship, and it must be a many-to-many one.");
-            }
-            if (trigger.ChangedFields.Count > 0)
-            {
-                var members = trigger.TableId is { } t && tables.TryGetValue(t, out var table)
-                    ? table.Fields.Select(f => f.Id).Concat(config.Relationships.Where(r => r.SourceTableId == t).Select(r => r.Id)).ToHashSet()
-                    : [];
-                if (trigger.Event != "row.updated" || trigger.ChangedFields.Any(f => !members.Contains(f)))
-                {
-                    error("invalid-trigger", path, "changedFields applies to row.updated and names fields or lookups of the trigger's table.");
-                }
-            }
-            if ((trigger.Event == "schedule") != (trigger.EveryMinutes is not null)
-                || trigger.EveryMinutes is < Automation.AutomationLimits.MinScheduleMinutes or > Automation.AutomationLimits.MaxScheduleMinutes)
-            {
-                error("invalid-trigger", path,
-                    $"A schedule trigger runs every {Automation.AutomationLimits.MinScheduleMinutes} to {Automation.AutomationLimits.MaxScheduleMinutes} minutes; other triggers have no interval.");
-            }
-
-            Expression(flow.Condition, $"{path}.condition", error);
-            if (flow.Steps.Count is 0 or > Automation.AutomationLimits.MaxSteps)
-            {
-                error("invalid-flow", path, $"A flow has 1 to {Automation.AutomationLimits.MaxSteps} steps.");
-            }
-            foreach (var dup in flow.Steps.GroupBy(s => s.Id).Where(g => g.Count() > 1))
-            {
-                error("duplicate-step", path, $"Step id '{dup.Key}' is used more than once.");
-            }
-            foreach (var step in flow.Steps)
-            {
-                var stepPath = $"{path}.{step.Id}";
-                if (!StepIdPattern().IsMatch(step.Id))
-                {
-                    error("invalid-step", stepPath, $"'{step.Id}' is not a valid step id: lowercase snake_case, so later steps can read steps.{step.Id}.");
-                }
-                if (!actions.Contains(step.Action))
-                {
-                    error("unknown-action", stepPath, $"'{step.Action}' is not an action; actions are named with their major version, e.g. records.create@1.");
-                }
-                Expression(step.Condition, $"{stepPath}.condition", error);
-                // A literal input (a script's source) has a limit of its own and holds no templates.
-                var literal = Automation.ActionCatalog.Find(step.Action)?.LiteralInputs ?? NoKeys;
-                if (step.Input.Where(p => !literal.Contains(p.Key)).Sum(p => p.Key.Length + (p.Value?.ToJsonString().Length ?? 4) + 4) > MaxStepInputChars)
-                {
-                    error("invalid-step", stepPath, $"A step's input is at most {MaxStepInputChars:N0} characters.");
-                }
-                foreach (var key in literal.Where(k => step.Input[k] is not null))
-                {
-                    if (step.Input[key]!.ToJsonString().Length > Automation.AutomationLimits.MaxLiteralInputChars)
-                    {
-                        error("invalid-step", $"{stepPath}.input.{key}", $"'{key}' is at most {Automation.AutomationLimits.MaxLiteralInputChars:N0} characters.");
-                    }
-                }
-                try
-                {
-                    foreach (var hole in Automation.Expressions.TemplateExpressions(step.Input, literal))
-                    {
-                        Expression(hole, $"{stepPath}.input", error);
-                    }
-                }
-                catch (Automation.ExpressionException e)
-                {
-                    error("invalid-expression", $"{stepPath}.input", e.Message);
-                }
-                if (step.Action == "flow.invoke@1" && step.Input["flow"] is JsonValue target && target.TryGetValue<string>(out var name)
-                    && !name.Contains("{{", StringComparison.Ordinal)
-                    && config.Flows.FirstOrDefault(f => f.ApiName == name) is not { Trigger.Event: "manual" })
-                {
-                    error("invalid-step", stepPath, $"flow.invoke starts a flow with a manual trigger; '{name}' is not one.");
-                }
-            }
-        }
-    }
-
-    private static void Expression(string? source, string path, Action<string, string, string> error)
-    {
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return;
-        }
-        // The flow editor underlines exactly these (POST /_automation/check), so what it shows and
-        // what a save refuses cannot differ.
-        foreach (var problem in Automation.Expressions.Check(source, FlowVariables).DistinctBy(p => p.Message))
-        {
-            error("invalid-expression", path, problem.Message);
-        }
     }
 
     private static void CheckField(TableDef table, FieldDef field, Dictionary<Guid, ChoiceSetDef> choiceSets, Action<string, string, string> error)

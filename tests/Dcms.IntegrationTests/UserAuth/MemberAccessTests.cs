@@ -9,7 +9,7 @@ namespace Dcms.IntegrationTests.UserAuth;
 /// <summary>
 /// Enterprise users on a Dynamic Apps site API (ADR 0022, UA5): a role's
 /// <c>dynamic-apps:{slug}:table:{t}:{action}</c> lifts the table's public access for its holders —
-/// every record, not only their own — and <c>…:flow:{f}:run</c> lets them start a manual flow.
+/// every record, not only their own.
 /// Without one, the public access is all there is.
 /// </summary>
 [Collection(ContentFlowCollection.Name)]
@@ -22,9 +22,7 @@ public sealed class MemberAccessTests(ContentFlowFixture fixture)
                           { "apiName": "margin", "displayName": "Margin", "type": "decimal", "hiddenFromPublic": true } ] } },
           { "op": "create", "type": "table", "value": { "apiName": "notes", "displayName": "Note",
               "public": { "read": "own", "create": true, "updateOwn": true },
-              "fields": [ { "apiName": "body", "displayName": "Body", "required": true } ] } },
-          { "op": "create", "type": "flow", "value": { "apiName": "open_deal", "displayName": "Open a deal", "trigger": { "event": "manual" },
-              "steps": [ { "id": "make", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "{{ input.title }}" } } } ] } }
+              "fields": [ { "apiName": "body", "displayName": "Body", "required": true } ] } }
         ]
         """;
 
@@ -73,28 +71,7 @@ public sealed class MemberAccessTests(ContentFlowFixture fixture)
     }
 
     [DockerFact]
-    public async Task A_manual_flow_starts_from_the_site_only_for_holders_of_its_run_permission()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (app, tenantId) = await SetUpAsync(ct);
-        var managers = Guid.NewGuid();
-        await GrantAsync(app, managers, ["dynamic-apps:crm:flow:open_deal:run"], ct);
-
-        (await SiteAsync(app, HttpMethod.Post, "/api/crm/flows/open_deal/run", null, ct, new { input = new { title = "x" } }))
-            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await SiteAsync(app, HttpMethod.Post, "/api/crm/flows/open_deal/run", RealmTokens.Mint(tenantId, Guid.NewGuid()), ct, new { input = new { title = "x" } }))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-
-        var manager = RealmTokens.Mint(tenantId, Guid.NewGuid(), [managers]);
-        var started = await JsonAsync(await SiteAsync(app, HttpMethod.Post, "/api/crm/flows/open_deal/run", manager, ct, new { input = new { title = "From the site" } }),
-            HttpStatusCode.Accepted, ct);
-        var runId = started.GetProperty("runId").GetGuid();
-        (await app.JsonAsync(HttpMethod.Get, $"/_automation/runs/{runId}", ct)).GetProperty("run").GetProperty("flow").GetString()
-            .Should().Be("open_deal");
-    }
-
-    [DockerFact]
-    public async Task The_app_offers_its_tables_and_manual_flows_to_the_role_editor()
+    public async Task The_app_offers_its_tables_to_the_role_editor()
     {
         var ct = TestContext.Current.CancellationToken;
         var (app, _) = await SetUpAsync(ct);
@@ -103,7 +80,7 @@ public sealed class MemberAccessTests(ContentFlowFixture fixture)
         var crm = catalogs.EnumerateArray().Single(c => c.GetProperty("instance").GetString() == "crm");
         crm.GetProperty("plugin").GetString().Should().Be("dynamic-apps");
         crm.GetProperty("resources").EnumerateArray().Select(r => r.GetProperty("resource").GetString())
-            .Should().Equal("table:deals", "table:notes", "flow:open_deal");
+            .Should().Equal("table:deals", "table:notes");
     }
 
     private async Task<(AppHarness App, Guid TenantId)> SetUpAsync(CancellationToken ct)

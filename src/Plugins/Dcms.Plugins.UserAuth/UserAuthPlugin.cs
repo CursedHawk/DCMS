@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.UserAuth.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
@@ -49,8 +48,6 @@ public sealed class UserAuthPlugin : IPlugin
             ContractProvision.Of<IUserPeople, UserPeople>(),
             // The same signed-in user, to plugins that only know visitors (own records, prefilled forms).
             ContractProvision.Of<IVisitorIdentity, UserVisitorIdentity>(),
-            // Invite and group membership as steps of Dynamic Apps flows.
-            ContractProvision.Of<IAutomationActionProvider, UserAutomationActions>(),
         ],
         consumes:
         [

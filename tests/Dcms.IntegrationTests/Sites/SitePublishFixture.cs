@@ -74,7 +74,6 @@ public sealed class SitePublishFixture : IAsyncLifetime
             Storage(b);
             b.UseSetting("Tenancy:Migrate", "true");
             b.UseSetting("Domains:AutoVerify", "true");
-            b.UseSetting("Functions:MigrateFlows", "false");
             b.ConfigureTestServices(s => s.AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { }));
         });

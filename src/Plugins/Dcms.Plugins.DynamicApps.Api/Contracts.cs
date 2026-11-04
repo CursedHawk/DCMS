@@ -15,29 +15,9 @@ public sealed record SummaryRequest(string? Revision = null);
 /// <param name="Revision"><c>draft</c> (the default when one is open) or <c>published</c>.</param>
 public sealed record TableRequest(string Table, string? Revision = null);
 
-/// <param name="Flow">The flow's api name.</param>
-public sealed record FlowRequest(string Flow, string? Revision = null);
-
-/// <param name="Flow">A flow's api name: adds TypeScript declarations of the ctx its script steps receive.</param>
-/// <param name="Step">The script step being written: its ctx holds only the steps before it.</param>
-public sealed record FlowLanguageRequest(string? Flow = null, string? Step = null);
-
-/// <summary>How flows are written: the expression language, templates and script steps.</summary>
-/// <param name="Typings">With a flow: TypeScript declarations of FlowContext, the ctx its script receives.</param>
-public sealed record FlowLanguage(
-    IReadOnlyList<FlowFunction> Functions, IReadOnlyList<string> Variables, string Expressions, string Templates, string Scripts, string? Typings);
-
-public sealed record FlowFunction(string Name, string Signature, string Description, string Returns);
-
 public sealed record RevisionRequest(int Number);
 
 public sealed record DiffRequest(int From, int To);
-
-public sealed record RunQuery(string? Flow = null, string? Status = null, int Page = 1);
-
-public sealed record RunRequest(Guid Id);
-
-public sealed record StartFlowCall(string Flow, JsonObject? Input = null);
 
 public sealed record TableQuery(string Table, RecordQuery? Query = null);
 
@@ -79,7 +59,6 @@ public sealed record ConfigSummary(
     IReadOnlyList<string> Relationships,
     IReadOnlyList<string> ChoiceSets,
     IReadOnlyList<string> Views,
-    IReadOnlyList<string> Flows,
     IReadOnlyList<ConfigIssue> Issues);
 
 /// <param name="Public">e.g. <c>read:all create</c>, empty when private.</param>
@@ -94,7 +73,7 @@ public sealed record TableDetail(TableDef Table, IReadOnlyList<RelationshipDef> 
 
 /// <summary>
 /// The application's configuration — tables, fields, relationships, views, choice sets,
-/// automations, public access — as versioned revisions, for the admin and for AI agents acting
+/// public access — as versioned revisions, for the admin and for AI agents acting
 /// for a member, with that member's permissions (ADR 0021). Changes go to a draft; nothing the
 /// live application serves changes until a draft is published.
 /// </summary>
@@ -103,26 +82,12 @@ public interface IDynamicAppsConfig
 {
     [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Start here. A compact summary of the app's draft (or published) configuration: tables with their fields, "
-            + "relationships, choice sets, views, flows, validation issues, and the hash to send as expectedHash with the next change.")]
+            + "relationships, choice sets, views, validation issues, and the hash to send as expectedHash with the next change.")]
     Task<ConfigSummary> GetSummaryAsync(SummaryRequest input, CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "One table's full definition (fields with ids, types and settings; indexes; public access) with its relationships and views.")]
     Task<TableDetail> GetTableAsync(TableRequest input, CancellationToken ct);
-
-    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "One automation flow's full definition: trigger, condition, steps with their inputs.")]
-    Task<FlowDef> GetFlowAsync(FlowRequest input, CancellationToken ct);
-
-    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "The actions a flow step can call (id@major), with what each does and its input and output schemas.")]
-    Task<IReadOnlyList<FlowActionInfo>> ListActionsAsync(CancellationToken ct);
-
-    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "Read this before writing a flow condition, a {{ }} template or a script step: the expression language's functions "
-            + "and names, how templates render, and the script.run@1 contract. With flow (and step), also TypeScript declarations of the "
-            + "ctx that flow's script receives — write scripts against them.")]
-    Task<FlowLanguage> GetFlowLanguageAsync(FlowLanguageRequest input, CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "The revision history, newest first: number, status (draft, published, superseded, rolledBack, discarded), source, who, when.")]
@@ -144,8 +109,8 @@ public interface IDynamicAppsConfig
     [Operation(OpRisk.Safe, Permission = DynamicAppsPermissions.ModelWrite, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Apply a change set to the draft (opening one from the live revision if none is open). expectedHash is the hash you last read; "
             + "a stale one is refused (409): read the summary again and re-plan. operations: [{op: create|update|delete, type: "
-            + "table|field|index|relationship|choiceSet|view|flow|settings, target?, value?}]. Address resources by api name: "
-            + "'deals' (table, choiceSet, flow), 'deals.amount' (field, index, view, relationship by its source table). create: value is the new "
+            + "table|field|index|relationship|choiceSet|view|settings, target?, value?}]. Address resources by api name: "
+            + "'deals' (table, choiceSet), 'deals.amount' (field, index, view, relationship by its source table). create: value is the new "
             + "resource (fields and indexes take target = their table; a table may list its fields inline). update: value is a JSON merge patch "
             + "(null removes a key). delete: target only. Inside values, ids may be api names (tableId, sourceTableId, targetTableId, choiceSetId, "
             + "primaryFieldId, fieldIds, columns). Field types: text longText integer decimal boolean date dateTime email url choice multiChoice media json. "
@@ -169,8 +134,8 @@ public interface IDynamicAppsConfig
             + "[{path: ['company', 'access'], field: 'user_email', matches: 'user.email'}]; a group per record is a text field holding the "
             + "group id with matches 'user.groups'. user.email and user.groups only match User Authentication users; user.attribute only "
             + "matches attributes visitors cannot edit. A User Authentication role's table permission still sees only rule-matched rows unless the role "
-            + "has bypassRowAccess. Never give the site write access to the table a rule reads. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
-            + "condition?, steps: [{id, action: 'records.create@1', input with {{ expressions }}}]}. Api names are lowercase snake_case. "
+            + "has bypassRowAccess. Never give the site write access to the table a rule reads. Automation is a Functions app's code, not part of this "
+            + "configuration. Api names are lowercase snake_case. "
             + "Returns the changes made and the draft's validation issues; fix errors before publishing.")]
     Task<ApplyChangesResult> ApplyChangeSetAsync(ApplyChangesRequest input, CancellationToken ct);
 
@@ -183,29 +148,13 @@ public interface IDynamicAppsConfig
     Task DiscardDraftAsync(ExpectedHashRequest input, CancellationToken ct);
 
     [Operation(OpRisk.Dangerous, Permission = DynamicAppsPermissions.Publish, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "Make the draft live: the app's tables, public API and automations change at once. Preview first and say what will change. "
+        Description = "Make the draft live: the app's tables and public API change at once. Preview first and say what will change. "
             + "Refused with the issues when the draft is invalid or its data would not fit.")]
     Task<PublishResult> PublishDraftAsync(ExpectedHashRequest input, CancellationToken ct);
 
     [Operation(OpRisk.Dangerous, Permission = DynamicAppsPermissions.Publish, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Make an earlier published revision's configuration live again, as a new revision. No draft may be open.")]
     Task<PublishResult> RollbackAsync(RollbackRequest input, CancellationToken ct);
-
-    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.DataRead, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
-        Description = "Automation runs, newest first, optionally of one flow or with one status (pending running succeeded skipped failed terminated).")]
-    Task<FlowRunPage> ListRunsAsync(RunQuery input, CancellationToken ct);
-
-    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.DataRead, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
-        Description = "One automation run: its trigger event, every step's input, output and error, and the chain of runs the same action set off.")]
-    Task<FlowRunDetail> GetRunAsync(RunRequest input, CancellationToken ct);
-
-    [Operation(OpRisk.Dangerous, Permission = DynamicAppsPermissions.FlowsRun, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "Start a manual flow now with an input. Its steps run for real: they may send email and change records.")]
-    Task<StartFlowResult> StartFlowAsync(StartFlowCall input, CancellationToken ct);
-
-    [Operation(OpRisk.Dangerous, Permission = DynamicAppsPermissions.FlowsRun, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "Run a failed or terminated automation run again from the step that failed.")]
-    Task RetryRunAsync(RunRequest input, CancellationToken ct);
 }
 
 /// <summary>
@@ -284,19 +233,6 @@ public interface IDynamicAppsRecords
 /// <summary>The published tables of an application: what a function's typed SDK is generated from.</summary>
 public sealed record AppModel(IReadOnlyList<TableDef> Tables, IReadOnlyList<RelationshipDef> Relationships, IReadOnlyList<ChoiceSetDef> ChoiceSets);
 
-/// <param name="UserAuth">The environment's User Authentication app, for flows using its actions.</param>
-/// <param name="VisitorAuth">Its Visitor accounts app.</param>
-/// <param name="Taken">Function names already used: the new ones avoid them.</param>
-public sealed record FlowsExport(string? UserAuth, string? VisitorAuth, IReadOnlyList<string> Taken);
-
-/// <param name="Vouched">What the published revision's publisher was checked for.</param>
-/// <param name="Files">The repository files, <c>lib/flow.ts</c> included.</param>
-/// <param name="Functions">Each flow's function, by flow API name.</param>
-public sealed record FlowsExported(int Revision, IReadOnlyList<string> Vouched, IReadOnlyDictionary<string, string> Files,
-    IReadOnlyDictionary<string, string> Functions);
-
-public sealed record FlowsRetire(bool Retired);
-
 [DcmsContract("dynamic-apps.automation", 1, Description = "An application's records for automations (system plane).")]
 public interface IDynamicAppsAutomation
 {
@@ -333,18 +269,6 @@ public interface IDynamicAppsAutomation
 
     [Operation(OpRisk.Dangerous)]
     Task<BulkResult> BulkDeleteAsync(RecordsDelete input, CancellationToken ct);
-
-    /// <summary>
-    /// The published flows written as Functions code (ADR 0029); null when the app has none, or
-    /// they are retired already.
-    /// </summary>
-    /// <exception cref="ContractValidationException">A flow uses something functions have no equivalent of.</exception>
-    [Operation(OpRisk.Read)]
-    Task<FlowsExported?> ExportFlowsAsync(FlowsExport input, CancellationToken ct);
-
-    /// <summary>Stops every flow of the app from starting (or, undoing a failed move, lets them again).</summary>
-    [Operation(OpRisk.Dangerous)]
-    Task RetireFlowsAsync(FlowsRetire input, CancellationToken ct);
 }
 
 /// <param name="App">The app's address (its instance slug), as functions name tables: <c>app.table</c>.</param>
