@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.DynamicApps.Api.Model;
+using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -17,6 +18,7 @@ internal sealed class AutomationRecords : IDynamicAppsAutomation
     private readonly RecordService _records;
     private readonly ConfigurationService _config;
     private readonly AppEventLog _events;
+    private readonly FlowExport _flows;
 
     public AutomationRecords(IServiceProvider services, IPluginContext context)
     {
@@ -24,7 +26,31 @@ internal sealed class AutomationRecords : IDynamicAppsAutomation
         var models = ActivatorUtilities.CreateInstance<RuntimeModelProvider>(services, context);
         _records = ActivatorUtilities.CreateInstance<RecordService>(services, context, models, events);
         _config = ActivatorUtilities.CreateInstance<ConfigurationService>(services, context, events);
+        _flows = ActivatorUtilities.CreateInstance<FlowExport>(services, context, _config);
     }
+
+    public async Task<FlowsExported?> ExportFlowsAsync(FlowsExport input, CancellationToken ct)
+    {
+        try
+        {
+            var taken = new HashSet<string>(input.Taken ?? [], StringComparer.Ordinal);
+            if (await _flows.ConvertAsync(new FlowConverter.Providers(input.UserAuth, input.VisitorAuth), taken, ct) is not { } export)
+            {
+                return null;
+            }
+            var files = new Dictionary<string, string>(export.Code.Files, StringComparer.Ordinal)
+            {
+                [FlowConverter.HelpersPath] = FlowConverter.Helpers(),
+            };
+            return new FlowsExported(export.Revision, export.Vouched, files, export.Code.Functions);
+        }
+        catch (FlowConversionException e)
+        {
+            throw new ContractValidationException(e.Message);
+        }
+    }
+
+    public Task RetireFlowsAsync(FlowsRetire input, CancellationToken ct) => _flows.RetireAsync(input.Retired, ct);
 
     public async Task<AppModel?> ModelAsync(CancellationToken ct) =>
         await _config.GetPublishedAsync(ct) is { Config: var c }

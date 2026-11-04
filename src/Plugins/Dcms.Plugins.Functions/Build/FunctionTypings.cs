@@ -58,6 +58,14 @@ public static class FunctionTypings
           /** Names of this app's secrets it reads. */
           secrets?: string[];
           messages?: { emit?: string[] };
+          /** Sends mail through the platform's queue, in the workspace's name (email.send). */
+          email?: boolean;
+          /** Raises in-app notifications for members holding one of these permissions (notifications.raise). */
+          notifications?: string[];
+          /** Reads the workspace's published content (content.get, content.list). */
+          content?: boolean;
+          /** Apps of other environments, as "environment/app", through the links their managers set up. */
+          links?: string[];
         }
 
         export interface Limits {
@@ -158,6 +166,26 @@ public static class FunctionTypings
           /** To every function on the topic in this environment, as declared in uses.messages.emit. */
           messages: { emit(topic: string, payload?: Json): Promise<{ started: number }> };
           secrets: { get(name: string): Promise<string | null> };
+          /** At most 20 recipients. Text is escaped; html is sanitized. As declared in uses.email. */
+          email: { send(message: { to: string | string[]; subject: string; text?: string; html?: string; replyTo?: string }): Promise<{ recipients: number }> };
+          /** To members holding `audience` (the first of uses.notifications when left out). */
+          notifications: { raise(notification: { title: string; body: string; severity?: "info" | "warning" | "error"; linkPath?: string; audience?: string }): Promise<void> };
+          /** Published content of the workspace's apps, as declared in uses.content. */
+          content: {
+            get(contentType: string, slug: string, options?: { instanceId?: string }): Promise<Json | null>;
+            list(contentType: string, options?: { page?: number; pageSize?: number; instanceId?: string }): Promise<{ items: Json[]; page: number; pageSize: number; totalCount: number }>;
+          };
+          /** Other environments' apps, through links, as declared in uses.links ("environment/app"). */
+          links: {
+            call<O = Json>(environment: string, app: string, contract: string, operation: string, input?: Json): Promise<O>;
+            records(environment: string, app: string): {
+              find(table: string, query?: { filter?: Json; sort?: Json[]; pageSize?: number }): Promise<{ items: Json[]; total: number; totalCapped: boolean }>;
+              get(table: string, id: string): Promise<Json | null>;
+              create(table: string, values: Json): Promise<Json>;
+              update(table: string, id: string, values: Json): Promise<Json | null>;
+              delete(table: string, id: string): Promise<void>;
+            };
+          };
           /** fetch, to the hosts in `uses.egress` only. */
           http: { fetch(url: string | URL, init?: { method?: string; headers?: Record<string, string>; body?: string | Json }): Promise<Response> };
           log: Pick<Console, "log" | "info" | "debug" | "warn" | "error">;

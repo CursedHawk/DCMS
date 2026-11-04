@@ -145,6 +145,28 @@ As built (F7):
 - Secrets, API keys and run history stay with each environment.
 - Where an environment leaves a Functions app to deployments (policy kind `functions`), its `release` is locked at the git server and refused in the IDE and to `MergeAsync`. Activating or rolling back by hand is refused too (`RepoInfo.ReleaseManaged`). A plugin's repository answers to the plugin's own kind (its id), not to `plugins`.
 
+### Retiring flows (F11)
+
+- **The SDK covers what flows could do.** `email.send` (`uses.email`), `notifications.raise` (`uses.notifications`: the permissions of whom to tell, which the deployer must hold), `content.get`/`content.list` (`uses.content`, needs `content:read`), and other environments' apps through their links (`links.call`, `links.records`; `uses.links: ["environment/app"]`). Within a run, mail and notifications de-duplicate on the run and their place in it.
+- **The converter** (Dynamic Apps `FlowConverter`) writes each published flow as `functions/{app}-{flow}.ts`:
+  - The trigger becomes the function's. `flow.event.x` becomes `on.message("{app}.x")`; a schedule becomes `on.every`; manual flows have no trigger and are started by `jobs.enqueue`, as `flow.invoke` did.
+  - The condition and each step become code, the step's output kept in `steps`.
+  - Expressions and `{{ }}` templates become TypeScript calling `lib/flow.ts`, which keeps the language's rules: null-safe reads, null arithmetic, ordinal text comparison, the built-ins.
+  - Script steps become modules beside the function.
+  - User Authentication and Visitor accounts actions become calls on their contracts.
+  - Converted files start with `// @ts-nocheck`; the code is the flow's, not typed against the SDK.
+- **The migration runs by itself** (the Functions plugin's `FlowMigration`, worker role, every 30 minutes, one replica) in every environment that still has live flows:
+  1. Writes their flows into one Functions app, `automations`, which the plugin installs itself through the new platform contract `dcms.instances@1`. That contract installs only the calling plugin's own instance, in its own tenant and environment. Each app converts its flows through `dynamic-apps.automation@1` (`ExportFlowsAsync`, `RetireFlowsAsync`).
+  2. Checks that the result builds.
+  3. Switches the apps' flows off (`apps.apps.FlowsRetiredAt`).
+  4. Commits, merges into `release` and makes the build live.
+
+  The code is committed on a branch cut from `release`, so nothing on `main` rides along. An `automations` app whose `release` holds code the migration did not write gets the converted flows on `flows-for-review` instead, for a person to deploy; its flows keep running until then.
+
+  A failure after step 3 switches the flows back on. An app with a flow the converter cannot write keeps its flows and is logged.
+- **Vouched for what flows could do.** Nobody deploys this deployment, so it is vouched for no more than the flows' implicit reach: their records, `functions:deploy`, `content:read`, visitor reads, and what their revision's publisher was checked for (`UsersRead` added where `UsersManage` was).
+- **One difference stays.** A flow retried from the step that failed; a function is retried whole. A record a failed run created is created again on the retry.
+
 ### No third-party imports in v1
 
 A function imports only:

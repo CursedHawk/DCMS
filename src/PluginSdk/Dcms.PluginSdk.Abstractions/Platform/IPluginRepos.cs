@@ -32,12 +32,13 @@ public sealed record RepoHeadQuery(string Branch, Guid? InstanceId = null);
 
 public sealed record RepoHead(string? Sha);
 
-/// <param name="Branch">Any branch but <c>release</c>, which only a merge moves; made from the default branch if missing.</param>
+/// <param name="Branch">Any branch but <c>release</c>, which only a merge moves; made from <paramref name="From"/> if missing.</param>
 /// <param name="Put">Files to write, by path.</param>
 /// <param name="Delete">Paths to remove.</param>
+/// <param name="From">The branch a missing <paramref name="Branch"/> starts from; the default branch when null.</param>
 public sealed record RepoCommit(
     string Branch, string Message, IReadOnlyDictionary<string, string>? Put = null, IReadOnlyList<string>? Delete = null,
-    Guid? InstanceId = null);
+    Guid? InstanceId = null, string? From = null);
 
 /// <param name="Sha">The new commit; null when nothing changed.</param>
 public sealed record RepoCommitResult(string? Sha);

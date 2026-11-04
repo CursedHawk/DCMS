@@ -26,6 +26,12 @@ public sealed class DynamicApp : EnvironmentEntity
     /// <summary>The last revision number handed out; numbers are per app and never reused.</summary>
     public int LastRevisionNumber { get; set; }
 
+    /// <summary>
+    /// When the app's flows were written as functions (ADR 0029): from then on none of its flows
+    /// starts, whatever its revisions hold.
+    /// </summary>
+    public DateTimeOffset? FlowsRetiredAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

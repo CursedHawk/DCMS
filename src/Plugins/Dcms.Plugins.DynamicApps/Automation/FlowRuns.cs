@@ -66,7 +66,7 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
     /// <summary>Starts every flow the event triggers under the revision it happened in.</summary>
     public async Task<int> RouteAsync(AppEvent evt, CancellationToken ct)
     {
-        if (await configuration.GetRevisionAsync(evt.Revision, ct) is not { } revision)
+        if (await RetiredAsync(ct) || await configuration.GetRevisionAsync(evt.Revision, ct) is not { } revision)
         {
             return 0;
         }
@@ -85,6 +85,10 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
     public async Task<Guid> StartManualAsync(string flowName, JsonObject input, EventOrigin origin, string idempotencyKey,
         int? revision, CancellationToken ct)
     {
+        if (await RetiredAsync(ct))
+        {
+            throw new ContractValidationException("This app's flows are functions now: run them from its Functions app.");
+        }
         var doc = revision is { } number ? await configuration.GetRevisionAsync(number, ct) : await configuration.GetPublishedAsync(ct);
         var flow = doc?.Config.Flows.FirstOrDefault(f => f.ApiName == flowName && f.Enabled)
                    ?? throw new ContractValidationException($"There is no enabled flow '{flowName}'.");
@@ -101,7 +105,7 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
     /// <summary>A schedule tick: one run per flow per due time, however many replicas see it.</summary>
     public async Task<Guid?> StartScheduledAsync(Guid flowId, DateTimeOffset due, CancellationToken ct)
     {
-        var doc = await configuration.GetPublishedAsync(ct);
+        var doc = await RetiredAsync(ct) ? null : await configuration.GetPublishedAsync(ct);
         if (doc?.Config.Flows.FirstOrDefault(f => f.Id == flowId && f.Enabled && f.Trigger.Event == "schedule") is not { } flow)
         {
             return null;
@@ -111,6 +115,13 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
         var runId = await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
         await TrackAsync(runId, flow, ct, routine: true);
         return runId;
+    }
+
+    /// <summary>Whether this app's flows were written as functions (ADR 0029): then none of them starts.</summary>
+    private async Task<bool> RetiredAsync(CancellationToken ct)
+    {
+        using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(context.TenantId);
+        return await db.Apps.AsNoTracking().AnyAsync(a => a.InstanceId == InstanceId && a.FlowsRetiredAt != null, ct);
     }
 
     /// <summary>

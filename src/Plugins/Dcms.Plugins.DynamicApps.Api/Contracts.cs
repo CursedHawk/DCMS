@@ -284,6 +284,19 @@ public interface IDynamicAppsRecords
 /// <summary>The published tables of an application: what a function's typed SDK is generated from.</summary>
 public sealed record AppModel(IReadOnlyList<TableDef> Tables, IReadOnlyList<RelationshipDef> Relationships, IReadOnlyList<ChoiceSetDef> ChoiceSets);
 
+/// <param name="UserAuth">The environment's User Authentication app, for flows using its actions.</param>
+/// <param name="VisitorAuth">Its Visitor accounts app.</param>
+/// <param name="Taken">Function names already used: the new ones avoid them.</param>
+public sealed record FlowsExport(string? UserAuth, string? VisitorAuth, IReadOnlyList<string> Taken);
+
+/// <param name="Vouched">What the published revision's publisher was checked for.</param>
+/// <param name="Files">The repository files, <c>lib/flow.ts</c> included.</param>
+/// <param name="Functions">Each flow's function, by flow API name.</param>
+public sealed record FlowsExported(int Revision, IReadOnlyList<string> Vouched, IReadOnlyDictionary<string, string> Files,
+    IReadOnlyDictionary<string, string> Functions);
+
+public sealed record FlowsRetire(bool Retired);
+
 [DcmsContract("dynamic-apps.automation", 1, Description = "An application's records for automations (system plane).")]
 public interface IDynamicAppsAutomation
 {
@@ -320,6 +333,18 @@ public interface IDynamicAppsAutomation
 
     [Operation(OpRisk.Dangerous)]
     Task<BulkResult> BulkDeleteAsync(RecordsDelete input, CancellationToken ct);
+
+    /// <summary>
+    /// The published flows written as Functions code (ADR 0029); null when the app has none, or
+    /// they are retired already.
+    /// </summary>
+    /// <exception cref="ContractValidationException">A flow uses something functions have no equivalent of.</exception>
+    [Operation(OpRisk.Read)]
+    Task<FlowsExported?> ExportFlowsAsync(FlowsExport input, CancellationToken ct);
+
+    /// <summary>Stops every flow of the app from starting (or, undoing a failed move, lets them again).</summary>
+    [Operation(OpRisk.Dangerous)]
+    Task RetireFlowsAsync(FlowsRetire input, CancellationToken ct);
 }
 
 /// <param name="App">The app's address (its instance slug), as functions name tables: <c>app.table</c>.</param>

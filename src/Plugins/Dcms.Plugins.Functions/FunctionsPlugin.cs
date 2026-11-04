@@ -72,11 +72,19 @@ public sealed class FunctionsPlugin : IPlugin
         [
             // The instance's code: one repository per environment, edited in the web IDE.
             ContractRequirement.Of<IPluginRepos>(),
+            // The Automations app the flows' migration installs (FlowMigration).
+            ContractRequirement.Of<IPluginInstances>(),
             // Builds run as tracked jobs, on the workspace's jobs page.
             ContractRequirement.Of<IPluginTrackedJobs>(),
             // What functions reach, each call checked against what they declared (ADR 0029).
             ContractRequirement.Of<IDynamicAppsAutomation>(optional: true),
             ContractRequirement.Of<IPluginSecrets>(),
+            // email.send, notifications.raise, content.*: the platform's own, as flows had them.
+            ContractRequirement.Of<IPluginEmail>(),
+            ContractRequirement.Of<IPluginNotifications>(),
+            ContractRequirement.Of<IPluginContent>(),
+            // links.records: another environment's tables, through a tables link.
+            ContractRequirement.Of<IDynamicAppsRecords>(optional: true),
             // Triggers: other plugins' events (on.event), and what form submissions carried.
             ContractRequirement.Of<IFormSubmissions>(optional: true),
             ContractRequirement.Of<IVisitorProfiles>(optional: true),
@@ -182,6 +190,8 @@ public sealed class FunctionsPlugin : IPlugin
         {
             // Queued runs and schedules: jobs-worker's work.
             services.AddHostedService<RunWorker>();
+            // Dynamic Apps flows, retired into functions by themselves.
+            services.AddHostedService<FlowMigration>();
         }
         // http.fetch: public addresses only, checked at connect time (redirects and DNS
         // rebinding included), and no redirects followed: the function sees the 3xx and decides.

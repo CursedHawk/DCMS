@@ -78,6 +78,9 @@ public static class PostgresAdvisoryLock
     /// </summary>
     public const long ApiConnectionRefreshLockKey = 0x44434D530000000E;
 
+    /// <summary>Retiring Dynamic Apps flows into Functions (ADR 0029): one replica converts and deploys them.</summary>
+    public const long FlowsToFunctionsLockKey = 0x44434D530000000F;
+
     /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then

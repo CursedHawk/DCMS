@@ -10,7 +10,20 @@ public sealed record FunctionUses(
     IReadOnlyList<string> Contracts,
     IReadOnlyList<string> Egress,
     IReadOnlyList<string> Secrets,
-    IReadOnlyList<string> Emits);
+    IReadOnlyList<string> Emits)
+{
+    /// <summary><c>email.send</c>: mail through the platform's queue, in the tenant's name.</summary>
+    public bool Email { get; init; }
+
+    /// <summary><c>notifications.raise</c>: who may hear, as the permission members must hold.</summary>
+    public IReadOnlyList<string> Notifications { get; init; } = [];
+
+    /// <summary><c>content.get</c> / <c>content.list</c>: published content of the workspace's apps.</summary>
+    public bool Content { get; init; }
+
+    /// <summary><c>links.*</c>: apps of other environments, as <c>environment/app</c>, through the links their managers set up.</summary>
+    public IReadOnlyList<string> Links { get; init; } = [];
+}
 
 /// <summary>One function as a deployment holds it: what <c>defineFunction</c> was given, validated.</summary>
 public sealed record FunctionSpec(
@@ -55,6 +68,12 @@ public static partial class FunctionManifest
 
     [GeneratedRegex(@"^[A-Z_][A-Z0-9_]{0,63}$")]
     private static partial Regex SecretName();
+
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")]
+    private static partial Regex LinkName();
+
+    [GeneratedRegex(@"^[a-z][a-z0-9-]*(:[a-z0-9][a-z0-9.-]*){1,3}$")]
+    private static partial Regex PermissionKey();
 
     [GeneratedRegex(@"^(\d{1,4})(m|h|d)$")]
     private static partial Regex Interval();
@@ -107,6 +126,15 @@ public static partial class FunctionManifest
             if (function.Uses.Secrets.Count > 0)
             {
                 required.Add(FunctionsPermissions.Secrets);
+            }
+            if (function.Uses.Content)
+            {
+                required.Add(Dcms.Shared.Security.PlatformPermissions.ContentRead);
+            }
+            // Telling members who hold a permission about something: only someone who holds it.
+            foreach (var audience in function.Uses.Notifications)
+            {
+                required.Add(audience);
             }
             // A trigger hands the function what happened: reading it is a read like any other.
             foreach (var permission in function.Triggers.Select(TriggerPermission).OfType<string>())
@@ -181,9 +209,14 @@ public static partial class FunctionManifest
 
         var tables = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         var (contracts, egress, secrets, emits) = (new List<string>(), new List<string>(), new List<string>(), new List<string>());
+        var (email, content, notifications, links) = (false, false, new List<string>(), new List<string>());
         if (definition["uses"] is JsonObject uses)
         {
-            Known(uses, problems, "uses.", "tables", "contracts", "egress", "secrets", "messages");
+            Known(uses, problems, "uses.", "tables", "contracts", "egress", "secrets", "messages", "email", "notifications", "content", "links");
+            email = Flag(uses["email"], "uses.email", problems);
+            content = Flag(uses["content"], "uses.content", problems);
+            notifications.AddRange(Matching(uses["notifications"], 10, "uses.notifications", PermissionKey(), "a permission such as plugin:dynamic-apps:data-read", problems));
+            links.AddRange(Matching(uses["links"], 20, "uses.links", LinkName(), "\"environment/app\"", problems));
             if (uses["tables"] is JsonObject declared)
             {
                 if (declared.Count > 50) problems.Add("uses.tables: at most 50 tables.");
@@ -227,8 +260,22 @@ public static partial class FunctionManifest
         }
 
         return new FunctionSpec(name, Runtime, description, triggers, http,
-            new FunctionUses(tables, contracts.Distinct().ToList(), egress.Distinct().ToList(), secrets.Distinct().ToList(), emits.Distinct().ToList()),
+            new FunctionUses(tables, contracts.Distinct().ToList(), egress.Distinct().ToList(), secrets.Distinct().ToList(), emits.Distinct().ToList())
+            {
+                Email = email,
+                Content = content,
+                Notifications = notifications.Distinct().ToList(),
+                Links = links.Distinct().ToList(),
+            },
             timeout, heap);
+    }
+
+    private static bool Flag(JsonNode? node, string where, List<string> problems)
+    {
+        if (node is null) return false;
+        if (node is JsonValue value && value.TryGetValue<bool>(out var flag)) return flag;
+        problems.Add($"{where} is true or false.");
+        return false;
     }
 
     private static bool Trigger(JsonObject trigger, List<string> problems)

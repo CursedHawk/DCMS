@@ -105,9 +105,15 @@ public sealed class AdminPluginRepos(
         {
             throw new ContractValidationException($"'{unsafePath}' is not a path inside the repository.");
         }
-        if ((await git.BranchesAsync(binding.RepoFullName, ct)).All(b => b.Name != branch))
+        var branches = await git.BranchesAsync(binding.RepoFullName, ct);
+        if (branches.All(b => b.Name != branch))
         {
-            await git.CreateBranchAsync(binding.RepoFullName, branch, binding.DefaultBranch, ct);
+            var from = input.From?.Trim() is { Length: > 0 } f ? f : binding.DefaultBranch;
+            if (branches.All(b => b.Name != from))
+            {
+                throw new ContractValidationException($"There is no branch '{from}' to start '{branch}' from.");
+            }
+            await git.CreateBranchAsync(binding.RepoFullName, branch, from, ct);
         }
         var message = string.IsNullOrWhiteSpace(input.Message) ? "Update" : input.Message.Trim()[..Math.Min(input.Message.Trim().Length, 500)];
         var sha = await git.CommitDeltaAsync(binding.RepoFullName, branch, message, puts, deletes, authorName: null, authorEmail: null, ct);

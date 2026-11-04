@@ -508,6 +508,9 @@ namespace Dcms.Shared.Data.Migrations.DynamicApps
                     b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("FlowsRetiredAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 

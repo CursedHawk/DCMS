@@ -90,42 +90,15 @@ internal sealed class FunctionsConfigKind(
             .FirstOrDefaultAsync(d => d.InstanceId == instance.InstanceId && d.Status == FunctionDeploymentStatus.Active, ct);
         if (live?.CommitSha == head) return;
 
-        // Built here already (an earlier attempt, or the build the push to release queued), else built now.
-        var deployment = await db.Deployments.IgnoreTenantFilter().FirstOrDefaultAsync(d =>
-            d.InstanceId == instance.InstanceId && d.CommitSha == head && d.Status == FunctionDeploymentStatus.Ready, ct);
-        if (deployment is null)
+        var by = context.UserId?.ToString() ?? "deployment";
+        FunctionDeployment deployment;
+        try
         {
-            // Claimed before it is built, so the push's build finds it there and stops.
-            // ponytail: a push build already under way leaves a second deployment of the commit; harmless.
-            deployment = new FunctionDeployment
-            {
-                Id = Guid.CreateVersion7(),
-                TenantId = tenantId,
-                EnvironmentId = plugin.EnvironmentId,
-                InstanceId = instance.InstanceId,
-                Number = (await db.Deployments.IgnoreTenantFilter().Where(d => d.InstanceId == instance.InstanceId).MaxAsync(d => (int?)d.Number, ct) ?? 0) + 1,
-                CommitSha = head,
-                CreatedBy = context.UserId?.ToString() ?? "deployment",
-            };
-            db.Deployments.Add(deployment);
-            await db.SaveChangesAsync(ct);
-
-            var files = await repos.ReadFilesAsync(new RepoFilesQuery(head), ct);
-            var built = await scope.ServiceProvider.GetRequiredService<Builder>().BuildAsync(files.Files, ct);
-            if (!built.Ok)
-            {
-                var first = built.Diagnostics.FirstOrDefault();
-                deployment.Status = FunctionDeploymentStatus.Failed;
-                deployment.Diagnostics = JsonSerializer.Serialize(built.Diagnostics.Take(200), JsonSerializerOptions.Web);
-                deployment.Error = first?.Message is { } m ? m[..Math.Min(m.Length, 4000)] : "The build failed.";
-                await db.SaveChangesAsync(ct);
-                throw new EnvironmentConfigException($"app '{key}' does not build here: "
-                    + (first is null ? "the build failed" : first.File is null ? first.Message : $"{first.File}:{first.Line}: {first.Message}"));
-            }
-            deployment.Manifest = FunctionManifest.Serialize(built.Functions);
-            deployment.Bundles = JsonSerializer.Serialize(built.Bundles);
-            deployment.Status = FunctionDeploymentStatus.Ready;
-            await db.SaveChangesAsync(ct);
+            deployment = await Deployer.BuiltAsync(db, plugin, scope.ServiceProvider.GetRequiredService<Builder>(), head, by, ct);
+        }
+        catch (BuildFailedException e)
+        {
+            throw new EnvironmentConfigException($"app '{key}' does not build here: {e.Message}");
         }
 
         // Definer's rights, as a deploy by hand: what it uses here, all of which the deployer holds.
@@ -136,19 +109,7 @@ internal sealed class FunctionsConfigKind(
         {
             throw new EnvironmentConfigException($"app '{key}' uses what its deployer does not hold here: {string.Join(", ", missing)}");
         }
-
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (live is not null)
-        {
-            live.Status = FunctionDeploymentStatus.Superseded;
-            await db.SaveChangesAsync(ct);
-        }
-        deployment.VouchedPermissions = required;
-        deployment.Status = FunctionDeploymentStatus.Active;
-        deployment.ActivatedAt = DateTimeOffset.UtcNow;
-        deployment.ActivatedBy = context.UserId?.ToString() ?? "deployment";
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        await Deployer.ActivateAsync(db, deployment, required, by, ct);
     }
 
     private static string Short(string sha) => sha[..Math.Min(sha.Length, 12)];

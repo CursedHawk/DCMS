@@ -130,6 +130,8 @@ public sealed class AdminApiFixture : IAsyncLifetime
             // The ledger tests claim jobs themselves; a lane consumer here would race them.
             // JobConsumerHostTests turns it back on for the host that proves the worker.
             builder.UseSetting("Jobs:Lanes:tenant:Enabled", "false");
+            // Flows retire into functions where a test drives FlowMigration, not behind the others.
+            builder.UseSetting("Functions:MigrateFlows", "false");
             builder.UseSetting("Jobs:Lanes:platform:Enabled", "false");
             if (FileErrorSink.PathFromEnvironment is { } logPath)
             {

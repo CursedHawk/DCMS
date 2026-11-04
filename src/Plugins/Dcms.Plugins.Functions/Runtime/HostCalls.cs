@@ -23,6 +23,8 @@ public sealed class RunBudget
     public int Enqueues { get; set; }
     public int Invokes { get; set; }
     public int Emits { get; set; }
+    public int Emails { get; set; }
+    public int Notifications { get; set; }
 }
 
 /// <summary>
@@ -52,6 +54,8 @@ public sealed class HostCalls(
     public const int MaxInvokes = 50;
     public const int MaxEmits = 100;
     public const int MaxMessageChars = 256 * 1024;
+    public const int MaxEmails = 20;
+    public const int MaxNotifications = 20;
 
     /// <summary>A job that enqueues a job that enqueues…: how long such a chain may grow.</summary>
     public const int MaxGenerations = 10;
@@ -77,6 +81,11 @@ public sealed class HostCalls(
                 "functions.invoke" => await InvokeAsync(args, ct),
                 "jobs.enqueue" => await EnqueueAsync(args, ct),
                 "messages.emit" => await EmitAsync(args, ct),
+                "email.send" => await EmailAsync(args, ct),
+                "notifications.raise" => await NotifyAsync(args, ct),
+                "content.get" or "content.list" => await ContentAsync(op, args, ct),
+                "links.call" => await LinkedCallAsync(args, ct),
+                "links.records" => await LinkedRecordsAsync(args, ct),
                 _ => throw new HostCallException($"'{op}' is not something a function can do here."),
             };
             return new JsonObject { ["ok"] = true, ["result"] = result };
@@ -407,6 +416,181 @@ public sealed class HostCalls(
             }
         }
         return new JsonObject { ["started"] = started };
+    }
+
+    // ------------------------------------------------------------------ email.send / notifications.raise
+
+    private async Task<JsonNode?> EmailAsync(JsonNode? args, CancellationToken ct)
+    {
+        if (!Uses.Email)
+        {
+            throw new HostCallException("This function does not declare uses.email: true.");
+        }
+        if (++budget.Emails > MaxEmails)
+        {
+            throw new HostCallException($"A run, with the functions it invokes, sends at most {MaxEmails} emails.");
+        }
+        var to = (args?["to"] switch
+            {
+                JsonArray list => list.Select(a => a is JsonValue v && v.TryGetValue<string>(out var t) ? t : ""),
+                JsonValue one when one.TryGetValue<string>(out var t) => [t],
+                _ => [],
+            })
+            .Select(a => a.Trim()).Where(a => a.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var subject = args?["subject"] is JsonValue sv && sv.TryGetValue<string>(out var sub) ? sub.Trim() : "";
+        if (to.Count is 0 or > 20 || subject.Length is 0 or > 300)
+        {
+            throw new HostCallException("email.send needs 1 to 20 recipients and a subject of at most 300 characters.");
+        }
+        var text = args?["text"] is JsonValue tv && tv.TryGetValue<string>(out var t1) ? t1 : null;
+        var markup = args?["html"] is JsonValue hv && hv.TryGetValue<string>(out var h1) ? h1 : null;
+        if ((text?.Length ?? 0) + (markup?.Length ?? 0) > 256 * 1024)
+        {
+            throw new HostCallException("An email body is at most 256 KiB.");
+        }
+        // Mail in the workspace's name: its own markup is sanitized, plain text escaped.
+        var html = markup is not null
+            ? Dcms.Shared.Security.HtmlContentSanitizer.Sanitize(markup) ?? ""
+            : System.Net.WebUtility.HtmlEncode(text ?? "").Replace("\n", "<br>", StringComparison.Ordinal);
+        var replyTo = args?["replyTo"] is JsonValue rv && rv.TryGetValue<string>(out var r1) && r1.Length <= 320 ? r1 : null;
+        // A retried run sends what it sent once: the key is the run and the email's place in it.
+        var dedupe = trigger.RunId is { } run ? $"function:{run:N}:email:{budget.Emails}" : null;
+        var queued = await context.Contracts.Get<IPluginEmail>().SendAsync(new EmailSend(to, subject, html, replyTo, dedupe), ct);
+        return new JsonObject { ["recipients"] = queued.Recipients };
+    }
+
+    private async Task<JsonNode?> NotifyAsync(JsonNode? args, CancellationToken ct)
+    {
+        if (Uses.Notifications.Count == 0)
+        {
+            throw new HostCallException("This function does not declare uses.notifications: [\"<permission of those to tell>\"].");
+        }
+        var audience = args?["audience"] is JsonValue av && av.TryGetValue<string>(out var a) ? a : Uses.Notifications[0];
+        if (!Uses.Notifications.Contains(audience))
+        {
+            throw new HostCallException($"This function does not declare uses.notifications: [\"{audience}\"].");
+        }
+        Vouched(audience);
+        if (++budget.Notifications > MaxNotifications)
+        {
+            throw new HostCallException($"A run, with the functions it invokes, raises at most {MaxNotifications} notifications.");
+        }
+        string Text(string key, int max) => args?[key] is JsonValue v && v.TryGetValue<string>(out var x) && x.Trim().Length is > 0 and var n && n <= max
+            ? x.Trim()
+            : throw new HostCallException($"notifications.raise needs a {key} of 1 to {max} characters.");
+        var link = args?["linkPath"] is JsonValue lv && lv.TryGetValue<string>(out var l) && l.StartsWith('/') && !l.StartsWith("//") && l.Length <= 300 ? l : null;
+        var severity = (args?["severity"] as JsonValue)?.GetValue<string>() switch
+        {
+            "warning" => NotificationSeverity.Warning,
+            "error" => NotificationSeverity.Error,
+            _ => NotificationSeverity.Info,
+        };
+        var dedupe = trigger.RunId is { } run ? $"function:{run:N}:notification:{budget.Notifications}" : Guid.NewGuid().ToString("N");
+        await context.Contracts.Get<IPluginNotifications>().RaiseAsync(new NotificationRaise(
+            Text("title", 200), Text("body", 2000), audience, dedupe, severity, link ?? $"/apps/{context.Instance?.Slug}/runs"), ct);
+        return null;
+    }
+
+    // ------------------------------------------------------------------ content.get / content.list
+
+    private async Task<JsonNode?> ContentAsync(string op, JsonNode? args, CancellationToken ct)
+    {
+        if (!Uses.Content)
+        {
+            throw new HostCallException("This function does not declare uses.content: true.");
+        }
+        Vouched(Dcms.Shared.Security.PlatformPermissions.ContentRead);
+        var type = args?["contentType"] is JsonValue tv && tv.TryGetValue<string>(out var t) && t.Length is > 0 and <= 100 ? t
+            : throw new HostCallException($"{op} needs a contentType.");
+        Guid? instance = args?["instanceId"] is JsonValue iv && iv.TryGetValue<string>(out var i) && Guid.TryParse(i, out var g) ? g : null;
+        var content = context.Contracts.Get<IPluginContent>();
+        if (op == "content.get")
+        {
+            var slug = args?["slug"] is JsonValue sv && sv.TryGetValue<string>(out var s) && s.Length is > 0 and <= 200 ? s
+                : throw new HostCallException("content.get needs a slug.");
+            return JsonSerializer.SerializeToNode(await content.GetBySlugAsync(new ContentLookup(type, slug, instance), ct), Json);
+        }
+        var page = args?["page"] is JsonValue pv && pv.TryGetValue<int>(out var p) ? Math.Max(1, p) : 1;
+        var size = args?["pageSize"] is JsonValue zv && zv.TryGetValue<int>(out var z) ? Math.Clamp(z, 1, 50) : 20;
+        return JsonSerializer.SerializeToNode(await content.ListAsync(new ContentListRequest(type, page, size, instance), ct), Json);
+    }
+
+    // ------------------------------------------------------------------ links.call / links.records(environment, app)
+
+    /// <summary>
+    /// Another environment's app, through a link that environment's managers set up (ADR 0028):
+    /// run as that environment, and only what the link grants. The function names the app in
+    /// <c>uses.links</c>; the link decides the rest.
+    /// </summary>
+    private (string Environment, string App) Link(JsonNode? args, string op)
+    {
+        var environment = args?["environment"] is JsonValue ev && ev.TryGetValue<string>(out var e) ? e : "";
+        var app = args?["app"] is JsonValue av && av.TryGetValue<string>(out var a) ? a : "";
+        return Uses.Links.Contains($"{environment}/{app}")
+            ? (environment, app)
+            : throw new HostCallException($"This function does not declare uses.links: [\"{environment}/{app}\"] ({op}).");
+    }
+
+    private async Task<JsonNode?> LinkedCallAsync(JsonNode? args, CancellationToken ct)
+    {
+        var (environment, app) = Link(args, "links.call");
+        var contract = args?["contract"] is JsonValue cv && cv.TryGetValue<string>(out var c) ? c : "";
+        var operation = args?["operation"] is JsonValue ov && ov.TryGetValue<string>(out var o) ? o : "";
+        try
+        {
+            return await context.Contracts.LinkedCallAsync(environment, app, contract, operation, args?["input"]?.DeepClone(), ct);
+        }
+        catch (Exception e) when (e is ContractAccessDeniedException or ContractLimitException)
+        {
+            throw new HostCallException(e.Message);
+        }
+    }
+
+    private async Task<JsonNode?> LinkedRecordsAsync(JsonNode? args, CancellationToken ct)
+    {
+        var (environment, app) = Link(args, "links.records");
+        var table = args?["table"] is JsonValue tv && tv.TryGetValue<string>(out var t) ? t : "";
+        var a = args?["args"] as JsonArray ?? [];
+        Guid Id(int i) => a.Count > i && a[i] is JsonValue v && v.TryGetValue<string>(out var s) && Guid.TryParse(s, out var g) ? g
+            : throw new HostCallException("A record id is a uuid.");
+        JsonObject Values(int i) => a.Count > i && a[i] is JsonObject o ? (JsonObject)o.DeepClone() : throw new HostCallException("Values are an object.");
+        IDynamicAppsRecords records;
+        try
+        {
+            records = await context.Contracts.LinkedAsync<IDynamicAppsRecords>(environment, app, ct);
+            switch ((args?["method"] as JsonValue)?.GetValue<string>())
+            {
+                case "find":
+                    var query = a.Count > 0 && a[0] is JsonObject q ? q : new JsonObject();
+                    var page = await records.QueryRecordsAsync(new TableQuery(table, new RecordQuery
+                    {
+                        Filter = query["filter"]?.Deserialize<RecordFilter>(Json),
+                        Sort = query["sort"]?.Deserialize<List<RecordSort>>(Json) ?? [],
+                        PageSize = query["pageSize"] is JsonValue pv && pv.TryGetValue<int>(out var p) ? Math.Clamp(p, 1, 50) : 20,
+                    }), ct);
+                    return new JsonObject
+                    {
+                        ["items"] = JsonSerializer.SerializeToNode(page.Items, Json),
+                        ["total"] = page.Total,
+                        ["totalCapped"] = page.TotalCapped,
+                    };
+                case "get":
+                    return (await records.GetRecordAsync(new RecordRequest(table, Id(0)), ct))?.DeepClone();
+                case "create":
+                    return await records.CreateRecordAsync(new RecordCreate(table, Values(0)), ct);
+                case "update":
+                    return await records.UpdateRecordAsync(new RecordUpdate(table, Id(0), Values(1)), ct);
+                case "delete":
+                    await records.DeleteRecordAsync(new RecordRequest(table, Id(0)), ct);
+                    return null;
+                default:
+                    throw new HostCallException("links.records(…) has find, get, create, update and delete.");
+            }
+        }
+        catch (Exception e) when (e is ContractAccessDeniedException or ContractLimitException)
+        {
+            throw new HostCallException(e.Message);
+        }
     }
 
     // ------------------------------------------------------------------ helpers

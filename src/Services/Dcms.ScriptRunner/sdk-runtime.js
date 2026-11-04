@@ -27,6 +27,22 @@ const context = (c) =>
     jobs: Object.freeze({ enqueue: (fn, payload, options) => call("jobs.enqueue", { function: fn, payload, options }) }),
     messages: Object.freeze({ emit: (topic, payload) => call("messages.emit", { topic, payload }) }),
     secrets: Object.freeze({ get: (name) => call("secrets.get", { name }) }),
+    email: Object.freeze({ send: (message) => call("email.send", message) }),
+    notifications: Object.freeze({ raise: (notification) => call("notifications.raise", notification) }),
+    content: Object.freeze({
+      get: (contentType, slug, options = {}) => call("content.get", { contentType, slug, ...options }),
+      list: (contentType, options = {}) => call("content.list", { contentType, ...options }),
+    }),
+    links: Object.freeze({
+      call: (environment, app, contract, operation, input) => call("links.call", { environment, app, contract, operation, input }),
+      records: (environment, app) =>
+        new Proxy({}, {
+          get: (_, method) =>
+            typeof method !== "string" || method === "then"
+              ? undefined
+              : (table, ...args) => call("links.records", { environment, app, table, method, args }),
+        }),
+    }),
     http: Object.freeze({
       async fetch(url, init = {}) {
         const headers = init.headers instanceof Headers ? Object.fromEntries(init.headers) : init.headers;

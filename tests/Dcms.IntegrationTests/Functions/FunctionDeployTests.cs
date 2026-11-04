@@ -15,6 +15,10 @@ using Dcms.PluginSdk.Runtime.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
+using NATS.Net;
 using Npgsql;
 
 namespace Dcms.IntegrationTests.Functions;
@@ -368,7 +372,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         // A schedule's slot starts once, however often the worker looks.
         var worker = ActivatorUtilities.CreateInstance<RunWorker>(host.Services);
         var now = DateTimeOffset.UtcNow;
-        (await worker.ScheduleAsync(now, ct)).Should().BeGreaterThanOrEqualTo(1);
+        // Whoever takes the slot -- this, or the collection's shared host ticking too -- it starts once.
+        await worker.ScheduleAsync(now, ct);
         (await RunsAsync(tenantId, ct)).Count(r => r.Function == "tick").Should().Be(1);
         await worker.ScheduleAsync(now, ct);
         (await RunsAsync(tenantId, ct)).Count(r => r.Function == "tick").Should().Be(1);
@@ -406,8 +411,12 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
             }
             await using (var busy = conn.CreateCommand())
             {
-                // The host's own workers run too: done is when neither of us has anything left.
-                busy.CommandText = """SELECT count(*) FROM functions.runs WHERE "TenantId" = @tenant AND "Status" IN ('Pending', 'Running')""";
+                // Other hosts' workers run too: done is when nobody has anything left.
+                // An event not yet routed is work too: the collection's shared host may hold it mid-route.
+                busy.CommandText = """
+                    SELECT (SELECT count(*) FROM functions.runs WHERE "TenantId" = @tenant AND "Status" IN ('Pending', 'Running'))
+                         + (SELECT count(*) FROM apps.outbox WHERE "TenantId" = @tenant AND "SentAt" IS NULL AND "Attempts" < 10)
+                    """;
                 busy.Parameters.AddWithValue("tenant", tenantId);
                 if (claimed.Count == 0 && round > 0 && (long)(await busy.ExecuteScalarAsync(ct))! == 0)
                 {
@@ -580,6 +589,84 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) statuses.Add(reader.GetString(0));
         return statuses;
+    }
+
+    [DockerFact]
+    public async Task Flows_retire_into_functions_that_do_what_the_flows_did()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        await PublishCrmAsync(client, slug, owner, ct);
+        var model = await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_model", slug, owner), ct), ct);
+        var draft = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", slug, owner, new
+        {
+            expectedHash = model.GetProperty("hash").GetString(),
+            operations = JsonDocument.Parse("""
+                [{ "op": "create", "type": "flow", "value": { "apiName": "on_company", "displayName": "On company",
+                   "trigger": { "event": "row.created", "tableId": "companies" }, "condition": "contains(row.name, \"acme\")",
+                   "steps": [
+                     { "id": "deal", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "{{ upper(row.name) }} deal" } } },
+                     { "id": "tell", "action": "dcms.notifications.raise@1", "input": { "title": "New company", "body": "{{ row.name }}" } },
+                     { "id": "mail", "action": "dcms.email.send@1", "input": { "to": "owner@acme.test", "subject": "New {{ row.name }}", "html": "<p>{{ row.name }}</p>" } },
+                     { "id": "posts", "action": "content.list@1", "input": { "contentType": "post" } },
+                     { "id": "announce", "action": "event.publish@1", "input": { "name": "company.new", "payload": { "name": "{{ row.name }}" } } } ] } },
+                 { "op": "create", "type": "flow", "value": { "apiName": "on_new", "displayName": "On new",
+                   "trigger": { "event": "flow.event.company.new" },
+                   "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "deals", "values": { "title": "event {{ event.payload.name }}" } } } ] } },
+                 { "op": "create", "type": "flow", "value": { "apiName": "sum", "displayName": "Sum",
+                   "steps": [ { "id": "add", "action": "script.run@1",
+                                "input": { "code": "export default function main(ctx) { return ctx.args.a + ctx.args.b; }", "args": { "a": "{{ input.a }}", "b": "{{ input.b * 10 }}" } } },
+                              { "id": "text", "action": "script.run@1", "condition": "steps.add > 100",
+                                "input": { "code": "export default () => 'never';" } } ] } }]
+                """).RootElement,
+        }), ct), ct);
+        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", slug, owner,
+            new { expectedHash = draft.GetProperty("draft").GetProperty("hash").GetString() }), ct), ct);
+
+        // Where mail and notifications are queued (no workers here take them).
+        await using (var nats = new NatsClient(host.Services.GetRequiredService<IConfiguration>()["Nats:Url"]!))
+        {
+            var js = nats.CreateJetStreamContext();
+            await js.CreateOrUpdateStreamAsync(new StreamConfig("NOTIFY", ["notify.>"]), ct);
+            await js.CreateOrUpdateStreamAsync(new StreamConfig("EMAIL", ["email.>"]) { Retention = StreamConfigRetention.Workqueue }, ct);
+        }
+
+        // One pass: the flows are functions of a new Automations app, live; a second finds nothing to do.
+        var sweep = ActivatorUtilities.CreateInstance<FlowMigration>(host.Services);
+        (await sweep.SweepAsync(ct)).Should().Be(1);
+        (await sweep.SweepAsync(ct)).Should().Be(0);
+        var api = "/api/admin/plugins/automations/_functions";
+        var live = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().Single();
+        live.GetProperty("status").GetString().Should().Be("Active", live.ToString());
+        live.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo("crm-on-company", "crm-on-new", "crm-sum");
+
+        // What the flows did, the functions do: a row starts one, whose message starts the other.
+        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/companies", slug, owner, new { name = "Acme Corp" }), ct), ct);
+        await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/companies", slug, owner, new { name = "Initech" }), ct), ct);
+        await DrainAsync(host, tenantId, ct);
+        var deals = (await Json(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/crm/_records/deals", slug, owner), ct), ct))
+            .GetProperty("items").EnumerateArray().Select(d => d.GetProperty("title").GetString()).ToList();
+        var errors = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/runs?function=crm-on-company", slug, owner), ct), ct);
+        deals.Should().BeEquivalentTo(["ACME CORP deal", "event Acme Corp"], errors.ToString());
+        var converted = (await RunsAsync(tenantId, ct)).Where(r => r.Function == "crm-on-company").ToList();
+        converted.Should().HaveCount(2).And.OnlyContain(r => r.Status == "Succeeded", "mail, a notification and content are the SDK's now too");
+
+        var sum = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, owner,
+            new { function = "crm-sum", input = new { a = 2, b = 3 } }), ct), ct);
+        sum.GetProperty("status").GetString().Should().Be("ok", sum.ToString());
+        sum.GetProperty("result").GetProperty("add").GetInt32().Should().Be(32);
+        sum.GetProperty("result").TryGetProperty("text", out _).Should().BeFalse("its condition did not hold");
+
+        // And the flows themselves start no more.
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """SELECT count(*) FROM apps.flow_runs WHERE "TenantId" = @tenant""";
+        cmd.Parameters.AddWithValue("tenant", tenantId);
+        ((long)(await cmd.ExecuteScalarAsync(ct))!).Should().Be(0);
     }
 
     /// <summary>A Dynamic Apps app "crm": companies (with a lookup to a deal) and deals.</summary>

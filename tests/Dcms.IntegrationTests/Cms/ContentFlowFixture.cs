@@ -100,6 +100,8 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             // loopback, and the background refresher stays out of the way of the tests' timing.
             b.UseSetting("Connections:AllowLocal", "true");
             b.UseSetting("Connections:PollSeconds", "3600");
+            // Flows retire into functions where a test drives FlowMigration, not behind the others.
+            b.UseSetting("Functions:MigrateFlows", "false");
             b.ConfigureTestServices(services =>
             {
                 services.AddAuthentication(TestAuthHandler.SchemeName)
