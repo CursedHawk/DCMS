@@ -19,11 +19,16 @@ public sealed class FlowImport(FunctionsDbContext db, IPluginContext context, Pl
 {
     public const string By = "flows";
 
-    /// <summary>Every problem building <paramref name="files"/> would have; empty when it builds.</summary>
-    public async Task<IReadOnlyList<string>> CheckAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
+    /// <param name="Problems">Every problem building the files has; empty when they build.</param>
+    /// <param name="Required">What deploying each function needs vouched, by function.</param>
+    public sealed record Checked(IReadOnlyList<string> Problems, IReadOnlyDictionary<string, IReadOnlyList<string>> Required);
+
+    public async Task<Checked> CheckAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
     {
         var built = await builder.BuildAsync(files, ct);
-        return built.Ok ? [] : built.Diagnostics.Select(d => d.File is null ? d.Message : $"{d.File}:{d.Line}: {d.Message}").ToList();
+        return built.Ok
+            ? new Checked([], built.Functions.ToDictionary(f => f.Name, f => (IReadOnlyList<string>)DeploymentService.Required(registry, [f])))
+            : new Checked(built.Diagnostics.Select(d => d.File is null ? d.Message : $"{d.File}:{d.Line}: {d.Message}").ToList(), new Dictionary<string, IReadOnlyList<string>>());
     }
 
     /// <summary>Builds <paramref name="sha"/> and makes it live, vouched for what it uses of <paramref name="allowed"/>.</summary>

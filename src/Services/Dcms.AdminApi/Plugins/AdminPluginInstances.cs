@@ -41,10 +41,8 @@ public sealed class AdminPluginInstances(
             }
             if (!existing.Enabled)
             {
-                existing.Enabled = true;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync(ct);
-                await PluginInstanceEndpoints.PublishChange(events, cache, metrics, existing, PluginInstanceChangeKind.Enabled, ct);
+                // Someone switched it off: a plugin does not overrule them.
+                throw new ContractConflictException($"The app at '{slug}' is switched off.");
             }
             return new InstanceRef(existing.Id, existing.Slug, Created: false);
         }

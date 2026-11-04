@@ -19,8 +19,8 @@ public sealed record InstanceRef(Guid Id, string Slug, bool Created);
 [DcmsContract("dcms.instances", 1, Description = "Install an instance of the calling plugin itself (admin plane only).")]
 public interface IPluginInstances
 {
-    /// <summary>The caller's instance at <see cref="InstanceEnsure.Slug"/>, installed or switched on when needed.</summary>
-    /// <exception cref="ContractConflictException">Another plugin's app has the address.</exception>
+    /// <summary>The caller's instance at <see cref="InstanceEnsure.Slug"/>, installed when missing.</summary>
+    /// <exception cref="ContractConflictException">Another plugin's app has the address, or the caller's is switched off: a person did that.</exception>
     [Operation(OpRisk.Safe)]
     Task<InstanceRef> EnsureOwnAsync(InstanceEnsure input, CancellationToken ct);
 }

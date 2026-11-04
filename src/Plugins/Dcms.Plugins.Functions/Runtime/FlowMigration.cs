@@ -148,8 +148,36 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
         var functions = await ContextAsync(sp, tenant, instance, ct);
         var repos = functions.Contracts.Get<IPluginRepos>();
         var repo = await repos.EnsureAsync(new RepoSetup("read", "edit", "deploy", new Dictionary<string, string> { ["README.md"] = Readme }), ct);
-        var files = apps.SelectMany(a => a.Export.Files).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
-        files["README.md"] = Readme;
+        var import = ActivatorUtilities.CreateInstance<FlowImport>(sp, functions);
+
+        // Each app's functions may need only what that app's flows could do: the implicit set and
+        // what its own publisher was checked for. The deployment's vouching is one set for all of
+        // them, so an app that would need more than its own keeps its flows, and cannot borrow
+        // another app's through it. A function reaches only what its `uses` declares, which the
+        // check below is over, so the shared set gives no function more than its own app's.
+        Dictionary<string, string> files;
+        while (true)
+        {
+            files = Files(apps);
+            var check = await import.CheckAsync(files, ct);
+            if (check.Problems.Count > 0)
+            {
+                logger.LogWarning("The flows of tenant {Tenant} environment {Environment} do not build as functions: {Problems}",
+                    tenant, environment, string.Join("; ", check.Problems.Take(5)));
+                return false;
+            }
+            var beyond = apps.Select(a => (App: a, Missing: a.Export.Functions.Values
+                    .SelectMany(f => check.Required.GetValueOrDefault(f) ?? []).Where(p => !Allowed(a).Contains(p)).Distinct().ToList()))
+                .Where(x => x.Missing.Count > 0).ToList();
+            if (beyond.Count == 0) break;
+            foreach (var (app, missing) in beyond)
+            {
+                logger.LogWarning("App {App} of tenant {Tenant} keeps its flows: as functions they need {Missing}, which its publisher was not checked for.",
+                    app.Slug, tenant, string.Join(", ", missing));
+                apps.Remove(app);
+            }
+            if (apps.Count == 0) return false;
+        }
 
         // Only code the platform wrote goes live this way, vouched as the flows were.
         // ponytail: so a second app's flows arriving after the first moved land on the branch too; regenerate the moved apps' files if that becomes common.
@@ -161,21 +189,14 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
                 tenant, environment, target.Slug, ReviewBranch);
             return false;
         }
-        var import = ActivatorUtilities.CreateInstance<FlowImport>(sp, functions);
-        if (await import.CheckAsync(files, ct) is { Count: > 0 } problems)
-        {
-            logger.LogWarning("The flows of tenant {Tenant} environment {Environment} do not build as functions: {Problems}",
-                tenant, environment, string.Join("; ", problems.Take(5)));
-            return false;
-        }
 
         // 2. The flows off; 3. the functions live, or the flows back on.
         await RetireAsync(functions, apps, retired: true, ct);
         try
         {
             var names = string.Join(", ", apps.Select(a => a.Slug));
-            // A branch of its own from release, so nothing on main rides along into what goes live.
-            var branch = $"flows-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
+            // A branch nobody can have prepared, from release, so nothing on main rides along.
+            var branch = $"flows-{Guid.NewGuid():N}";
             await repos.CommitAsync(new RepoCommit(branch, $"Flows of {names}, as functions", files, From: "release"), ct);
             var merged = await repos.MergeAsync(new RepoMerge(branch, "release"), ct);
             if (merged.Conflicts.Count > 0)
@@ -184,12 +205,14 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
             }
             var sha = merged.Sha ?? (await repos.HeadAsync(new RepoHeadQuery("release"), ct)).Sha
                       ?? throw new InvalidOperationException("release has no head after the merge.");
-            var allowed = Implicit.Concat(apps.SelectMany(a => a.Export.Vouched)).ToHashSet(StringComparer.Ordinal);
-            if (allowed.Contains(Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersManage))
+            // What goes live is exactly what this wrote, whatever reached release meanwhile: the
+            // commit is immutable, and the build reads it, not the branch.
+            var live = (await repos.ReadFilesAsync(new RepoFilesQuery(sha), ct)).Files;
+            if (live.Count != files.Count || files.Any(f => !live.TryGetValue(f.Key, out var text) || text != f.Value))
             {
-                // The provider looked users and groups up itself; written out, the function does.
-                allowed.Add(Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersRead);
+                throw new InvalidOperationException("release holds more than the converted flows; they are left for a person to deploy.");
             }
+            var allowed = apps.SelectMany(Allowed).ToHashSet(StringComparer.Ordinal);
             var number = await import.DeployAsync(sha, allowed, ct);
             // The editor opens main: the code arrives there too (best effort; release is what runs).
             try { await repos.MergeAsync(new RepoMerge("release", repo.DefaultBranch), ct); }
@@ -210,6 +233,26 @@ public sealed class FlowMigration(IServiceProvider services, IConfiguration conf
             await RetireAsync(functions, apps, retired: false, CancellationToken.None);
             throw;
         }
+    }
+
+    /// <summary>The repository the apps' flows make; the helpers each app ships are the same file.</summary>
+    private static Dictionary<string, string> Files(IEnumerable<App> apps)
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal) { ["README.md"] = Readme };
+        foreach (var (path, text) in apps.SelectMany(a => a.Export.Files)) files[path] = text;
+        return files;
+    }
+
+    /// <summary>What an app's functions may be vouched for: what its flows could do.</summary>
+    private static HashSet<string> Allowed(App app)
+    {
+        var allowed = Implicit.Concat(app.Export.Vouched).ToHashSet(StringComparer.Ordinal);
+        if (allowed.Contains(Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersManage))
+        {
+            // The provider looked users and groups up itself; written out, the function does.
+            allowed.Add(Dcms.Plugins.UserAuth.Api.UserAuthPermissions.UsersRead);
+        }
+        return allowed;
     }
 
     private static async Task RetireAsync(IPluginContext plugin, IEnumerable<App> apps, bool retired, CancellationToken ct)
