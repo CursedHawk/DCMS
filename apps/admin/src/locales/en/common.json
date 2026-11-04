@@ -2409,7 +2409,8 @@
         "user-auth": "Site users’ roles, page rules and API access.",
         "dynamic-apps": "Dynamic Apps tables, forms and flows.",
         "links": "What this environment uses from the others.",
-        "content": "Published posts, pages and other content."
+        "content": "Published posts, pages and other content.",
+        "functions": "Functions apps' live code, built in each environment."
       },
       "keyHints": {
         "roles": "Role name, e.g. Editors",
@@ -2419,7 +2420,8 @@
         "user-auth": "role:key or api:app, e.g. role:members",
         "dynamic-apps": "App address, e.g. crm",
         "links": "kind/environment/address, e.g. app/billing/leads",
-        "content": "app/type/slug, e.g. news/post/legal"
+        "content": "app/type/slug, e.g. news/post/legal",
+        "functions": "App address, e.g. fn"
       }
     },
     "connect": {
@@ -2560,7 +2562,8 @@
       "user-auth": "User access",
       "dynamic-apps": "Dynamic app",
       "content": "Published content",
-      "links": "Environment link"
+      "links": "Environment link",
+      "functions": "Functions"
     },
     "tabs": {
       "incoming": "Incoming",

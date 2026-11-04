@@ -60,14 +60,14 @@ public sealed class AdminPluginRepos(
         // The plugin owns what its permissions mean, and may change its mind across versions.
         (binding.ReadPermission, binding.EditPermission, binding.PublishPermission) = (read, edit, publish);
         await sites.SaveChangesAsync(ct);
-        return Info(binding);
+        return await InfoAsync(binding, ct);
     }
 
     public async Task<RepoInfo?> GetAsync(RepoQuery input, CancellationToken ct)
     {
         var (instanceId, environmentId) = await InstanceAsync(input.InstanceId, ct);
         using var rls = RlsScope.Environment(caller.TenantId, environmentId);
-        return await Mine(instanceId).AsNoTracking().FirstOrDefaultAsync(ct) is { } binding ? Info(binding) : null;
+        return await Mine(instanceId).AsNoTracking().FirstOrDefaultAsync(ct) is { } binding ? await InfoAsync(binding, ct) : null;
     }
 
     public async Task<RepoFiles> ReadFilesAsync(RepoFilesQuery input, CancellationToken ct)
@@ -124,10 +124,8 @@ public sealed class AdminPluginRepos(
         }
         if (@base == SiteGitService.ReleaseBranch)
         {
-            // As the IDE's routes refuse it: where deployments manage the instance, so its code.
-            var slug = caller.Instance?.Slug ?? await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
-                .Where(p => p.Id == binding.InstanceId).Select(p => p.Slug).FirstOrDefaultAsync(ct);
-            if (slug is not null && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "plugins", slug, ct) is not null)
+            // As the IDE's routes refuse it: where deployments manage the instance's code.
+            if (await ManagedAsync(binding, ct))
             {
                 throw new ContractConflictException("This environment takes this app's code from deployments: change it where they come from.");
             }
@@ -136,6 +134,46 @@ public sealed class AdminPluginRepos(
         var outcome = await git.MergeAsync(binding.RepoFullName, @base, input.Head.Trim(), ct);
         return new RepoMergeResult(outcome.Merged, outcome.UpToDate, outcome.Sha, outcome.Conflicts.Select(c => c.Path).ToList());
     }
+
+    public async Task<RepoAdoptResult> AdoptAsync(RepoAdopt input, CancellationToken ct)
+    {
+        var binding = await BindingAsync(input.InstanceId, ct);
+        var branch = input.Branch?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(input.Sha) || branch.Length is 0 or > 100 || branch.Contains("..") || branch.StartsWith('-'))
+        {
+            throw new ContractValidationException("Name a commit and the branch to put it on.");
+        }
+        var slug = await SlugAsync(binding, ct) ?? throw new ContractValidationException("Unknown instance for this plugin.");
+        // rls: platform -- this plugin's repositories for the same instance slug in this tenant's
+        // other environments: the code the tenant's own deployment moves; nothing else is read.
+        List<string> sources;
+        using (RlsScope.Platform())
+        {
+            var instances = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+                .Where(p => p.TenantId == caller.TenantId && p.PluginId == caller.PluginId && p.Slug == slug && p.Id != binding.InstanceId)
+                .Select(p => p.Id).ToListAsync(ct);
+            sources = await sites.RepoBindings.IgnoreQueryFilters().AsNoTracking()
+                .Where(b => b.TenantId == caller.TenantId && b.PluginId == caller.PluginId && instances.Contains(b.InstanceId))
+                .Select(b => b.RepoFullName).ToListAsync(ct);
+        }
+        if ((await git.BranchesAsync(binding.RepoFullName, ct)).All(b => b.Name != branch))
+        {
+            await git.CreateBranchAsync(binding.RepoFullName, branch, binding.DefaultBranch, ct);
+        }
+        var message = string.IsNullOrWhiteSpace(input.Message) ? "Deploy" : input.Message.Trim()[..Math.Min(input.Message.Trim().Length, 500)];
+        return new RepoAdoptResult(await git.PutTreeAsync(sources, binding.RepoFullName, input.Sha.Trim(), branch, message, ct));
+    }
+
+    private async Task<string?> SlugAsync(RepoBinding binding, CancellationToken ct) =>
+        caller.Instance?.InstanceId == binding.InstanceId
+            ? caller.Instance.Slug
+            : await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                .Where(p => p.Id == binding.InstanceId && p.TenantId == caller.TenantId).Select(p => p.Slug).FirstOrDefaultAsync(ct);
+
+    /// <summary>Whether this environment leaves the instance's code to deployments: the plugin's own kind, by slug.</summary>
+    private async Task<bool> ManagedAsync(RepoBinding binding, CancellationToken ct) =>
+        await SlugAsync(binding, ct) is { } slug
+        && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, caller.PluginId, slug, ct) is not null;
 
     private async Task<RepoBinding> BindingAsync(Guid? requested, CancellationToken ct)
     {
@@ -185,9 +223,9 @@ public sealed class AdminPluginRepos(
             : throw new ContractValidationException($"'{permission}' is not one of plugin '{caller.PluginId}''s permissions.");
     }
 
-    private RepoInfo Info(RepoBinding binding)
+    private async Task<RepoInfo> InfoAsync(RepoBinding binding, CancellationToken ct)
     {
         var (http, ssh) = git.CloneUrls(binding.RepoFullName);
-        return new RepoInfo(binding.Id, binding.RepoFullName, binding.DefaultBranch, http, ssh);
+        return new RepoInfo(binding.Id, binding.RepoFullName, binding.DefaultBranch, http, ssh, await ManagedAsync(binding, ct));
     }
 }

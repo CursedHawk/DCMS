@@ -114,7 +114,7 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", slug, owner, new { name = "staging", empty = true }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
         (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{tenantId}/policies", slug, owner,
-            new[] { new { kind = "plugins", itemKey = (string?)null, mode = "managed" } }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+            new[] { new { kind = "functions", itemKey = (string?)null, mode = "managed" } }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
         var locked = await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/merge", slug, owner, new { head = "main" }), ct);
         locked.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await locked.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("code").GetString().Should().Be("environment_managed");

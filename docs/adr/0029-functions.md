@@ -136,6 +136,15 @@ As built (F7):
 - **From anywhere.** `functions.code@1` (Admin and Ai) gives the console's assistant the same path: overview, read files, read the SDK, write files to a working branch (never `release`), check, test, ship (merge into `release`, which builds) and deploy. Each step needs its own permission; deploying still needs everything the functions use. `dcms.repos@1` gained `CommitAsync` and `MergeAsync` for it. A merge into `release` is refused where the environment leaves the instance to deployments, as in the IDE.
 - **On a Dynamic Apps app's page.** A Functions tab lists the functions its tables trigger or use, opens their code, and offers "Automate with AI": the assistant with a prompt naming the app and its tables, the Functions app's AI tools switched on when needed.
 
+### Environments
+
+- The `functions` configuration kind (order 110, after Dynamic Apps, whose tables a build type-checks against) moves what is **live**, by instance slug: the live commit and the permissions it was vouched for. Code merged into `release` but not deployed does not move.
+- Applying it puts that commit's files on the receiving environment's `release` as one new commit (`dcms.repos@1` `AdoptAsync`: fetched from the same instance's repository in another environment, a fast-forward a locked release accepts), and also on `main` when the repository is new there. It builds them against the receiving environment's SDK and makes the build live.
+- The commit is per environment, so `Live` is self-merged, as a site's `Release` is.
+- Definer's rights hold across environments. The deployer must hold, in the receiving environment, everything the build uses there. If they do not, the build stays `Ready` and the deployment fails naming what is missing. A new environment's copy has no person behind it, so it vouches for everything.
+- Secrets, API keys and run history stay with each environment.
+- Where an environment leaves a Functions app to deployments (policy kind `functions`), its `release` is locked at the git server and refused in the IDE and to `MergeAsync`. Activating or rolling back by hand is refused too (`RepoInfo.ReleaseManaged`). A plugin's repository answers to the plugin's own kind (its id), not to `plugins`.
+
 ### No third-party imports in v1
 
 A function imports only:

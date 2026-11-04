@@ -225,7 +225,7 @@ export interface Policy {
 }
 
 /** The kinds of configuration that move between environments, in the order a deployment applies them. */
-export const CONFIG_KINDS = ['roles', 'plugins', 'api-connections', 'sites', 'user-auth', 'dynamic-apps'] as const;
+export const CONFIG_KINDS = ['roles', 'plugins', 'api-connections', 'sites', 'user-auth', 'dynamic-apps', 'functions'] as const;
 
 /** Every kind a policy can name: configuration, and published content (ADR 0028), which a deployment carries only when ticked. */
 export const POLICY_KINDS = [...CONFIG_KINDS, 'links', 'content'] as const;

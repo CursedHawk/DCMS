@@ -103,6 +103,11 @@ public sealed class DeploymentService(
     /// <summary>Makes a built deployment live (deploy), or an earlier one again (rollback).</summary>
     public async Task<DeploymentSummary?> ActivateAsync(Guid id, CancellationToken ct)
     {
+        // Where this environment leaves the app's code to deployments, they decide what is live too.
+        if ((await context.Contracts.Get<IPluginRepos>().GetAsync(new RepoQuery(), ct))?.ReleaseManaged == true)
+        {
+            throw new ContractConflictException("This environment takes this app's functions from deployments: deploy them where they come from.");
+        }
         using var rls = Scope();
         var target = await db.Deployments.FirstOrDefaultAsync(d => d.Id == id && d.InstanceId == InstanceId, ct);
         if (target is null) return null;
@@ -267,7 +272,9 @@ public sealed class DeploymentService(
     }
 
     /// <summary>Everything the functions use, contract operations included.</summary>
-    private List<string> Required(IReadOnlyList<FunctionSpec> functions) =>
+    private List<string> Required(IReadOnlyList<FunctionSpec> functions) => Required(registry, functions);
+
+    public static List<string> Required(PluginRegistry registry, IReadOnlyList<FunctionSpec> functions) =>
         [.. FunctionManifest.RequiredPermissions(functions)
             .Concat(functions.SelectMany(f => f.Uses.Contracts).SelectMany(c => HostCalls.ContractPermissions(registry, c)))
             .Distinct().Order(StringComparer.Ordinal)];

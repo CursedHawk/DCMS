@@ -15,7 +15,11 @@ public sealed record RepoSetup(
     Guid? InstanceId = null);
 
 /// <param name="Id">What the IDE addresses it by: <c>/api/admin/repos/{Id}</c>.</param>
-public sealed record RepoInfo(Guid Id, string RepoFullName, string DefaultBranch, string HttpCloneUrl, string SshCloneUrl);
+/// <param name="ReleaseManaged">
+/// This environment leaves the instance's code to deployments (ADR 0026), under the plugin's own
+/// configuration kind: what reaches <c>release</c> and goes live comes from them, never by hand here.
+/// </param>
+public sealed record RepoInfo(Guid Id, string RepoFullName, string DefaultBranch, string HttpCloneUrl, string SshCloneUrl, bool ReleaseManaged = false);
 
 public sealed record RepoQuery(Guid? InstanceId = null);
 
@@ -43,6 +47,13 @@ public sealed record RepoMerge(string Head, string Base = "release", Guid? Insta
 
 /// <param name="Conflicts">Paths changed on both sides; nothing was merged. Resolve them in the IDE.</param>
 public sealed record RepoMergeResult(bool Merged, bool UpToDate, string? Sha, IReadOnlyList<string> Conflicts);
+
+/// <param name="Sha">A commit of the same instance's repository in another of the tenant's environments.</param>
+/// <param name="Branch">The branch here to hold exactly that commit's files, as one new commit on top.</param>
+public sealed record RepoAdopt(string Sha, string Branch, string Message, Guid? InstanceId = null);
+
+/// <param name="Sha">The branch's head after; null when no environment has the commit.</param>
+public sealed record RepoAdoptResult(string? Sha);
 
 /// <summary>
 /// A git repository for one of the calling plugin's instances, one per environment, edited in
@@ -83,6 +94,14 @@ public interface IPluginRepos
     /// </summary>
     [Operation(OpRisk.Dangerous)]
     Task<RepoMergeResult> MergeAsync(RepoMerge input, CancellationToken ct);
+
+    /// <summary>
+    /// Puts a commit of the instance's repository in another environment (the same plugin, the same
+    /// instance slug) on a branch here: how the plugin's environment kind moves code between
+    /// environments, as sites' does. A fast-forward, so a release locked to deployments takes it.
+    /// </summary>
+    [Operation(OpRisk.Dangerous)]
+    Task<RepoAdoptResult> AdoptAsync(RepoAdopt input, CancellationToken ct);
 }
 
 /// <summary>

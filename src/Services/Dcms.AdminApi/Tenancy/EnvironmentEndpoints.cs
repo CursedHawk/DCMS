@@ -287,7 +287,7 @@ public static class EnvironmentEndpoints
                             .Where(s => s.TenantId == target.TenantId && s.GitRepoFullName != null).ToListAsync(ct))
                         .Select(s => (Repo: s.GitRepoFullName!, Kind: "sites", Key: s.KeyAcrossEnvironments))
                         .ToList();
-                    // A plugin's repository (ADR 0029) is its instance's, which the "plugins" kind keys by slug.
+                    // A plugin's repository (ADR 0029) is deployed by the plugin's own kind (its id), keyed by instance slug.
                     var bindings = await sites.RepoBindings.IgnoreTenantFilter().AsNoTracking()
                         .Where(b => b.TenantId == target.TenantId).ToListAsync(ct);
                     var instanceIds = bindings.Select(b => b.InstanceId).ToList();
@@ -295,7 +295,7 @@ public static class EnvironmentEndpoints
                         .Where(p => p.TenantId == target.TenantId && instanceIds.Contains(p.Id))
                         .ToDictionaryAsync(p => p.Id, p => p.Slug, ct);
                     repos.AddRange(bindings.Where(b => slugs.ContainsKey(b.InstanceId))
-                        .Select(b => (Repo: b.RepoFullName, Kind: "plugins", Key: slugs[b.InstanceId])));
+                        .Select(b => (Repo: b.RepoFullName, Kind: b.PluginId, Key: slugs[b.InstanceId])));
                     foreach (var (repo, kind, key) in repos)
                     {
                         var locked = EnvironmentPolicies.Ownership(wanted, kind, key) == EnvironmentOwnership.Managed;

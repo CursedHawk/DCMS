@@ -8,7 +8,9 @@ using Dcms.IntegrationTests.Automation;
 using Dcms.IntegrationTests.Tenancy;
 using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Runtime;
+using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Shared.Data.Rls;
 using Dcms.PluginSdk.Runtime.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -489,6 +491,97 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         live.GetProperty("functions").EnumerateArray().Select(f => f.GetProperty("name").GetString()).Should().Contain("greet");
     }
 
+    [DockerFact]
+    public async Task What_is_live_deploys_to_another_environment_built_there_and_vouched_for_by_its_deployer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var instanceId = await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
+        var sha = await ShipAsync(client, slug, owner, $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}", new()
+        {
+            ["functions/greet.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({ uses: { secrets: ["GREETING"] }, handler: (input: { name: string }) => `Hi ${input.name}` });
+                """,
+        }, "Greet", ct);
+        await BuildAsync(host, tenantId, instanceId, sha, ct);
+        var built = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().First();
+        await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/deployments/{built.GetProperty("id").GetGuid()}/activate", slug, owner), ct), ct);
+
+        // A second environment with the app installed and nothing deployed.
+        var staging = (await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments", slug, owner, new { name = "staging", empty = true }), ct), ct))
+            .GetProperty("id").GetGuid();
+        var stagingInstance = await InstallAsync(client, $"{slug}/staging", ct);
+
+        async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid environment)
+        {
+            using var scope = host.Services.CreateScope();
+            using var rls = RlsScope.Environment(tenantId, environment);
+            return await Kind(scope).ExportAsync(tenantId, ct);
+        }
+        async Task ApplyAsync(JsonElement value, IReadOnlySet<string>? held)
+        {
+            using var scope = host.Services.CreateScope();
+            using var rls = RlsScope.Environment(tenantId, staging);
+            await Kind(scope).ApplyAsync(tenantId, "fn", value, new EnvironmentApplyContext(held), ct);
+        }
+        static IEnvironmentConfigKind Kind(IServiceScope scope) =>
+            scope.ServiceProvider.GetServices<IEnvironmentConfigKind>().Single(k => k.Kind == "functions");
+
+        var item = (await ExportAsync(tenantId)).Should().ContainSingle().Subject;
+        item.Key.Should().Be("fn");
+        item.Value.GetProperty("Live").GetString().Should().Be(sha);
+        item.Value.GetProperty("Permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:functions:secrets");
+        (await ExportAsync(staging)).Should().BeEmpty("nothing is live there");
+
+        // A deployer who lacks what it uses there is refused: built, but not live.
+        var refused = () => ApplyAsync(item.Value, new HashSet<string> { "plugin:functions:deploy" });
+        (await refused.Should().ThrowAsync<EnvironmentConfigException>()).Which.Message.Should().Contain("plugin:functions:secrets");
+        (await StatusesAsync(stagingInstance, ct)).Should().Equal("Ready");
+
+        await ApplyAsync(item.Value, held: null);
+        await ApplyAsync(item.Value, held: null); // again, as an interrupted deployment is: nothing new
+        (await StatusesAsync(stagingInstance, ct)).Should().Equal("Active");
+        var arrived = (await ExportAsync(staging)).Should().ContainSingle().Subject;
+        arrived.Value.GetProperty("Live").GetString().Should().NotBe(sha, "the same files, as this environment's own commit");
+        arrived.Value.GetProperty("Permissions").GetRawText().Should().Be(item.Value.GetProperty("Permissions").GetRawText());
+
+        // The code arrived on release and on the branch the editor opens.
+        await host.Services.GetRequiredService<PluginHandlerRunner>().RunAsync(tenantId, "functions", stagingInstance, async (ctx, _) =>
+        {
+            var repos = ctx.Contracts.Get<IPluginRepos>();
+            foreach (var branch in new[] { "release", "main" })
+            {
+                (await repos.ReadFilesAsync(new RepoFilesQuery(branch), ct)).Files.Should().ContainKey("functions/greet.ts", branch);
+            }
+        }, ct);
+
+        // Where deployments manage the app, nothing goes live by hand.
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{tenantId}/policies", slug, owner,
+            new[] { new { kind = "functions", itemKey = (string?)null, mode = "managed" } }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.SendAsync(Req(HttpMethod.Post, $"{api}/deployments/{built.GetProperty("id").GetGuid()}/activate", slug, owner), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    private async Task<List<string>> StatusesAsync(Guid instanceId, CancellationToken ct)
+    {
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """SELECT "Status" FROM functions.deployments WHERE "InstanceId" = @instance ORDER BY "Number" """;
+        cmd.Parameters.AddWithValue("instance", instanceId);
+        var statuses = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) statuses.Add(reader.GetString(0));
+        return statuses;
+    }
+
     /// <summary>A Dynamic Apps app "crm": companies (with a lookup to a deal) and deals.</summary>
     private static async Task PublishCrmAsync(HttpClient client, string slug, Guid owner, CancellationToken ct)
     {
@@ -570,7 +663,10 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, ScriptSandboxTe
         var req = new HttpRequestMessage(method, url);
         req.Headers.Add("X-Test-Sub", (user == Guid.Empty ? Guid.NewGuid() : user).ToString());
         if (superAdmin) req.Headers.Add("X-Test-Roles", "SuperAdmin");
-        req.Headers.Add("X-Dcms-Tenant", slug);
+        // "{tenant}/{environment}" names an environment other than production.
+        var parts = slug.Split('/', 2);
+        req.Headers.Add("X-Dcms-Tenant", parts[0]);
+        if (parts.Length > 1) req.Headers.Add("X-Dcms-Environment", parts[1]);
         if (body is not null) req.Content = JsonContent.Create(body);
         return req;
     }

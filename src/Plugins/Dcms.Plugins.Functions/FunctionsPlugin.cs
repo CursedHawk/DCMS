@@ -152,6 +152,8 @@ public sealed class FunctionsPlugin : IPlugin
         }
         services.AddScoped<ApiKeyService>();
         services.AddScoped<DeploymentService>();
+        // What is live moves between environments like a site's code (ADR 0026).
+        services.AddScoped<IEnvironmentConfigKind, FunctionsConfigKind>();
         // Builds: the files go to script-runner, which type-checks and bundles them (ADR 0029).
         // Reachable only from the brokers' own network; a cold type check takes seconds.
         services.AddHttpClient(BuildJob.HttpClientName, client =>

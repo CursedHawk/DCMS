@@ -51,7 +51,7 @@ test('the pipeline lists environments in order and adds one', async ({ page, api
   await page.getByRole('tab', { name: 'Locks' }).click();
   await page.getByRole('button', { name: 'Lock to pipeline' }).click();
   await expect.poll(() => api.requestsTo('PUT', `/api/admin/environments/${TENANT.tenantId}/policies`).map((r) => (r.body as { mode: string }[]).map((p) => p.mode)))
-    .toEqual([['Managed', 'Managed', 'Managed', 'Managed', 'Managed', 'Managed']]);
+    .toEqual([['Managed', 'Managed', 'Managed', 'Managed', 'Managed', 'Managed', 'Managed']]);
 });
 
 test('the pill switches environment and keeps the section', async ({ page, api }) => {

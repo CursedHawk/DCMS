@@ -140,12 +140,12 @@ public static class RepoEndpoints
             Announce: (_, _, _, _, _, _) => Task.CompletedTask,
             RefuseRelease: async token =>
             {
-                // Release is what builds: an environment that leaves this instance to deployments
-                // takes its code from them too, as a site's release is.
+                // Release is what builds: an environment that leaves this instance's code to
+                // deployments (the plugin's own kind, by slug) takes it from them only, as a site's release.
                 var slug = await services.GetRequiredService<CmsDbContext>().PluginInstances.AsNoTracking()
                     .Where(p => p.Id == binding.InstanceId).Select(p => p.Slug).FirstOrDefaultAsync(token);
                 if (slug is not null
-                    && await EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, "plugins", slug, token) is { } managed)
+                    && await EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, binding.PluginId, slug, token) is { } managed)
                 {
                     return managed;
                 }

@@ -54,6 +54,7 @@ public static class PlatformContracts
         public Task<RepoHead> HeadAsync(RepoHeadQuery input, CancellationToken ct) => throw Refused();
         public Task<RepoCommitResult> CommitAsync(RepoCommit input, CancellationToken ct) => throw Refused();
         public Task<RepoMergeResult> MergeAsync(RepoMerge input, CancellationToken ct) => throw Refused();
+        public Task<RepoAdoptResult> AdoptAsync(RepoAdopt input, CancellationToken ct) => throw Refused();
     }
 
     private sealed class SitePlaneSecrets : IPluginSecrets
