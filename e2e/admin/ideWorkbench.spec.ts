@@ -87,7 +87,7 @@ test('the IDE lists, runs, traces and replays a function', async ({ page, api })
     .on('GET', '/api/admin/ai/conversations', []);
 
   await page.setViewportSize({ width: 1600, height: 950 });
-  // Opened from the app's Runs screen: straight onto the Runs tab.
+  // Opened from the app's Runs screen: straight onto the Runs view, in the sidebar.
   await page.goto(`/repos/${REPO}/code?name=Automations&slug=automations&kind=functions&runs=hello`);
   const runs = page.getByTestId('runs-view');
   // The IDE's chunks compile on first visit to the dev server: as long as the other IDE specs wait.
@@ -125,8 +125,24 @@ test('the IDE lists, runs, traces and replays a function', async ({ page, api })
   const sent = api.requests.find((r) => r.method === 'POST' && r.path.endsWith('/_functions/test'));
   expect(sent?.body).toMatchObject({ function: 'hello', input: { boom: true }, simulate: { trigger: { kind: 'row' } } });
 
-  // The Functions view: the draft's functions as the build reads them, and what is live.
+  // New function: its path is its name and HTTP address; the file is written where the build reads it.
   await page.getByRole('button', { name: 'Functions' }).first().click();
+  await page.getByTestId('functions-view').getByRole('button', { name: 'New function' }).click();
+  const dialog = page.getByTestId('new-function');
+  await dialog.getByLabel('Path').fill('orders/total');
+  await expect(dialog).toContainText('functions/orders/total.ts · /api/automations/fn/orders/total');
+  await dialog.getByLabel('Holders of an API key').check();
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('access: { http: ["user", "apiKey"] },');
+  await page.getByRole('button', { name: 'Functions' }).first().click();
+  await page.getByTestId('functions-view').getByRole('button', { name: 'New function' }).click();
+  await dialog.getByLabel('Path').fill('orders/total');
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(dialog).toContainText('functions/orders/total.ts already exists.');
+  await page.keyboard.press('Escape');
+
+  // The Functions view: the draft's functions as the build reads them, and what is live.
   const view = page.getByTestId('functions-view');
   await expect(view.getByTestId('function-hello')).toContainText('When crm.deals is updated');
   await expect(view.getByTestId('function-hello')).toContainText('live');

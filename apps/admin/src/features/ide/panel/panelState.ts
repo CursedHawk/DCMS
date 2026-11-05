@@ -13,10 +13,10 @@ import { useCallback, useEffect, useState } from 'react';
  * property of the site you happen to have open.</p>
  */
 
-export const PANEL_TABS = ['problems', 'output', 'console', 'build', 'run', 'runs'] as const;
+export const PANEL_TABS = ['problems', 'output', 'console', 'build', 'run'] as const;
 
-/** Tabs only a Functions app's repository has (workbench, ADR 0029). */
-export const FUNCTIONS_TABS: readonly PanelTab[] = ['run', 'runs'];
+/** Tabs only a Functions app's repository has (workbench, ADR 0029). Its run history is a sidebar view. */
+export const FUNCTIONS_TABS: readonly PanelTab[] = ['run'];
 
 export type PanelTab = (typeof PANEL_TABS)[number];
 

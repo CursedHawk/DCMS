@@ -969,8 +969,7 @@
         "output": "Výstup",
         "console": "Konzole",
         "build": "Sestavení",
-        "run": "Spustit",
-        "runs": "Běhy"
+        "run": "Spustit"
       },
       "hide": "Skrýt panel",
       "resize": "Změnit velikost panelu",
@@ -1059,6 +1058,7 @@
       }
     },
     "runs": {
+      "title": "Historie běhů",
       "filterFunction": "Funkce…",
       "status": "Stav",
       "anyStatus": "Jakýkoli stav",
@@ -1074,6 +1074,47 @@
     "editorTheme": {
       "label": "Barevný motiv editoru",
       "auto": "Podle konzole"
+    },
+    "newFn": {
+      "title": "Nová funkce",
+      "language": "Jazyk",
+      "start": "Spouští se",
+      "path": "Cesta",
+      "pathHint": "Složky a název, např. orders/total: malá písmena, číslice a pomlčky. Na této cestě také odpovídá přes HTTP.",
+      "description": "Popis (nepovinný)",
+      "access": "Kdo ji smí volat",
+      "table": "Tabulka (aplikace.tabulka)",
+      "event": "Když je záznam",
+      "topic": "Téma zprávy",
+      "cron": "Cron (5 polí, UTC)",
+      "interval": "Každých (např. 15m, 1h, 1d)",
+      "create": "Vytvořit",
+      "exists": "{{file}} už existuje.",
+      "badPath": "Cesta má nejvýše čtyři složky a název z malých písmen, číslic a pomlček, každá část začíná písmenem.",
+      "noAccess": "Vyberte, kdo ji smí volat.",
+      "badTable": "Tabulka se píše „aplikace.tabulka“.",
+      "badTopic": "Téma tvoří malá písmena, číslice, tečky, pomlčky a podtržítka.",
+      "badCron": "Výraz cron má 5 polí.",
+      "badInterval": "Interval je číslo a m, h nebo d.",
+      "starts": {
+        "http": "Volá se přes HTTP",
+        "manual": "Spouští se ručně nebo jinými funkcemi",
+        "row": "Změní se záznam",
+        "message": "Přijde zpráva",
+        "schedule": "Podle plánu",
+        "every": "V intervalu"
+      },
+      "who": {
+        "public": "Kdokoli",
+        "user": "Přihlášení uživatelé webu",
+        "role": "Uživatelé webu, jejichž role to povoluje",
+        "apiKey": "Držitelé API klíče"
+      },
+      "events": {
+        "created": "vytvořen",
+        "updated": "upraven",
+        "deleted": "smazán"
+      }
     }
   },
   "openapi": {

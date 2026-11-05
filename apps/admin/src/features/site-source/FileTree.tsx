@@ -5,6 +5,7 @@ import {
   FileArchive,
   FileImage,
   FilePlus2,
+  Zap,
   FileCode2,
   Lock,
   Pencil,
@@ -80,7 +81,8 @@ function countFiles(node: TreeNode): number {
   return node.dir ? node.children.reduce((n, c) => n + countFiles(c), 0) : 1;
 }
 
-export function FileTree() {
+/** `onNewFunction`: a Functions app's repository offers its "New function" here too. */
+export function FileTree({ onNewFunction }: { onNewFunction?: () => void } = {}) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const files = useVfs((s) => s.files);
@@ -343,6 +345,11 @@ export function FileTree() {
       <div className="flex items-center justify-between border-b px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Files</span>
         <span className="flex items-center gap-2">
+          {onNewFunction && (
+            <button type="button" title={t('ide.newFn.title')} onClick={onNewFunction} className="text-muted-foreground hover:text-foreground">
+              <Zap className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             title={t('ide.upload')}

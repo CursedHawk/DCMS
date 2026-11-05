@@ -941,8 +941,7 @@
         "output": "Output",
         "console": "Console",
         "build": "Build",
-        "run": "Run",
-        "runs": "Runs"
+        "run": "Run"
       },
       "hide": "Hide panel",
       "resize": "Resize panel",
@@ -1030,6 +1029,7 @@
       }
     },
     "runs": {
+      "title": "Run history",
       "filterFunction": "Function…",
       "status": "Status",
       "anyStatus": "Any status",
@@ -1045,6 +1045,47 @@
     "editorTheme": {
       "label": "Editor colour theme",
       "auto": "Match the console"
+    },
+    "newFn": {
+      "title": "New function",
+      "language": "Language",
+      "start": "Starts when",
+      "path": "Path",
+      "pathHint": "Its folders and name, e.g. orders/total: lowercase letters, digits and dashes. It is also where it answers over HTTP.",
+      "description": "Description (optional)",
+      "access": "Who may call it",
+      "table": "Table (app.table)",
+      "event": "When a record is",
+      "topic": "Message topic",
+      "cron": "Cron (5 fields, UTC)",
+      "interval": "Every (e.g. 15m, 1h, 1d)",
+      "create": "Create",
+      "exists": "{{file}} already exists.",
+      "badPath": "A path is up to four folders and a name, of lowercase letters, digits and dashes, each starting with a letter.",
+      "noAccess": "Pick who may call it.",
+      "badTable": "A table is \"app.table\".",
+      "badTopic": "A topic is lowercase letters, digits, dots, dashes and underscores.",
+      "badCron": "A cron expression has 5 fields.",
+      "badInterval": "An interval is a number and m, h or d.",
+      "starts": {
+        "http": "It is called over HTTP",
+        "manual": "It is run by hand or by other functions",
+        "row": "A record changes",
+        "message": "A message arrives",
+        "schedule": "On a schedule",
+        "every": "At an interval"
+      },
+      "who": {
+        "public": "Anyone",
+        "user": "Signed-in site users",
+        "role": "Site users whose role allows it",
+        "apiKey": "Holders of an API key"
+      },
+      "events": {
+        "created": "created",
+        "updated": "updated",
+        "deleted": "deleted"
+      }
     }
   },
   "openapi": {

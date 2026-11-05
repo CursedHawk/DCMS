@@ -45,6 +45,7 @@ import { SDK_URI } from '../site-source/csharp/client';
 import { type IdeCommand, modifierLabel } from './commands';
 import { IdeCommandPalette, type PaletteMode } from './IdeCommandPalette';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
+import type { Replay } from './functions/RunsView';
 import { PreviewPane } from './PreviewPane';
 import { ShortcutSheet } from './ShortcutSheet';
 import { useIdeShortcuts } from './useIdeShortcuts';
@@ -124,12 +125,13 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
   // Resizable layout: the sidebar view and preview panels remember their width
   // (px) in localStorage; double-clicking a divider restores the default.
   const panel = usePanelState();
-  // Opened from the app's Runs screen: start on the Runs tab (workbench W4).
+  // Opened from the app's Runs screen: start on the Runs view (workbench W4).
   const openOnRuns = repo?.functionsApi && repo.runs !== undefined;
-  const { show: showPanel } = panel;
   useEffect(() => {
-    if (openOnRuns) showPanel('runs');
-  }, [openOnRuns, showPanel]);
+    if (openOnRuns) setSidebarView('runs');
+  }, [openOnRuns]);
+  // A past run picked in the Runs view, run again from the Run tab under the editor.
+  const [replay, setReplay] = useState<Replay>();
   const [panelHeight, setPanelHeight, resetPanelHeight] = useStoredWidth(
     'dcms.ide.panelHeight',
     220,
@@ -647,6 +649,11 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
           onReload={() => session.openBranch(branch)}
           onRestored={(files, version, hashes) => useVfs.getState().load(files, version, hashes)}
           viewWidth={sidebarWidth}
+          runsFunction={repo?.runs}
+          onReplay={(next) => {
+            setReplay(next);
+            panel.show('run');
+          }}
         />
         <Resizer
           ariaLabel={t('ide.resizeSidebar')}
@@ -686,7 +693,7 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
             previewEnabled={showPreview}
             onEnablePreview={() => setShowPreview(true)}
             functionsApi={repo?.functionsApi}
-            runsFunction={repo?.runs}
+            replay={replay}
           />
         </div>
         {showPreview && !repo && (

@@ -9,8 +9,7 @@ import { ConsoleView } from './ConsoleView';
 import { OutputView } from './OutputView';
 import { FUNCTIONS_TABS, PANEL_TABS, type PanelTab, type PanelState } from './panelState';
 import { RunView } from '../functions/RunView';
-import { RunsView, type Replay } from '../functions/RunsView';
-import { useState } from 'react';
+import type { Replay } from '../functions/RunsView';
 
 /**
  * The bottom panel: what the code is saying, under the code it is saying it about.
@@ -35,12 +34,12 @@ export function BottomPanel({
   previewEnabled,
   onEnablePreview,
   functionsApi,
-  runsFunction,
+  replay,
 }: {
-  /** A Functions app's repository: its Run and Runs tabs (workbench). */
+  /** A Functions app's repository: its Run tab (workbench). */
   functionsApi?: string;
-  /** The Runs tab's function filter when the IDE was opened on it. */
-  runsFunction?: string;
+  /** A past run to run again, picked in the Runs sidebar view. */
+  replay?: Replay;
   state: PanelState;
   height: number;
   onHeightDelta: (dy: number) => void;
@@ -52,8 +51,6 @@ export function BottomPanel({
 }) {
   const { t } = useTranslation();
   const { errors, warnings } = countBySeverity(problems);
-  // A replay picked in the Runs tab, handed to the Run tab.
-  const [replay, setReplay] = useState<Replay>();
 
   // Collapsed: just the tab strip, so the panel is always one click away and its counts stay
   // readable. A bottom panel you have to remember exists is one nobody opens.
@@ -108,16 +105,6 @@ export function BottomPanel({
           )}
           {state.tab === 'output' && <OutputView />}
           {state.tab === 'run' && functionsApi && <RunView functionsApi={functionsApi} initial={replay} />}
-          {state.tab === 'runs' && functionsApi && (
-            <RunsView
-              functionsApi={functionsApi}
-              initialFunction={runsFunction}
-              onReplay={(next) => {
-                setReplay(next);
-                state.show('run');
-              }}
-            />
-          )}
           {state.tab === 'console' && <ConsoleView previewEnabled={previewEnabled} />}
           {state.tab === 'build' && (
             <BuildLogView

@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch, Rocket, Search, Sparkles, Zap } from 'lucide-react';
+import { Files, GitBranch, History, Rocket, Search, Sparkles, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { checkDraft, functionsTools } from './agent/functionsTools';
 import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 import { FunctionsView } from './functions/FunctionsView';
+import { RunsView, type Replay } from './functions/RunsView';
+import { NewFunctionDialog } from './functions/NewFunctionDialog';
 
-export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'functions';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'functions' | 'runs';
 
 /**
  * The left sidebar: a slim activity rail plus the active view.
@@ -33,6 +35,8 @@ export function IdeSidebar({
   onRestored,
   viewWidth,
   functionsApi,
+  runsFunction,
+  onReplay,
 }: {
   siteId: string;
   siteName?: string;
@@ -50,9 +54,15 @@ export function IdeSidebar({
   viewWidth?: number;
   /** A Functions app's repository: the agent works with its builds and its SDK. */
   functionsApi?: string;
+  /** The Runs view's function filter when the IDE was opened on it. */
+  runsFunction?: string;
+  /** "Replay against the draft" in the Runs view: the page opens the Run tab with it. */
+  onReplay?: (replay: Replay) => void;
 }) {
   const repo = isRepoWorkspace(siteId);
   const [agentOpened, setAgentOpened] = useState(false);
+  const [newFunction, setNewFunction] = useState(false);
+  const onNewFunction = functionsApi ? () => setNewFunction(true) : undefined;
   if (view === 'agent' && !agentOpened) setAgentOpened(true);
   const { t } = useTranslation();
   const changes = useQuery({
@@ -63,6 +73,13 @@ export function IdeSidebar({
 
   return (
     <div className="flex h-full">
+      {functionsApi && (
+        <NewFunctionDialog
+          open={newFunction}
+          onOpenChange={setNewFunction}
+          app={/\/plugins\/([^/]+)\//.exec(functionsApi)?.[1] ?? 'app'}
+        />
+      )}
       {/* Activity rail */}
       <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
         <RailButton
@@ -105,6 +122,15 @@ export function IdeSidebar({
             <Zap className="h-5 w-5" />
           </RailButton>
         )}
+        {functionsApi && (
+          <RailButton
+            active={view === 'runs'}
+            label={t('ide.runs.title')}
+            onClick={() => onViewChange('runs')}
+          >
+            <History className="h-5 w-5" />
+          </RailButton>
+        )}
         {/* The site agent's tools speak to a site; a repository has one only where its plugin brings tools. */}
         {repo && !functionsApi ? null : (
         <RailButton
@@ -122,7 +148,7 @@ export function IdeSidebar({
         className="shrink-0 border-r bg-card"
         style={{ width: viewWidth != null ? `${viewWidth}px` : '15rem' }}
       >
-        {view === 'files' && <FileTree />}
+        {view === 'files' && <FileTree onNewFunction={onNewFunction} />}
         {view === 'search' && <SearchView />}
         {view === 'scm' && (
           <SourceControlView
@@ -134,7 +160,10 @@ export function IdeSidebar({
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
-        {view === 'functions' && functionsApi && <FunctionsView functionsApi={functionsApi} />}
+        {view === 'functions' && functionsApi && <FunctionsView functionsApi={functionsApi} onNew={onNewFunction} />}
+        {view === 'runs' && functionsApi && (
+          <RunsView functionsApi={functionsApi} initialFunction={runsFunction} onReplay={(r) => onReplay?.(r)} />
+        )}
         {/* Kept mounted once opened, so the conversation (and a run in progress) survives switching
             views; it ends with the page. */}
         {agentOpened && (

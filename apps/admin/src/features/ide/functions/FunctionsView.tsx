@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Badge, Button } from '@dcms/ui';
-import { RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { useVfs } from '../../site-source';
 
@@ -62,7 +62,7 @@ export function describeTrigger(trigger: Record<string, unknown>, t: (key: strin
  * view opens and again a moment after the files stop changing; the build is the server's, so
  * what it lists is exactly what a deployment would hold.
  */
-export function FunctionsView({ functionsApi }: { functionsApi: string }) {
+export function FunctionsView({ functionsApi, onNew }: { functionsApi: string; onNew?: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const rev = useVfs((s) => s.rev);
@@ -97,8 +97,14 @@ export function FunctionsView({ functionsApi }: { functionsApi: string }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden text-sm" data-testid="functions-view">
-      <div className="flex items-center justify-between border-b px-3 py-2">
+      <div className="flex items-center gap-1 border-b px-3 py-2">
         <span className="font-medium">{t('ide.fn.title')}</span>
+        <span className="flex-1" />
+        {onNew && (
+          <Button size="icon" variant="ghost" aria-label={t('ide.newFn.title')} title={t('ide.newFn.title')} onClick={onNew}>
+            <Plus className="h-4 w-4" />
+          </Button>
+        )}
         <Button
           size="icon"
           variant="ghost"
