@@ -21,7 +21,8 @@ RUN pnpm install --frozen-lockfile && pnpm --filter @dcms/admin build
 # The dcms command line (ADR 0031), served by the console that it talks to:
 # npm install -g https://<console>/downloads/dcms-cli.tgz
 RUN mkdir -p /out/downloads && cd packages/cli && npm pack --silent --pack-destination /tmp \
-    && mv /tmp/dcms-cli-*.tgz /out/downloads/dcms-cli.tgz
+    && mv /tmp/dcms-cli-*.tgz /out/downloads/dcms-cli.tgz \
+    && tar tzf /out/downloads/dcms-cli.tgz | grep -qx package/src/dcms.mjs
 
 # The IDE's C# language service (ADR 0030): Roslyn on .NET's WebAssembly runtime, served as
 # static files under /csharp/ and loaded by the console's csharp.worker.ts on the first .cs file.

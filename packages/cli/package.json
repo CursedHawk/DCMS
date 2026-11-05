@@ -4,10 +4,9 @@
   "description": "Develop DCMS functions on your own machine: sign in, link a clone, write the SDK, check, run, deploy.",
   "type": "module",
   "bin": {
-    "dcms": "bin/dcms.mjs"
+    "dcms": "src/dcms.mjs"
   },
   "files": [
-    "bin",
     "src"
   ],
   "engines": {
