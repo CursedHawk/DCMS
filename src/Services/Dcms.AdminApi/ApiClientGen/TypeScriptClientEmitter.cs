@@ -498,7 +498,7 @@ public static class TypeScriptClientEmitter
                 "string" when schema.ContainsKey("x-dcms-media-category") => Runtime("MediaRef"),
                 "string" when schema.ContainsKey("x-dcms-content-ref") => Runtime("ContentRef"),
                 "string" when schema["enum"] is JsonArray values && values.Count > 0 =>
-                    string.Join(" | ", values.Select(v => v is JsonValue sv && sv.TryGetValue<string>(out var s) ? Lit(s) : "string").Distinct()),
+                    string.Join(" | ", values.OfType<JsonNode>().Select(v => v is JsonValue sv && sv.TryGetValue<string>(out var s) ? Lit(s) : "string").Distinct()),
                 "string" => "string",
                 "integer" or "number" => "number",
                 "boolean" => "boolean",

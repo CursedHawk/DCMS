@@ -89,6 +89,9 @@ public sealed class DeploymentService(
             `functions/orders/total.ts` is `orders/total` (`/api/{app}/fn/orders/total`).
             It must `export default defineFunction({ ... })` from `"@dcms/functions"`, and may import other
             files of this repository: keep shared code outside `functions/`, in `lib/` for example.
+            Over HTTP, its handler's input and return types are its API: the site's OpenAPI document and
+            client say them, and a call whose input does not fit gets 400. `access.methods` says which
+            HTTP methods it answers (GET and POST if it does not say).
             Merge into `release` to build; deploy the build from the app's Deployments.
 
             Functions may be C# too, beside TypeScript: a public class deriving from `Function<TIn, TOut>`,

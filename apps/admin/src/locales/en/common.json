@@ -999,7 +999,9 @@
         "schedule": "On schedule {{cron}}",
         "every": "Every {{interval}}",
         "event": "On {{name}}"
-      }
+      },
+      "takes": "takes",
+      "returns": "returns"
     },
     "run": {
       "function": "Function",
@@ -1085,7 +1087,10 @@
         "created": "created",
         "updated": "updated",
         "deleted": "deleted"
-      }
+      },
+      "methods": "Methods",
+      "methodsHint": "GET and DELETE take the input from the query string, the others from the JSON body.",
+      "noMethods": "Pick at least one method."
     }
   },
   "openapi": {

@@ -41,10 +41,15 @@ public static partial class SiteEndpoints
 
     public static void Map(IPluginEndpointBuilder endpoints)
     {
+        // Each function declares which of these it answers; admin-api says 405 to the others.
         endpoints.MapGet("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt);
-        endpoints.MapPost("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(
-            "Each function's access is its own declaration, checked by admin-api; a failed run is in the run history.");
+        endpoints.MapDelete("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(Unaudited);
+        endpoints.MapPost("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(Unaudited);
+        endpoints.MapPut("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(Unaudited);
+        endpoints.MapPatch("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(Unaudited);
     }
+
+    private const string Unaudited = "Each function's access is its own declaration, checked by admin-api; every run is in the run history.";
 
     private const string Exempt = "Public by design: each function declares who may call it, which admin-api checks against the live deployment.";
 
@@ -68,7 +73,7 @@ public static partial class SiteEndpoints
         }
 
         JsonNode? body = null;
-        if (HttpMethods.IsPost(http.Request.Method))
+        if (HttpMethods.IsPost(http.Request.Method) || HttpMethods.IsPut(http.Request.Method) || HttpMethods.IsPatch(http.Request.Method))
         {
             var bytes = await ReadBoundedAsync(http.Request.Body, ct);
             if (bytes is null)

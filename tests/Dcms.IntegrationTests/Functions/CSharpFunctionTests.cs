@@ -15,8 +15,10 @@ namespace Dcms.IntegrationTests.Functions;
 /// its definitions come from the attributes, and a run executes on .NET's WebAssembly runtime in
 /// the same permission-less Deno a TypeScript function gets, reaching DCMS only by host calls.
 /// </summary>
-public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esbuild esbuild, DotnetFunctionsRuntime dotnet)
-    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IClassFixture<DotnetFunctionsRuntime>
+public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esbuild esbuild, DotnetFunctionsRuntime dotnet,
+    FunctionRunnerTests.TypeScript typescript)
+    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IClassFixture<DotnetFunctionsRuntime>,
+      IClassFixture<FunctionRunnerTests.TypeScript>
 {
     private const string SdkTypes = """
         export declare function defineFunction<I, O>(spec: { handler(input: I, ctx: unknown): O | Promise<O> }): typeof spec;
@@ -30,6 +32,7 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
             EsbuildPath = esbuild.Path,
             DotnetHarnessPath = dotnet.HarnessPath,
             CSharpCompilerPath = dotnet.CompilerPath,
+            TypeScriptPath = typescript.Path,
         };
         configure?.Invoke(options);
         return options;
@@ -90,7 +93,7 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
                 public record OrderInput(decimal[] Lines);
 
                 [Function("order-total", Description = "Totals an order.")]
-                [Http(Access.ApiKey)]
+                [Http(Access.ApiKey, Methods = [HttpMethod.Post])]
                 [OnRow("shop.orders", RowEvent.Updated, Fields = ["status"])]
                 [OnMessage("orders.paid")]
                 [UsesTable("shop.orders", "read", "update")]
@@ -117,11 +120,108 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
                 { "kind": "row", "table": "shop.orders", "event": "updated", "fields": ["status"] },
                 { "kind": "message", "topic": "orders.paid" }
               ],
-              "access": { "http": ["apiKey"] },
+              "access": { "http": ["apiKey"], "methods": ["post"] },
               "uses": { "secrets": ["STRIPE_KEY"], "tables": { "shop.orders": ["read", "update"] } },
               "limits": { "timeoutMs": 5000 }
             }
             """)).Should().BeTrue(cs.Definition!.ToJsonString());
+    }
+
+    [DockerFact]
+    public async Task A_functions_types_are_its_input_and_output_schemas_in_both_languages()
+    {
+        var typings = new BuildRequest(new()
+        {
+            ["functions/ts-total.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+
+                interface Line {
+                  /** What is sold. */
+                  sku: string;
+                  qty: number;
+                  note?: string | null;
+                }
+                type Order = { id: string; status: "open" | "paid"; lines: Line[]; tags?: Record<string, string>; at: Date };
+
+                export default defineFunction({
+                  async handler(input: Order): Promise<{ total: number; ids: string[] }> {
+                    return { total: input.lines.length, ids: [input.id] };
+                  },
+                });
+                """,
+            ["functions/CsTotal.cs"] = """
+                namespace Shop;
+
+                public enum Status { Open, Paid }
+                public sealed record Line(string Sku, int Qty, string? Note = null)
+                {
+                    /// <summary>What is sold.</summary>
+                    public string Sku { get; init; } = Sku;
+                }
+                public sealed record Order(Guid Id, Status Status, List<Line> Lines, Dictionary<string, string>? Tags, DateTimeOffset At);
+                public sealed record Total(decimal Sum, string[] Ids);
+
+                [Function("cs-total")]
+                public sealed class CsTotal : Function<Order, Total>
+                {
+                    public override Task<Total> Run(Order input, Context ctx) => Task.FromResult(new Total(input.Lines.Count, [input.Id.ToString()]));
+                }
+                """,
+            ["functions/untyped.ts"] = """
+                import { defineFunction, respond } from "@dcms/functions";
+                export default defineFunction({ handler: (input) => respond(201, "made") });
+                """,
+        }, Dcms.Plugins.Functions.Build.SdkTypings.TypeScript(new([], [])), Dcms.Plugins.Functions.Build.SdkTypings.CSharp(new([], [])));
+        var built = await new FunctionBuilder(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionBuilder>.Instance)
+            .BuildAsync(typings, TestContext.Current.CancellationToken);
+        built.Diagnostics.Should().BeEmpty();
+
+        var ts = built.Functions.Single(f => f.Name == "ts-total");
+        JsonNode.DeepEquals(ts.Input, JsonNode.Parse("""
+            {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "status": { "type": "string", "enum": ["open", "paid"] },
+                "lines": { "type": "array", "items": { "type": "object", "properties": {
+                  "sku": { "type": "string", "description": "What is sold." },
+                  "qty": { "type": "number" },
+                  "note": { "type": ["string", "null"] } }, "required": ["sku", "qty"] } },
+                "tags": { "type": "object", "additionalProperties": { "type": "string" } },
+                "at": { "type": "string", "format": "date-time" }
+              },
+              "required": ["id", "status", "lines", "at"]
+            }
+            """)).Should().BeTrue(ts.Input?.ToJsonString());
+        JsonNode.DeepEquals(ts.Output, JsonNode.Parse("""
+            { "type": "object", "properties": { "total": { "type": "number" }, "ids": { "type": "array", "items": { "type": "string" } } }, "required": ["total", "ids"] }
+            """)).Should().BeTrue(ts.Output?.ToJsonString());
+
+        var cs = built.Functions.Single(f => f.Name == "cs-total");
+        JsonNode.DeepEquals(cs.Input, JsonNode.Parse("""
+            {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "format": "uuid" },
+                "status": { "type": "integer", "enum": [0, 1] },
+                "lines": { "type": "array", "items": { "type": "object", "properties": {
+                  "sku": { "type": "string", "description": "What is sold." },
+                  "qty": { "type": "integer" },
+                  "note": { "type": ["string", "null"] } }, "required": ["qty", "sku"] } },
+                "tags": { "type": ["object", "null"], "additionalProperties": { "type": "string" } },
+                "at": { "type": "string", "format": "date-time" }
+              },
+              "required": ["id", "status", "lines", "at"]
+            }
+            """)).Should().BeTrue(cs.Input?.ToJsonString());
+        JsonNode.DeepEquals(cs.Output, JsonNode.Parse("""
+            { "type": "object", "properties": { "sum": { "type": "number" }, "ids": { "type": "array", "items": { "type": "string" } } }, "required": ["sum", "ids"] }
+            """)).Should().BeTrue(cs.Output?.ToJsonString());
+
+        // A respond(...) answer, or input the code leaves as any JSON, is described as any JSON.
+        var untyped = built.Functions.Single(f => f.Name == "untyped");
+        untyped.Input!.AsObject().Should().BeEmpty();
+        untyped.Output!.AsObject().Should().BeEmpty();
     }
 
     [DockerFact]

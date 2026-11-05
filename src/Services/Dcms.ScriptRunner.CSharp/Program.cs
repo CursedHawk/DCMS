@@ -111,12 +111,16 @@ foreach (var type in compilation.GetSymbolsWithName(_ => true, SymbolFilter.Type
         Report($"{type.Name}: a function is a public, non-abstract, top-level class deriving from Function<TIn, TOut>, with a public parameterless constructor.", location);
         continue;
     }
+    var io = InputOutput(type, baseType);
     functions.Add(new JsonObject
     {
         ["name"] = name,
         ["class"] = type.ContainingNamespace.IsGlobalNamespace ? type.MetadataName : $"{type.ContainingNamespace.ToDisplayString()}.{type.MetadataName}",
         ["file"] = location?.GetLineSpan().Path,
         ["definition"] = Definition(type, function),
+        // What it takes and returns, for the site's OpenAPI document and for checking HTTP calls.
+        ["input"] = Schemas.Of(io[0]),
+        ["output"] = Schemas.Of(io[1]),
     });
 }
 
@@ -139,6 +143,15 @@ output["ok"] = diagnostics.Count == 0;
 Console.Out.Write(output.ToJsonString());
 return;
 
+static ImmutableArray<ITypeSymbol> InputOutput(INamedTypeSymbol type, INamedTypeSymbol? baseType)
+{
+    for (var t = type.BaseType; t is not null; t = t.BaseType)
+    {
+        if (SymbolEqualityComparer.Default.Equals(t.OriginalDefinition, baseType)) return t.TypeArguments;
+    }
+    return [];
+}
+
 static bool Derives(INamedTypeSymbol type, INamedTypeSymbol? baseType)
 {
     for (var t = type.BaseType; t is not null; t = t.BaseType)
@@ -154,6 +167,7 @@ static JsonObject Definition(INamedTypeSymbol type, AttributeData function)
     if (Named(function, "Description") is string description) definition["description"] = description;
     var triggers = new JsonArray();
     var http = new JsonArray();
+    var methods = new JsonArray();
     var tables = new JsonObject();
     var uses = new JsonObject();
     var limits = new JsonObject();
@@ -165,6 +179,7 @@ static JsonObject Definition(INamedTypeSymbol type, AttributeData function)
         {
             case "Dcms.Functions.HttpAttribute":
                 foreach (var who in Strings(args[0])) http.Add(Camel(who));
+                if (Named(a, "Methods") is ImmutableArray<TypedConstant> verbs) foreach (var verb in verbs) methods.Add(Name(verb).ToLowerInvariant());
                 break;
             case "Dcms.Functions.OnRowAttribute":
                 var row = new JsonObject { ["kind"] = "row", ["table"] = (string?)args[0].Value, ["event"] = Event(args[1]) };
@@ -190,9 +205,9 @@ static JsonObject Definition(INamedTypeSymbol type, AttributeData function)
                 triggers.Add(new JsonObject { ["kind"] = "event", ["name"] = (string?)args[0].Value });
                 break;
             case "Dcms.Functions.UsesTableAttribute":
-                var verbs = tables[(string?)args[0].Value ?? ""] as JsonArray ?? [];
-                foreach (var verb in Strings(args[1])) verbs.Add(verb);
-                tables[(string?)args[0].Value ?? ""] = verbs;
+                var granted = tables[(string?)args[0].Value ?? ""] as JsonArray ?? [];
+                foreach (var verb in Strings(args[1])) granted.Add(verb);
+                tables[(string?)args[0].Value ?? ""] = granted;
                 break;
             case "Dcms.Functions.UsesContractsAttribute": Append(uses, "contracts", Strings(args[0])); break;
             case "Dcms.Functions.UsesEgressAttribute": Append(uses, "egress", Strings(args[0])); break;
@@ -214,7 +229,11 @@ static JsonObject Definition(INamedTypeSymbol type, AttributeData function)
     }
     if (tables.Count > 0) uses["tables"] = tables;
     if (triggers.Count > 0) definition["triggers"] = triggers;
-    if (http.Count > 0) definition["access"] = new JsonObject { ["http"] = http };
+    if (http.Count > 0 || methods.Count > 0)
+    {
+        definition["access"] = new JsonObject { ["http"] = http };
+        if (methods.Count > 0) definition["access"]!["methods"] = methods;
+    }
     if (uses.Count > 0) definition["uses"] = uses;
     if (limits.Count > 0) definition["limits"] = limits;
     return definition;

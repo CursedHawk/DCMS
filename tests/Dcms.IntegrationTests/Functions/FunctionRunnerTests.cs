@@ -77,6 +77,66 @@ public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esb
         }
     }
 
+    /// <summary>
+    /// The TypeScript compiler of the version script-runner's Dockerfile pins, which reads
+    /// functions' types into JSON Schema: the repo's pnpm copy when there is one, else that same
+    /// npm tarball, checked against the same checksum.
+    /// </summary>
+    public sealed class TypeScript : IAsyncLifetime
+    {
+        // Keep in step with src/Services/Dcms.ScriptRunner/Dockerfile (TYPESCRIPT_VERSION, TYPESCRIPT_SHA256).
+        private const string Version = "5.9.3";
+        private const string Sha256 = "10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3";
+
+        public string Path { get; private set; } = "";
+        private string? _downloaded;
+
+        public async ValueTask InitializeAsync()
+        {
+            if (!DockerFactAttribute.Available || !OperatingSystem.IsLinux())
+            {
+                return;
+            }
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory is not null && !File.Exists(System.IO.Path.Combine(directory.FullName, "Dcms.sln")))
+            {
+                directory = directory.Parent;
+            }
+            var local = System.IO.Path.Combine(directory?.FullName ?? ".", "node_modules", ".pnpm", $"typescript@{Version}", "node_modules", "typescript");
+            if (File.Exists(System.IO.Path.Combine(local, "lib", "typescript.js")))
+            {
+                Path = local;
+                return;
+            }
+
+            using var http = new HttpClient();
+            var tarball = await http.GetByteArrayAsync($"https://registry.npmjs.org/typescript/-/typescript-{Version}.tgz");
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(tarball)).Should().Be(Sha256);
+            _downloaded = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"typescript-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(System.IO.Path.Combine(_downloaded, "lib"));
+            await using var gzip = new System.IO.Compression.GZipStream(new MemoryStream(tarball), System.IO.Compression.CompressionMode.Decompress);
+            await using var tar = new System.Formats.Tar.TarReader(gzip);
+            while (await tar.GetNextEntryAsync() is { } entry)
+            {
+                var name = entry.Name["package/".Length..];
+                if (name == "lib/typescript.js" || (name.StartsWith("lib/lib.", StringComparison.Ordinal) && name.EndsWith(".d.ts", StringComparison.Ordinal)))
+                {
+                    await entry.ExtractToFileAsync(System.IO.Path.Combine(_downloaded, name), overwrite: false);
+                }
+            }
+            Path = _downloaded;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            if (_downloaded is not null && Directory.Exists(_downloaded))
+            {
+                Directory.Delete(_downloaded, recursive: true);
+            }
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private const string SdkTypes = """
         export interface Ctx {
           db: any;

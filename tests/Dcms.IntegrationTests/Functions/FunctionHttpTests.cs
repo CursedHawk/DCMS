@@ -25,8 +25,9 @@ namespace Dcms.IntegrationTests.Functions;
 /// it in the real sandbox. API keys are made, scoped and revoked through the admin's routes.
 /// </summary>
 [Collection(ContentFlowCollection.Name)]
-public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary deno, FunctionRunnerTests.Esbuild esbuild)
-    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IAsyncLifetime
+public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary deno, FunctionRunnerTests.Esbuild esbuild,
+    FunctionRunnerTests.TypeScript typescript)
+    : IClassFixture<DenoBinary>, IClassFixture<FunctionRunnerTests.Esbuild>, IClassFixture<FunctionRunnerTests.TypeScript>, IAsyncLifetime
 {
     private WebApplicationFactory<ScriptRunnerApp::Program>? _runner;
 
@@ -38,6 +39,7 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
             {
                 b.UseSetting("ScriptRunner:DenoPath", deno.Path);
                 b.UseSetting("ScriptRunner:EsbuildPath", esbuild.Path);
+                b.UseSetting("ScriptRunner:TypeScriptPath", typescript.Path);
             });
         }
         return ValueTask.CompletedTask;
@@ -91,7 +93,18 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
                 """,
             ["functions/orders/total.ts"] = """
                 import { defineFunction } from "@dcms/functions";
-                export default defineFunction({ access: { http: ["public"] }, handler: () => "nested" });
+                interface Order { lines: number[]; coupon?: string }
+                export default defineFunction({
+                  access: { http: ["public"], methods: ["post"] },
+                  handler: (input: Order): { total: number } => ({ total: input.lines.reduce((a, b) => a + b, 0) }),
+                });
+                """,
+            ["functions/search.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({
+                  access: { http: ["public"], methods: ["get", "delete"] },
+                  handler: (input: { q: string; limit?: number; exact?: boolean }) => input,
+                });
                 """,
             ["functions/partner.ts"] = """
                 import { defineFunction } from "@dcms/functions";
@@ -128,11 +141,27 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         post.GetProperty("message").GetString().Should().Be("Hello, Grace!");
         post.GetProperty("method").GetString().Should().Be("POST");
 
-        // A function in a folder answers at its path.
-        var nested = await Call(HttpMethod.Get, "/api/fn/fn/orders/total");
-        nested.StatusCode.Should().Be(HttpStatusCode.OK, await nested.Content.ReadAsStringAsync(ct));
-        (await nested.Content.ReadFromJsonAsync<string>(ct)).Should().Be("nested");
+        // A function in a folder answers at its path, at the methods it declared, taking what its types say.
+        var total = await Call(HttpMethod.Post, "/api/fn/fn/orders/total", new { lines = new[] { 1, 2, 3 } });
+        total.StatusCode.Should().Be(HttpStatusCode.OK, await total.Content.ReadAsStringAsync(ct));
+        (await total.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("total").GetInt32().Should().Be(6);
+        (await Call(HttpMethod.Get, "/api/fn/fn/orders/total")).StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         (await Call(HttpMethod.Get, "/api/fn/fn/orders")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var wrong = await Call(HttpMethod.Post, "/api/fn/fn/orders/total", new { lines = "three", coupon = 5 });
+        wrong.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await wrong.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("problems").EnumerateArray().Select(p => p.GetString())
+            .Should().BeEquivalentTo(["input.lines: expected array, got a string.", "input.coupon: expected string, got a number."]);
+        (await Call(HttpMethod.Post, "/api/fn/fn/orders/total", new { })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // GET takes the query string, read as the input's types: a number is a number.
+        var found = await Call(HttpMethod.Get, "/api/fn/fn/search?q=acme&limit=5&exact=true");
+        found.StatusCode.Should().Be(HttpStatusCode.OK, await found.Content.ReadAsStringAsync(ct));
+        JsonNode.DeepEquals(JsonNode.Parse(await found.Content.ReadAsStringAsync(ct)), JsonNode.Parse("""{"q":"acme","limit":5,"exact":true}"""))
+            .Should().BeTrue();
+        (await Call(HttpMethod.Get, "/api/fn/fn/search?q=acme&limit=many")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Call(HttpMethod.Get, "/api/fn/fn/search")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Call(HttpMethod.Delete, "/api/fn/fn/search?q=x")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Call(HttpMethod.Put, "/api/fn/fn/search", new { q = "x" })).StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
 
         // Its own answer: status and allowed headers; never a cookie.
         var made = await Call(HttpMethod.Get, "/api/fn/fn/made");
@@ -192,12 +221,24 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         paths["/api/fn/fn/hello"]!["post"]!["x-dcms-client"]!.AsArray().Select(p => p!.GetValue<string>()).Should().Equal("fn", "hello", "post");
         paths["/api/fn/fn/partner"]!["get"]!["parameters"]![0]!["name"]!.GetValue<string>().Should().Be("X-Api-Key");
         paths.ContainsKey("/api/fn/fn/internal").Should().BeFalse();
-        paths["/api/fn/fn/orders/total"]!["get"]!["x-dcms-client"]!.AsArray().Select(p => p!.GetValue<string>()).Should().Equal("fn", "orders", "total", "get");
+        // Only the methods each answers, with its types: the body or query parameters in, the result out.
+        var totalPath = paths["/api/fn/fn/orders/total"]!.AsObject();
+        totalPath.Select(p => p.Key).Should().Equal("post");
+        totalPath["post"]!["x-dcms-client"]!.AsArray().Select(p => p!.GetValue<string>()).Should().Equal("fn", "orders", "total", "post");
+        totalPath["post"]!["requestBody"]!["content"]!["application/json"]!["schema"]!["required"]!.AsArray().Select(r => r!.GetValue<string>())
+            .Should().Equal("lines");
+        totalPath["post"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!["properties"]!["total"]!["type"]!.GetValue<string>()
+            .Should().Be("number");
+        var search = paths["/api/fn/fn/search"]!.AsObject();
+        search.Select(p => p.Key).Should().BeEquivalentTo(["get", "delete"]);
+        search["get"]!["parameters"]!.AsArray().Select(p => (p!["name"]!.GetValue<string>(), p["in"]!.GetValue<string>(), p["required"]!.GetValue<bool>()))
+            .Should().BeEquivalentTo([("q", "query", true), ("limit", "query", false), ("exact", "query", false)]);
+        paths["/api/fn/fn/hello"]!.AsObject().Select(p => p.Key).Should().BeEquivalentTo(["get", "post"]);
         using (var scope = admin.Services.CreateScope())
         {
             var live = await LiveFunctions.ReadAsync(scope.ServiceProvider.GetRequiredService<FunctionsDbContext>(), tenantId, tenantId, instanceId, ct);
             live.Deployment.Should().Be(1);
-            live.Functions.Select(f => f.Name).Should().BeEquivalentTo(["hello", "made", "orders/total", "partner", "members", "boom"]);
+            live.Functions.Select(f => f.Name).Should().BeEquivalentTo(["hello", "made", "orders/total", "search", "partner", "members", "boom"]);
         }
 
         // Signed-in only, called anonymously.
@@ -251,6 +292,9 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         var functions = built["functions"]!.AsArray();
         var (specs, problems) = FunctionManifest.Read(functions.ToDictionary(f => f!["name"]!.GetValue<string>(), f => f!["definition"]?.DeepClone()));
         problems.Should().BeEmpty();
+        // What Builder adds from the build: each function's input and output types.
+        var byName = functions.ToDictionary(f => f!["name"]!.GetValue<string>());
+        specs = specs.Select(s => s with { Input = FunctionManifest.Schema(byName[s.Name]!["input"]), Output = FunctionManifest.Schema(byName[s.Name]!["output"]) }).ToList();
 
         using var scope = admin.Services.CreateScope();
         using var rls = RlsScope.Environment(tenantId, tenantId);

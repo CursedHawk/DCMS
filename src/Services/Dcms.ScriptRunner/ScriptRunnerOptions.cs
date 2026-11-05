@@ -26,6 +26,13 @@ public sealed class ScriptRunnerOptions
     public string RuntimePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "sdk-runtime.js");
     public string EsbuildPath { get; set; } = "esbuild";
 
+    /// <summary>
+    /// The TypeScript compiler (its <c>lib/typescript.js</c> and <c>lib/lib.*.d.ts</c>), which
+    /// type-schemas.js runs to read a function's input and output types as JSON Schema.
+    /// </summary>
+    public string TypeScriptPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "typescript");
+    public string TypeSchemasPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "type-schemas.js");
+
     /// <summary>The <c>dotnet</c> host that runs dcms-csc, the C# compiler of a build (ADR 0030).</summary>
     public string DotnetPath { get; set; } = "dotnet";
     public string CSharpCompilerPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "csc", "dcms-csc.dll");

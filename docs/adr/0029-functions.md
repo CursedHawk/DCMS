@@ -116,7 +116,7 @@ Manual, job and HTTP runs run at once and are recorded in the same history. Each
 
 ### HTTP
 
-Functions are called at `GET|POST /api/{instance}/fn/{function}` on the site plane.
+Functions are called at `/api/{instance}/fn/{function}` on the site plane, with the methods each declares (`GET` and `POST` unless it says otherwise). A function's name is its path under `functions/`, folders included (`functions/orders/total.ts` is `orders/total`).
 - Each function declares who may call it: `public`, a signed-in user or role of the environment's User Authentication realm, and/or an **API key**.
 - API keys are scoped to the instance, stored hashed, per environment, and shown once.
 - content-api authenticates the caller and rate-limits the request, then forwards it to admin-api's internal invoke, where the broker runs. Secrets and Transit decryption stay out of the internet-facing service.
@@ -125,10 +125,16 @@ As built (F7):
 - `access.http` takes `public`, `user` (anyone signed in to the realm), `role` and `apiKey`. `role` follows Dynamic Apps' manual flows: Functions offers each such function to the roles screen as resource `fn:{name}`, action `invoke` (`users.resources@1`). content-api asks `users.access@1` whether the user holds it.
 - content-api throttles (120 calls a minute per address, 3,000 per app), caps the body at 1 MiB, and passes on only safe headers. It forwards the caller as it found them, the raw `X-Api-Key` included, to `/api/internal/functions/invoke`. That route accepts only a client-credentials token with the `dcms.functions` scope (`ServicePrincipalGuard`). The access decision and the key check happen there, against the live deployment.
 - Keys are `dfk_` plus 32 random bytes. They are found by a 12-character prefix and compared by SHA-256 in constant time, and may be limited to named functions.
-- A function's input is a POST's body, else the query. It answers with any JSON (200), or with `respond(status, body, headers)`, whose headers are limited to an allowlist (no cookies or CORS). A function that fails answers 500 with no detail. Every HTTP run is recorded (user, 2026-11-05). So that a public endpoint cannot flood the history, the hourly sweep keeps only a function's newest 1,000 successful HTTP runs; failed ones stay for the usual 30 days.
+- A function's input is the query string for `GET` and `DELETE`, the JSON body otherwise. It answers with any JSON (200), or with `respond(status, body, headers)`, whose headers are limited to an allowlist (no cookies or CORS). A function that fails answers 500 with no detail. Every HTTP run is recorded (user, 2026-11-05). So that a public endpoint cannot flood the history, the hourly sweep keeps only a function's newest 1,000 successful HTTP runs; failed ones stay for the usual 30 days.
+- **Methods, types and validation (#610, user, 2026-11-05).**
+  - `access.methods` (C#: `[Http(..., Methods = [HttpMethod.Post])]`) lists the methods it answers among get, post, put, patch and delete; any other gets 405. None declared: GET and POST.
+  - The build reads what each function takes and returns as JSON Schema: TypeScript from the handler's parameter and return types, by the TypeScript compiler (pinned in the runner image, run by `type-schemas.js` with read access to the build only, never running the code); C# from `TIn`/`TOut` in dcms-csc, as System.Text.Json's web defaults serialize them (camelCase, enums as numbers). The SDK's `Json`, `object`, `JsonNode` and a `respond(...)` answer are `{}`: any JSON. Doc comments become descriptions.
+  - Bounds: 8 levels, 1,000 nodes and 32,000 characters per schema, recursion cut to `{}`; admin-api keeps a schema only if it uses the keywords it writes (`FunctionManifest.Schema`). Reading types failing is not a build failure: the functions are then described and called as taking any JSON.
+  - admin-api checks an HTTP call's input against the schema before a sandbox starts: 400 with up to ten "path: what was expected" problems. Query values are read as the types their properties say (`?limit=5` is a number). Other triggers and `functions.invoke` are not checked.
+  - The OpenAPI document has each declared method: `GET`/`DELETE` with the input's properties as query parameters, the others with it as the request body, and the output as the 200 response; so the generated client is typed.
 - `?async=1` enqueues the run as a tracked job and answers 202 with its id.
 - At most 4 HTTP runs per tenant at once on a replica; past that, 503.
-- The live deployment's HTTP functions are in the tenant's OpenAPI document and generated client (F13): each as `GET` and `POST` `/fn/{name}`, client `api.{instance}.fn.{name}.get|post`, with who may call it and the `X-Api-Key` header where keys are accepted. content-api cannot read deployments, so it asks admin-api's `/api/internal/functions/live` (same `dcms.functions` scope) and remembers the answer for 30 s; the live deployment's number is the instance's API version, so a deploy rebuilds cached documents.
+- The live deployment's HTTP functions are in the tenant's OpenAPI document and generated client (F13): each at its methods, `/fn/{name}`, client `api.{instance}.fn.{…name's segments}.{method}`, with who may call it and the `X-Api-Key` header where keys are accepted. content-api cannot read deployments, so it asks admin-api's `/api/internal/functions/live` (same `dcms.functions` scope) and remembers the answer for 30 s; the live deployment's number is the instance's API version, so a deploy rebuilds cached documents.
 
 ### AI
 

@@ -22,8 +22,11 @@ public sealed record BuildDiagnostic(string Message, string? File = null, int? L
 /// <param name="File">Where it is defined, for problems found in its definition.</param>
 /// <param name="Class">dotnet: the class to run, by its full name.</param>
 /// <param name="SourceMap">deno-ts: the bundle's source map (no sources), to map a stack frame back to the repository.</param>
+/// <param name="Input">What it takes, as JSON Schema; <c>{}</c> or null when its type says nothing narrower than any JSON.</param>
+/// <param name="Output">What it returns, likewise.</param>
 public sealed record BuiltFunction(string Name, string Bundle, JsonNode? Definition,
-    string Runtime = FunctionBuilder.TypeScript, string? File = null, string? Class = null, string? SourceMap = null);
+    string Runtime = FunctionBuilder.TypeScript, string? File = null, string? Class = null, string? SourceMap = null,
+    JsonNode? Input = null, JsonNode? Output = null);
 
 /// <param name="Assembly">The repository's C# compiled, base64: one assembly every C# function of the build runs from.</param>
 /// <param name="Pdb">Its portable PDB, base64: a function's errors name their file and line with it.</param>
@@ -194,7 +197,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         }
         var functions = (result["functions"] as JsonArray ?? [])
             .Select(f => new BuiltFunction(f!["name"]!.GetValue<string>(), "", f["definition"]?.DeepClone(), Dotnet,
-                f["file"]?.GetValue<string>(), f["class"]?.GetValue<string>()))
+                f["file"]?.GetValue<string>(), f["class"]?.GetValue<string>(),
+                Input: f["input"]?.DeepClone(), Output: f["output"]?.DeepClone()))
             .ToList();
         return new BuildResult(true, [], functions, assembly, pdb);
     }
@@ -273,6 +277,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                     return new BuildResult(false, check, []);
                 }
 
+                var schemas = await SchemasAsync(root.FullName, entries, deadline.Token);
                 var functions = new List<BuiltFunction>();
                 foreach (var (name, entry) in entries)
                 {
@@ -288,7 +293,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                         diagnostics.Add(new BuildDiagnostic(error, entry));
                         continue;
                     }
-                    functions.Add(new BuiltFunction(name, bundle, definition, TypeScript, entry, SourceMap: map));
+                    functions.Add(new BuiltFunction(name, bundle, definition, TypeScript, entry, SourceMap: map,
+                        Input: schemas?[name]?["input"]?.DeepClone(), Output: schemas?[name]?["output"]?.DeepClone()));
                 }
                 return diagnostics.Count > 0 ? new BuildResult(false, diagnostics, []) : new BuildResult(true, [], functions);
             }
@@ -437,6 +443,49 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         }
     }
 
+    /// <summary>
+    /// Each function's input and output types as JSON Schema, read by the TypeScript compiler
+    /// (type-schemas.js), which reads the code and never runs it. Null when that fails: the
+    /// functions are then described as taking and returning any JSON, as they were before.
+    /// </summary>
+    private async Task<JsonObject?> SchemasAsync(string root, IReadOnlyDictionary<string, string> entries, CancellationToken ct)
+    {
+        var cache = Directory.CreateTempSubdirectory("deno-");
+        int exit;
+        string output, stdout;
+        try
+        {
+            (exit, output, stdout) = await RunAsync(_o.DenoPath,
+                ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
+                 $"--allow-read={root},{_o.TypeScriptPath}", $"--v8-flags=--max-old-space-size={_o.BuildHeapMegabytes}",
+                 _o.TypeSchemasPath, _o.TypeScriptPath, root, .. entries.Select(e => $"{e.Key}={e.Value}")],
+                _o.BuildDataLimitMegabytes, root, new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName }, ct, maxOutputChars: 4_000_000);
+        }
+        finally
+        {
+            try
+            {
+                cache.Delete(recursive: true);
+            }
+            catch (IOException)
+            {
+                // A temp directory; the next deploy of this host clears it.
+            }
+        }
+        if (exit == 0)
+        {
+            try
+            {
+                return JsonNode.Parse(stdout) as JsonObject;
+            }
+            catch (JsonException)
+            {
+            }
+        }
+        logger.LogWarning("Reading the functions' types failed (exit {Exit}): {Output}", exit, output.Length > 2000 ? output[..2000] : output);
+        return null;
+    }
+
     private async Task<List<BuildDiagnostic>> CheckAsync(string root, IEnumerable<string> entries, CancellationToken ct)
     {
         var cache = Directory.CreateTempSubdirectory("deno-");
@@ -571,11 +620,11 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     }
 
     private static async Task<(int Exit, string Output, string Stdout)> RunAsync(string program, IEnumerable<string> args, int dataLimitMegabytes,
-        string root, IReadOnlyDictionary<string, string>? environment, CancellationToken ct)
+        string root, IReadOnlyDictionary<string, string>? environment, CancellationToken ct, int maxOutputChars = 64_000)
     {
         using var process = Confined.Start(program, args, dataLimitMegabytes * 1024L * 1024, environment, root);
         process.StandardInput.Close();
-        var stdout = Confined.ReadBoundedAsync(process.StandardOutput, 64_000, onOverflow: null);
+        var stdout = Confined.ReadBoundedAsync(process.StandardOutput, maxOutputChars, onOverflow: null);
         var stderr = Confined.ReadBoundedAsync(process.StandardError, 64_000, onOverflow: null);
         try
         {

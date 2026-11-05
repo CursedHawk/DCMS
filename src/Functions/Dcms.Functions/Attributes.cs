@@ -16,12 +16,21 @@ public sealed class FunctionAttribute(string name) : Attribute
     public string? Description { get; set; }
 }
 
-/// <summary>Who may call it over HTTP, at GET or POST <c>/api/{app}/fn/{name}</c>. Without it, it is not callable over HTTP.</summary>
+/// <summary>
+/// Who may call it over HTTP, at <c>/api/{app}/fn/{name}</c>. Without it, it is not callable over HTTP.
+/// Its input is the query string for GET and DELETE, the JSON body otherwise, checked against
+/// <c>TIn</c>: a call that does not fit gets 400 before the function runs.
+/// </summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class HttpAttribute(params Access[] access) : Attribute
 {
     public Access[] Access { get; } = access;
+
+    /// <summary>The methods it answers; any other gets 405. None given: GET and POST.</summary>
+    public HttpMethod[] Methods { get; set; } = [];
 }
+
+public enum HttpMethod { Get, Post, Put, Patch, Delete }
 
 public enum Access
 {

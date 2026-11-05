@@ -87,6 +87,14 @@ public static class InvokeEndpoint
             return Results.NotFound(new { error = "There is no such function." });
         }
 
+        // Its methods are in the site's OpenAPI document: saying which is no secret.
+        var methods = target.Function.HttpMethods;
+        if (!methods.Contains(body.Method.ToLowerInvariant()))
+        {
+            return Results.Json(new { error = $"This function answers {string.Join(", ", methods.Select(m => m.ToUpperInvariant()))}." },
+                statusCode: StatusCodes.Status405MethodNotAllowed);
+        }
+
         var http = target.Function.Http;
         var caller = body.Caller;
         var allowed = http.Contains("public")
@@ -101,8 +109,15 @@ public static class InvokeEndpoint
                 : Results.Json(new { error = "Sign in, or send an API key in X-Api-Key." }, statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        // What the function receives: a POST's body, else the query string.
-        var input = body.Method == "POST" ? body.Body?.DeepClone() : JsonNodeOf(body.Query);
+        // What the function receives: the body, or for GET and DELETE the query string, read as its
+        // input's types say; then checked against them, before anything runs.
+        var input = body.Method is "GET" or "DELETE"
+            ? InputCheck.FromQuery(body.Query.Where(q => q.Key != "async").ToDictionary(), target.Function.Input)
+            : body.Body?.DeepClone();
+        if (InputCheck.Problems(input, target.Function.Input) is { Count: > 0 } problems)
+        {
+            return Results.Json(new { error = "The input does not fit the function's.", problems }, statusCode: StatusCodes.Status400BadRequest);
+        }
         if (body.Async)
         {
             var ticket = await RunJob.EnqueueAsync(context, body.InstanceId, body.Function, input, dedupeKey: null, generation: 1, ct);

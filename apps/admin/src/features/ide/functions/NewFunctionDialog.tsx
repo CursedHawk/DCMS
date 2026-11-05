@@ -12,7 +12,7 @@ import {
   Label,
 } from '@dcms/ui';
 import { useVfs } from '../../site-source';
-import { fileOf, problemOf, starterOf, type HttpAccess, type NewFunction, type Start } from './newFunction';
+import { fileOf, METHODS, problemOf, starterOf, type HttpAccess, type NewFunction, type Start } from './newFunction';
 
 const STARTS: Start[] = ['http', 'manual', 'row', 'message', 'schedule', 'every'];
 const ACCESS: HttpAccess[] = ['public', 'user', 'role', 'apiKey'];
@@ -23,6 +23,7 @@ const EMPTY: NewFunction = {
   description: '',
   start: 'http',
   access: ['user'],
+  methods: ['get', 'post'],
   table: '',
   event: 'updated',
   topic: '',
@@ -128,6 +129,23 @@ export function NewFunctionDialog({ open, onOpenChange, app }: { open: boolean; 
                   {t(`ide.newFn.who.${a}`)}
                 </label>
               ))}
+            </fieldset>
+          )}
+          {f.start === 'http' && (
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">{t('ide.newFn.methods')}</legend>
+              <div className="flex flex-wrap gap-3">
+                {METHODS.map((m) => (
+                  <label key={m} className="flex items-center gap-1.5 font-mono text-xs">
+                    <Checkbox
+                      checked={f.methods.includes(m)}
+                      onCheckedChange={(on) => set({ methods: on ? [...f.methods, m] : f.methods.filter((x) => x !== m) })}
+                    />
+                    {m.toUpperCase()}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">{t('ide.newFn.methodsHint')}</p>
             </fieldset>
           )}
           {f.start === 'row' && (

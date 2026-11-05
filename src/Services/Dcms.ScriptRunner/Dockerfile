@@ -27,6 +27,18 @@ RUN curl -fsSL -o /tmp/esbuild.tgz "https://registry.npmjs.org/@esbuild/linux-x6
     && echo "${ESBUILD_SHA256}  /tmp/esbuild.tgz" | sha256sum -c - \
     && tar -xzf /tmp/esbuild.tgz -C /tmp && install -m 0755 /tmp/package/bin/esbuild /esbuild
 
+# The TypeScript compiler reads each function's input and output types into JSON Schema at deploy
+# time (type-schemas.js); it reads tenant code and never runs it. Pinned by version and checksum,
+# kept in step with the repo's own (node_modules) and TypeScriptPackage in the integration tests.
+# Only the compiler and its lib .d.ts files are kept.
+FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0 AS typescript
+ARG TYPESCRIPT_VERSION=5.9.3
+ARG TYPESCRIPT_SHA256=10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3
+RUN curl -fsSL -o /tmp/typescript.tgz "https://registry.npmjs.org/typescript/-/typescript-${TYPESCRIPT_VERSION}.tgz" \
+    && echo "${TYPESCRIPT_SHA256}  /tmp/typescript.tgz" | sha256sum -c - \
+    && tar -xzf /tmp/typescript.tgz -C /tmp \
+    && mkdir -p /typescript/lib && cp /tmp/package/lib/typescript.js /tmp/package/lib/lib.*.d.ts /typescript/lib/
+
 # Pyroscope .NET profiler, as in the other services (TODO/PYROSCOPE-INTGERATION-PLAN.MD). Only
 # the .NET host loads it; a script's Deno process starts with a cleared environment.
 FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0 AS pyroscope
@@ -57,6 +69,7 @@ ENV CORECLR_ENABLE_PROFILING=1 \
     ScriptRunner__EsbuildPath=/usr/local/bin/esbuild
 WORKDIR /app
 COPY --from=build /app .
+COPY --from=typescript /typescript /app/typescript
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 USER $APP_UID

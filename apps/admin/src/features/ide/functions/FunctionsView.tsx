@@ -6,6 +6,7 @@ import { Badge, Button } from '@dcms/ui';
 import { Plus, RefreshCw } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { useVfs } from '../../site-source';
+import { typeText, type Schema } from './typeText';
 
 /** A function as the build read it (DeploymentService.DraftCheck.Specs). */
 export interface FunctionSpec {
@@ -16,7 +17,14 @@ export interface FunctionSpec {
   http: string[];
   uses: { tables: Record<string, string[]>; contracts: string[]; egress: string[]; secrets: string[]; emits: string[] };
   file?: string | null;
+  /** The methods it answers over HTTP (the server fills in GET and POST when it declared none). */
+  httpMethods?: string[];
+  /** What it takes and returns, as JSON Schema read from its types; absent or {} is any JSON. */
+  input?: Schema | null;
+  output?: Schema | null;
 }
+
+const short = (text: string) => (text.length > 160 ? `${text.slice(0, 159)}…` : text);
 
 interface DraftCheck {
   ok: boolean;
@@ -138,7 +146,22 @@ export function FunctionsView({ functionsApi, onNew }: { functionsApi: string; o
                 {fn.triggers.map((trigger, i) => (
                   <li key={i}>{describeTrigger(trigger, t)}</li>
                 ))}
-                {fn.http.length > 0 && <li>{t('ide.fn.http', { who: fn.http.join(', ') })}</li>}
+                {fn.http.length > 0 && (
+                  <li>
+                    {t('ide.fn.http', { who: fn.http.join(', ') })}
+                    {fn.httpMethods?.length ? <span className="font-mono"> · {fn.httpMethods.map((m) => m.toUpperCase()).join(', ')}</span> : null}
+                  </li>
+                )}
+                {fn.http.length > 0 && (
+                  <li className="font-mono" title={typeText(fn.input)}>
+                    {t('ide.fn.takes')} {short(typeText(fn.input))}
+                  </li>
+                )}
+                {fn.http.length > 0 && (
+                  <li className="font-mono" title={typeText(fn.output)}>
+                    {t('ide.fn.returns')} {short(typeText(fn.output))}
+                  </li>
+                )}
                 {Object.entries(fn.uses.tables).map(([table, verbs]) => (
                   <li key={table}>{t('ide.fn.table', { table, verbs: verbs.join(', ') })}</li>
                 ))}

@@ -38,6 +38,18 @@ public sealed record FunctionSpec(
 {
     /// <summary>The repository file it is defined in, for the editor to open (absent in deployments built before it was kept).</summary>
     public string? File { get; init; }
+
+    /// <summary>The HTTP methods it declared (<c>access.methods</c>), lowercase; none declared is GET and POST.</summary>
+    public IReadOnlyList<string> Methods { get; init; } = [];
+
+    /// <summary>What it takes, as JSON Schema, read from its types by the build; null or <c>{}</c> is any JSON.</summary>
+    public JsonObject? Input { get; init; }
+
+    /// <summary>What it returns, likewise.</summary>
+    public JsonObject? Output { get; init; }
+
+    /// <summary>The methods it answers over HTTP.</summary>
+    public IReadOnlyList<string> HttpMethods => Methods.Count > 0 ? Methods : FunctionManifest.DefaultMethods;
 }
 
 public sealed record ManifestProblem(string Function, string Message);
@@ -59,6 +71,10 @@ public static partial class FunctionManifest
 
     private static readonly string[] Events = ["form.submitted", "visitor.registered", "user.invited", "user.activated"];
     private static readonly string[] Verbs = ["read", "create", "update", "delete"];
+
+    /// <summary>What an HTTP function answers when it declares no methods: as before methods could be declared.</summary>
+    public static readonly IReadOnlyList<string> DefaultMethods = ["get", "post"];
+    private static readonly string[] AllMethods = ["get", "post", "put", "patch", "delete"];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,62}\.[A-Za-z_][A-Za-z0-9_]{0,63}$")]
@@ -199,9 +215,15 @@ public static partial class FunctionManifest
         }
 
         var http = new List<string>();
+        var methods = new List<string>();
         if (definition["access"] is JsonObject access)
         {
-            Known(access, problems, "access.", "http");
+            Known(access, problems, "access.", "http", "methods");
+            foreach (var method in Strings(access["methods"], 5, "access.methods", problems).Distinct())
+            {
+                if (AllMethods.Contains(method)) methods.Add(method);
+                else problems.Add($"access.methods: '{method}' is not \"get\", \"post\", \"put\", \"patch\" or \"delete\".");
+            }
             foreach (var who in Strings(access["http"], 10, "access.http", problems))
             {
                 if (who is "public" or "user" or "role" or "apiKey")
@@ -217,6 +239,10 @@ public static partial class FunctionManifest
         else if (definition["access"] is not null)
         {
             problems.Add("access must be an object.");
+        }
+        if (methods.Count > 0 && http.Count == 0)
+        {
+            problems.Add("access.methods: say who may call it over HTTP (access.http) too.");
         }
 
         var tables = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
@@ -279,7 +305,33 @@ public static partial class FunctionManifest
                 Notifications = notifications.Distinct().ToList(),
                 Links = links.Distinct().ToList(),
             },
-            timeout, heap);
+            timeout, heap) { Methods = methods };
+    }
+
+    private static readonly HashSet<string> SchemaKeywords =
+        ["type", "properties", "required", "items", "additionalProperties", "enum", "format", "description", "anyOf"];
+
+    /// <summary>
+    /// A schema the build read from a function's types, if it is one this platform writes and
+    /// checks: only its own keywords, bounded. Anything else is null, so the function is
+    /// described and called as taking any JSON, as before schemas were read.
+    /// </summary>
+    public static JsonObject? Schema(JsonNode? node)
+    {
+        if (node is not JsonObject schema || schema.Count == 0 || schema.ToJsonString().Length > 32_000) return null;
+        return Valid(schema, 0) ? (JsonObject)schema.DeepClone() : null;
+
+        static bool Valid(JsonNode? node, int depth) => node switch
+        {
+            JsonObject o when depth <= 10 => o.All(p => SchemaKeywords.Contains(p.Key) && p.Key switch
+            {
+                "properties" => p.Value is JsonObject props && props.All(q => q.Key.Length <= 128 && Valid(q.Value, depth + 1)),
+                "items" or "additionalProperties" => Valid(p.Value, depth + 1),
+                "anyOf" => p.Value is JsonArray any && any.All(a => Valid(a, depth + 1)),
+                _ => true,
+            }),
+            _ => false,
+        };
     }
 
     private static bool Flag(JsonNode? node, string where, List<string> problems)

@@ -1028,7 +1028,9 @@
         "schedule": "Podle plánu {{cron}}",
         "every": "Každých {{interval}}",
         "event": "Při {{name}}"
-      }
+      },
+      "takes": "přijímá",
+      "returns": "vrací"
     },
     "run": {
       "function": "Funkce",
@@ -1114,7 +1116,10 @@
         "created": "vytvořen",
         "updated": "upraven",
         "deleted": "smazán"
-      }
+      },
+      "methods": "Metody",
+      "methodsHint": "GET a DELETE berou vstup z query stringu, ostatní z JSON těla.",
+      "noMethods": "Vyberte aspoň jednu metodu."
     }
   },
   "openapi": {

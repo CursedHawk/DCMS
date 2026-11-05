@@ -41,12 +41,18 @@ public static class FunctionTypings
         };
 
         /**
-         * Who may call it over HTTP, GET or POST /api/{app}/fn/{name}. Without it, it is not callable over HTTP.
+         * Who may call it over HTTP, at /api/{app}/fn/{name}. Without it, it is not callable over HTTP.
          * "public": anyone. "user": anyone signed in to the site. "role": site users a role grants
          * "invoke" on this function (Users → Roles). "apiKey": callers presenting one of this app's keys in X-Api-Key.
+         *
+         * Its input is the query string for GET and DELETE, the JSON body otherwise, checked against
+         * the handler's input type: a call that does not fit gets 400 before it runs. Its input and
+         * return types are also what the site's OpenAPI document and generated client say it takes and gives.
          */
         export interface Access {
           http?: Array<"public" | "user" | "role" | "apiKey">;
+          /** The methods it answers; any other gets 405. Without it: GET and POST. */
+          methods?: Array<"get" | "post" | "put" | "patch" | "delete">;
         }
 
         /** Everything the function may reach. Whatever is not here is refused at run time. */

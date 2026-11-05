@@ -15,7 +15,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Functions.Http;
 
-public sealed record LiveFunction(string Name, string? Description, IReadOnlyList<string> Access);
+/// <param name="Methods">The methods it answers, lowercase (none: GET and POST, for documents cached before they were sent).</param>
+/// <param name="Input">What it takes, as JSON Schema; null is any JSON.</param>
+/// <param name="Output">What it returns, likewise.</param>
+public sealed record LiveFunction(string Name, string? Description, IReadOnlyList<string> Access,
+    IReadOnlyList<string>? Methods = null, JsonObject? Input = null, JsonObject? Output = null);
 
 /// <summary>The live deployment's number and its functions callable over HTTP; number 0 when nothing is live.</summary>
 public sealed record LiveHttp(int Deployment, IReadOnlyList<LiveFunction> Functions);
@@ -51,7 +55,7 @@ public static class LiveFunctions
             ? new LiveHttp(0, [])
             : new LiveHttp(live.Number, FunctionManifest.Deserialize(live.Manifest)
                 .Where(f => f.Http.Count > 0)
-                .Select(f => new LiveFunction(f.Name, f.Description, f.Http))
+                .Select(f => new LiveFunction(f.Name, f.Description, f.Http, f.HttpMethods, f.Input, f.Output))
                 .ToList());
     }
 
@@ -94,7 +98,10 @@ public static class LiveFunctions
         }
     }
 
-    /// <summary>Each HTTP function as <c>GET</c> (input from the query) and <c>POST</c> (input from the JSON body).</summary>
+    /// <summary>
+    /// Each HTTP function at each method it answers: GET and DELETE take the input as query
+    /// parameters, the others as the JSON body; the answer is its output. Both as their types say.
+    /// </summary>
     public static OpenApiFragment Fragment(PluginInstanceContext instance, LiveHttp? live, PluginManifest manifest)
     {
         var paths = new List<OpenApiPathFragment>();
@@ -120,13 +127,30 @@ public static class LiveFunctions
             // "orders/total" is /fn/orders/total, operation …_fn_orders_total_get, client fn.orders.total.get.
             var segments = function.Name.Split('/');
             var id = $"{instance.Slug}_fn_{string.Join('_', segments)}";
-            paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", "get", $"{id}_get",
-                $"Call {function.Name}", description + "\n\nThe query string is the input.", new JsonObject(),
-                Parameters: parameters, ClientPath: ["fn", .. segments, "get"]));
-            paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", "post", $"{id}_post",
-                $"Call {function.Name}", description, new JsonObject(), RequestBodySchema: new JsonObject(),
-                Parameters: parameters, ClientPath: ["fn", .. segments, "post"]));
+            var output = function.Output?.DeepClone() ?? new JsonObject();
+            foreach (var method in function.Methods is { Count: > 0 } declared ? declared : FunctionManifest.DefaultMethods)
+            {
+                var query = method is "get" or "delete";
+                IReadOnlyList<JsonNode>? all = query ? [.. parameters ?? [], .. QueryParameters(function.Input)] : parameters;
+                paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", method, $"{id}_{method}",
+                    $"Call {function.Name}", query ? description + "\n\nThe query string is the input." : description, output.DeepClone(),
+                    RequestBodySchema: query ? null : function.Input?.DeepClone() ?? new JsonObject(),
+                    Parameters: all is { Count: > 0 } ? all : null, ClientPath: ["fn", .. segments, method]));
+            }
         }
         return new OpenApiFragment(instance.Name, $"{instance.Description}\n\n{manifest.Description}", paths, new Dictionary<string, JsonNode>());
+    }
+
+    /// <summary>An object input's properties, as the query parameters a GET or DELETE sends it in.</summary>
+    private static IEnumerable<JsonNode> QueryParameters(JsonObject? input)
+    {
+        if (input?["properties"] is not JsonObject properties) yield break;
+        var required = (input["required"] as JsonArray ?? []).Select(r => r?.GetValue<string>()).ToHashSet();
+        foreach (var (name, schema) in properties)
+        {
+            var parameter = new JsonObject { ["name"] = name, ["in"] = "query", ["required"] = required.Contains(name), ["schema"] = schema?.DeepClone() };
+            if (schema?["description"] is JsonValue d) parameter["description"] = d.DeepClone();
+            yield return parameter;
+        }
     }
 }
