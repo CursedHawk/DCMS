@@ -26,6 +26,21 @@ public sealed record RunDetail(RunSummary Run, JsonElement? Input, JsonElement? 
 
 public sealed record RunPage(IReadOnlyList<RunSummary> Items, int Page, bool More);
 
+/// <summary>
+/// What a test or manual run tells the function started it (workbench W2): a row event, a
+/// message, an HTTP call with its caller. Only the function's context changes: the run is still
+/// a manual one, under the caller's permissions, and the broker trusts none of this.
+/// </summary>
+public sealed record RunSimulation(JsonObject? Trigger = null, JsonObject? Request = null, JsonObject? User = null)
+{
+    private static readonly HashSet<string> Kinds = ["manual", "http", "row", "relation", "app", "message", "schedule", "every", "event", "job"];
+
+    public RunSimulation Checked() =>
+        Trigger is not null && !(Trigger["kind"] is JsonValue kind && kind.TryGetValue<string>(out var k) && Kinds.Contains(k))
+            ? throw new ContractValidationException($"A simulated trigger's kind is one of {string.Join(", ", Kinds)}.")
+            : this;
+}
+
 public sealed record DeploymentDetail(
     DeploymentSummary Deployment, IReadOnlyList<FunctionSpec> Functions, JsonElement? Diagnostics,
     IReadOnlyList<string> Permissions);
@@ -159,8 +174,9 @@ public sealed class DeploymentService(
     /// being tried before it goes live. Either way the caller must hold everything it was or would
     /// be vouched for, as deploying it takes.
     /// </summary>
-    public async Task<RunOutcome> RunAsync(string function, JsonNode? input, Guid? deploymentId, CancellationToken ct)
+    public async Task<RunOutcome> RunAsync(string function, JsonNode? input, Guid? deploymentId, CancellationToken ct, RunSimulation? simulate = null)
     {
+        simulate = simulate?.Checked();
         FunctionDeployment? deployment;
         using (Scope())
         {
@@ -178,7 +194,8 @@ public sealed class DeploymentService(
         // The caller holds whatever the run may do: a manual run lends nobody the deployer's rights.
         var vouched = await VouchAsync(deployment);
         var target = RunTargets.Of(deployment, function, vouched) ?? throw RunTargets.NoSuchFunction(function);
-        var outcome = await runner.RunAsync(target, input, new RunTrigger("manual"), ct);
+        var outcome = await runner.RunAsync(target, input, new RunTrigger("manual"), ct,
+            simulate?.Request, simulate?.User, simulatedTrigger: simulate?.Trigger);
         using (Scope())
         {
             await runs.RecordAsync(target, "manual", input, outcome, ct);
@@ -226,8 +243,10 @@ public sealed class DeploymentService(
     /// for real, under the caller's permissions, which must cover everything the code uses, as
     /// deploying it would. Nothing is deployed and the run is not in the history.
     /// </summary>
-    public async Task<RunOutcome> TestAsync(IReadOnlyDictionary<string, string> files, string function, JsonNode? input, CancellationToken ct)
+    public async Task<RunOutcome> TestAsync(IReadOnlyDictionary<string, string> files, string function, JsonNode? input, CancellationToken ct,
+        RunSimulation? simulate = null)
     {
+        simulate = simulate?.Checked();
         var built = await builder.BuildAsync(files, ct);
         if (!built.Ok)
         {
@@ -248,7 +267,8 @@ public sealed class DeploymentService(
         };
         var vouched = await VouchAsync(draft);
         var target = RunTargets.Of(draft, function, vouched) ?? throw RunTargets.NoSuchFunction(function);
-        return await runner.RunAsync(target, input, new RunTrigger("manual", new JsonObject { ["test"] = true }), ct);
+        return await runner.RunAsync(target, input, new RunTrigger("manual", new JsonObject { ["test"] = true }), ct,
+            simulate?.Request, simulate?.User, simulatedTrigger: simulate?.Trigger);
     }
 
     /// <summary>The latest build waiting to go live, or a deployment by number.</summary>

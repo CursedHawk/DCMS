@@ -677,6 +677,7 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
             building={preview.building}
             previewEnabled={showPreview}
             onEnablePreview={() => setShowPreview(true)}
+            functionsApi={repo?.functionsApi}
           />
         </div>
         {showPreview && !repo && (

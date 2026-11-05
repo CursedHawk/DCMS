@@ -968,7 +968,8 @@
         "problems": "Problémy",
         "output": "Výstup",
         "console": "Konzole",
-        "build": "Sestavení"
+        "build": "Sestavení",
+        "run": "Spustit"
       },
       "hide": "Skrýt panel",
       "resize": "Změnit velikost panelu",
@@ -1027,6 +1028,33 @@
         "schedule": "Podle plánu {{cron}}",
         "every": "Každých {{interval}}",
         "event": "Při {{name}}"
+      }
+    },
+    "run": {
+      "function": "Funkce",
+      "target": "Kód",
+      "draft": "Tento koncept",
+      "live": "Nasazená verze",
+      "trigger": "Spuštěno",
+      "input": "Vstup (JSON)",
+      "user": "Přihlášený uživatel (JSON nebo null)",
+      "run": "Spustit",
+      "running": "Běží…",
+      "forReal": "Běží naostro, s vašimi oprávněními: její zápisy, zprávy a volání se skutečně provedou.",
+      "saveAs": "Uložit vstup jako…",
+      "save": "Uložit",
+      "saved": "Uloženo {{path}}.",
+      "badJson": "{{what}} není platný JSON.",
+      "nothingYet": "Spusťte funkci a uvidíte zde její výsledek, log a volání.",
+      "stats": "{{ms}} ms · {{calls}} volání",
+      "trace": "Volání",
+      "logs": "Log",
+      "kinds": {
+        "manual": "Ručně",
+        "http": "Volání HTTP",
+        "row": "Změna záznamu",
+        "message": "Zpráva",
+        "schedule": "Plán"
       }
     }
   },

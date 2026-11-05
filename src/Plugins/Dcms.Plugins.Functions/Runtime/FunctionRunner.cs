@@ -51,7 +51,7 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
 
     public async Task<RunOutcome> RunAsync(
         RunTarget target, JsonNode? input, RunTrigger trigger, CancellationToken ct,
-        JsonObject? request = null, JsonObject? user = null, int depth = 0, RunBudget? budget = null)
+        JsonObject? request = null, JsonObject? user = null, int depth = 0, RunBudget? budget = null, JsonObject? simulatedTrigger = null)
     {
         // Every call the run makes resolves in the deployment's own environment, however it was started.
         using var rls = RlsScope.Environment(target.Deployment.TenantId, target.Deployment.EnvironmentId);
@@ -73,7 +73,9 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
                 ["input"] = input?.DeepClone(),
                 ["context"] = new JsonObject
                 {
-                    ["trigger"] = new JsonObject { ["kind"] = trigger.Kind, ["detail"] = trigger.Detail?.DeepClone() },
+                    // What the function is told started it. A test from the editor may claim a row
+                    // event or a message (workbench W2); the run itself stays what it is.
+                    ["trigger"] = simulatedTrigger?.DeepClone() ?? new JsonObject { ["kind"] = trigger.Kind, ["detail"] = trigger.Detail?.DeepClone() },
                     ["run"] = new JsonObject { ["function"] = target.Function.Name, ["deployment"] = target.Deployment.Number, ["depth"] = depth },
                     ["request"] = request?.DeepClone(),
                     ["user"] = user?.DeepClone(),

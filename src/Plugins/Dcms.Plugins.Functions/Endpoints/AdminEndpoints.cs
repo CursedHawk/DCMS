@@ -126,7 +126,7 @@ internal static class AdminEndpoints
         endpoints.MapPost("/_functions/test", (DraftTest body, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () =>
                 {
-                    var outcome = await deployments.TestAsync(body.Files, body.Function, body.Input, ct);
+                    var outcome = await deployments.TestAsync(body.Files, body.Function, body.Input, ct, body.Simulate);
                     return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs });
                 }))
             .RequirePluginPermission("deploy")
@@ -137,7 +137,7 @@ internal static class AdminEndpoints
         endpoints.MapPost("/_functions/run", (RunRequest body, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () =>
                 {
-                    var outcome = await deployments.RunAsync(body.Function, body.Input, body.Deployment, ct);
+                    var outcome = await deployments.RunAsync(body.Function, body.Input, body.Deployment, ct, body.Simulate);
                     return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs });
                 }))
             .RequirePluginPermission("deploy")
@@ -148,9 +148,9 @@ internal static class AdminEndpoints
 
     public sealed record DraftFiles(Dictionary<string, string> Files);
 
-    public sealed record DraftTest(Dictionary<string, string> Files, string Function, JsonNode? Input = null);
+    public sealed record DraftTest(Dictionary<string, string> Files, string Function, JsonNode? Input = null, RunSimulation? Simulate = null);
 
-    public sealed record RunRequest(string Function, JsonNode? Input = null, Guid? Deployment = null);
+    public sealed record RunRequest(string Function, JsonNode? Input = null, Guid? Deployment = null, RunSimulation? Simulate = null);
 
     private static async Task<IResult> Run(Func<Task<IResult>> handler)
     {

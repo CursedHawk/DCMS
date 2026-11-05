@@ -7,7 +7,8 @@ import { ProblemsView } from '../ProblemsView';
 import { BuildLogView } from './BuildLogView';
 import { ConsoleView } from './ConsoleView';
 import { OutputView } from './OutputView';
-import { PANEL_TABS, type PanelTab, type PanelState } from './panelState';
+import { FUNCTIONS_TABS, PANEL_TABS, type PanelTab, type PanelState } from './panelState';
+import { RunView } from '../functions/RunView';
 
 /**
  * The bottom panel: what the code is saying, under the code it is saying it about.
@@ -31,7 +32,10 @@ export function BottomPanel({
   building,
   previewEnabled,
   onEnablePreview,
+  functionsApi,
 }: {
+  /** A Functions app's repository: its Run tab (workbench). */
+  functionsApi?: string;
   state: PanelState;
   height: number;
   onHeightDelta: (dy: number) => void;
@@ -48,7 +52,7 @@ export function BottomPanel({
   // readable. A bottom panel you have to remember exists is one nobody opens.
   const tabStrip = (
     <div className="flex h-8 shrink-0 items-stretch gap-0.5 border-t bg-card px-1.5">
-      {PANEL_TABS.map((tab) => (
+      {PANEL_TABS.filter((tab) => functionsApi || !FUNCTIONS_TABS.includes(tab)).map((tab) => (
         <TabButton
           key={tab}
           tab={tab}
@@ -96,6 +100,7 @@ export function BottomPanel({
             />
           )}
           {state.tab === 'output' && <OutputView />}
+          {state.tab === 'run' && functionsApi && <RunView functionsApi={functionsApi} />}
           {state.tab === 'console' && <ConsoleView previewEnabled={previewEnabled} />}
           {state.tab === 'build' && (
             <BuildLogView

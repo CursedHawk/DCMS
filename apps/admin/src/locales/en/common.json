@@ -940,7 +940,8 @@
         "problems": "Problems",
         "output": "Output",
         "console": "Console",
-        "build": "Build"
+        "build": "Build",
+        "run": "Run"
       },
       "hide": "Hide panel",
       "resize": "Resize panel",
@@ -998,6 +999,33 @@
         "schedule": "On schedule {{cron}}",
         "every": "Every {{interval}}",
         "event": "On {{name}}"
+      }
+    },
+    "run": {
+      "function": "Function",
+      "target": "Code",
+      "draft": "This draft",
+      "live": "Live deployment",
+      "trigger": "Started by",
+      "input": "Input (JSON)",
+      "user": "Signed-in user (JSON, or null)",
+      "run": "Run",
+      "running": "Running…",
+      "forReal": "It runs for real, under your permissions: its writes, messages and calls happen.",
+      "saveAs": "Save input as…",
+      "save": "Save",
+      "saved": "Saved {{path}}.",
+      "badJson": "{{what}} is not valid JSON.",
+      "nothingYet": "Run a function to see its result, log and calls here.",
+      "stats": "{{ms}} ms · {{calls}} calls",
+      "trace": "Calls",
+      "logs": "Log",
+      "kinds": {
+        "manual": "Manual",
+        "http": "HTTP call",
+        "row": "Row event",
+        "message": "Message",
+        "schedule": "Schedule"
       }
     }
   },
