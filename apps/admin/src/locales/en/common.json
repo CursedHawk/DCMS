@@ -972,7 +972,34 @@
     "generatedRefreshFailed": "The generated API client could not be refreshed",
     "deleteFileConfirm": "Delete {{path}}?",
     "repository": "Repository",
-    "functions": "Functions"
+    "functions": "Functions",
+    "fn": {
+      "title": "Functions",
+      "recheck": "Check again",
+      "none": "No functions yet: add functions/<name>.ts, or a C# class marked [Function(\"name\")].",
+      "problems_one": "{{count}} problem: see Problems.",
+      "problems_other": "{{count}} problems: see Problems.",
+      "live": "live",
+      "http": "HTTP: {{who}}",
+      "table": "{{table}}: {{verbs}}",
+      "contracts": "Contracts: {{list}}",
+      "egress": "Calls out to: {{list}}",
+      "secrets": "Secrets: {{list}}",
+      "deployment": "Deployment",
+      "liveDeployment": "Live: deployment {{number}} ({{commit}})",
+      "nothingLive": "Nothing is live yet.",
+      "deploy": "Deploy build {{number}}",
+      "deployed": "Deployed.",
+      "howToShip": "Merge into release in Source Control to build; deploy the build here or on the app's Deployments.",
+      "trigger": {
+        "row": "When {{table}} is {{event}}",
+        "app": "When {{app}} publishes",
+        "message": "On message {{topic}}",
+        "schedule": "On schedule {{cron}}",
+        "every": "Every {{interval}}",
+        "event": "On {{name}}"
+      }
+    }
   },
   "openapi": {
     "title": "API documentation",

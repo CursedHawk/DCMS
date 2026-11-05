@@ -1000,7 +1000,35 @@
     "generatedRefreshFailed": "Vygenerovaného API klienta se nepodařilo obnovit",
     "deleteFileConfirm": "Smazat {{path}}?",
     "repository": "Repozitář",
-    "functions": "Funkce"
+    "functions": "Funkce",
+    "fn": {
+      "title": "Funkce",
+      "recheck": "Zkontrolovat znovu",
+      "none": "Zatím žádné funkce: přidejte functions/<název>.ts nebo třídu C# označenou [Function(\"název\")].",
+      "problems_one": "{{count}} problém: viz Problémy.",
+      "problems_few": "{{count}} problémy: viz Problémy.",
+      "problems_other": "{{count}} problémů: viz Problémy.",
+      "live": "nasazeno",
+      "http": "HTTP: {{who}}",
+      "table": "{{table}}: {{verbs}}",
+      "contracts": "Kontrakty: {{list}}",
+      "egress": "Volá ven: {{list}}",
+      "secrets": "Tajemství: {{list}}",
+      "deployment": "Nasazení",
+      "liveDeployment": "Nasazeno: nasazení {{number}} ({{commit}})",
+      "nothingLive": "Zatím nic není nasazeno.",
+      "deploy": "Nasadit sestavení {{number}}",
+      "deployed": "Nasazeno.",
+      "howToShip": "Sestavíte sloučením do release ve Správě zdrojů; sestavení nasaďte zde nebo v Nasazeních aplikace.",
+      "trigger": {
+        "row": "Když se {{table}} změní ({{event}})",
+        "app": "Když {{app}} publikuje",
+        "message": "Při zprávě {{topic}}",
+        "schedule": "Podle plánu {{cron}}",
+        "every": "Každých {{interval}}",
+        "event": "Při {{name}}"
+      }
+    }
   },
   "openapi": {
     "title": "API dokumentace",

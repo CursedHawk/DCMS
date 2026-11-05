@@ -179,6 +179,10 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var check = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files }), ct), ct);
         check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());
         check.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["caller", "order-total"]);
+        // What the editor's Functions panel lists: each function's runtime and file.
+        check.GetProperty("specs").EnumerateArray()
+            .Select(f => (f.GetProperty("name").GetString(), f.GetProperty("runtime").GetString(), f.GetProperty("file").GetString()))
+            .Should().BeEquivalentTo([("caller", "deno-ts", "functions/caller.ts"), ("order-total", "dotnet", "functions/OrderTotal.cs")]);
 
         var run = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
             new { files, function = "caller", input = new { lines = new[] { 1.5, 2.5, 6 } } }), ct), ct);

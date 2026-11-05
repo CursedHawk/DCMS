@@ -53,7 +53,7 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk)
             bundles[BuildOutput.DotnetAssembly] = built.Assembly;
             bundles[BuildOutput.DotnetPdb] = built.Pdb ?? "";
         }
-        return new BuildOutput(true, [], functions.Select(f => f with { Runtime = byName[f.Name].Runtime }).ToList(), bundles);
+        return new BuildOutput(true, [], functions.Select(f => f with { Runtime = byName[f.Name].Runtime, File = byName[f.Name].File }).ToList(), bundles);
     }
 
     private sealed record Built(string Name, string Bundle, JsonNode? Definition, string Runtime = FunctionManifest.Runtime,

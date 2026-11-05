@@ -210,13 +210,15 @@ public sealed class DeploymentService(
 
     private static JsonElement? Json(string? json) => json is null ? null : JsonDocument.Parse(json).RootElement.Clone();
 
-    public sealed record DraftCheck(bool Ok, IReadOnlyList<BuildJob.Diagnostic> Problems, IReadOnlyList<string> Functions, IReadOnlyList<string> Permissions);
+    /// <param name="Specs">Each function as the build read it: what the editor's Functions panel shows.</param>
+    public sealed record DraftCheck(bool Ok, IReadOnlyList<BuildJob.Diagnostic> Problems, IReadOnlyList<string> Functions, IReadOnlyList<string> Permissions,
+        IReadOnlyList<FunctionSpec> Specs);
 
     /// <summary>Builds files (a draft, a branch) as a deployment would be built, without making one.</summary>
     public async Task<DraftCheck> CheckAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
     {
         var built = await builder.BuildAsync(files, ct);
-        return new DraftCheck(built.Ok, built.Diagnostics, built.Functions.Select(f => f.Name).ToList(), built.Ok ? Required(built.Functions) : []);
+        return new DraftCheck(built.Ok, built.Diagnostics, built.Functions.Select(f => f.Name).ToList(), built.Ok ? Required(built.Functions) : [], built.Functions);
     }
 
     /// <summary>

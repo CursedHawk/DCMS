@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
+import { Files, GitBranch, Rocket, Search, Sparkles, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { checkDraft, functionsTools } from './agent/functionsTools';
 import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
+import { FunctionsView } from './functions/FunctionsView';
 
-export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'functions';
 
 /**
  * The left sidebar: a slim activity rail plus the active view.
@@ -95,6 +96,15 @@ export function IdeSidebar({
           <Rocket className="h-5 w-5" />
         </RailButton>
         )}
+        {functionsApi && (
+          <RailButton
+            active={view === 'functions'}
+            label={t('ide.fn.title')}
+            onClick={() => onViewChange('functions')}
+          >
+            <Zap className="h-5 w-5" />
+          </RailButton>
+        )}
         {/* The site agent's tools speak to a site; a repository has one only where its plugin brings tools. */}
         {repo && !functionsApi ? null : (
         <RailButton
@@ -124,6 +134,7 @@ export function IdeSidebar({
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
+        {view === 'functions' && functionsApi && <FunctionsView functionsApi={functionsApi} />}
         {/* Kept mounted once opened, so the conversation (and a run in progress) survives switching
             views; it ends with the page. */}
         {agentOpened && (

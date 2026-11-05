@@ -34,7 +34,11 @@ public sealed record FunctionSpec(
     IReadOnlyList<string> Http,
     FunctionUses Uses,
     int? TimeoutMs,
-    int? HeapMb);
+    int? HeapMb)
+{
+    /// <summary>The repository file it is defined in, for the editor to open (absent in deployments built before it was kept).</summary>
+    public string? File { get; init; }
+}
 
 public sealed record ManifestProblem(string Function, string Message);
 
