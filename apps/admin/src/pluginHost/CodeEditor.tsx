@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type * as Monaco from 'monaco-editor';
 import { useTheme } from '@dcms/ui';
 import type { CodeEditorProps } from '@dcms/plugin-ui';
-import { applyEditorTheme, monaco, setupMonaco } from '../features/site-source/monaco-setup';
+import { applyEditorTheme, monaco, SEMANTIC_HIGHLIGHTING, setupMonaco } from '../features/site-source/monaco-setup';
 
 type JsonSchemaEntry = { uri: string; fileMatch?: string[]; schema?: unknown };
 
@@ -81,6 +81,7 @@ export function CodeEditor({
     const existing = monaco.editor.getModel(parsed);
     const model = existing ?? monaco.editor.createModel(value, language, parsed);
     const editor = monaco.editor.create(hostRef.current!, {
+      ...SEMANTIC_HIGHLIGHTING,
       model,
       automaticLayout: true,
       readOnly,

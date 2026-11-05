@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type * as Monaco from 'monaco-editor';
 import { useTheme } from '@dcms/ui';
 import { languageOf } from './paths';
-import { applyEditorTheme, monaco, setupMonaco } from './monaco-setup';
+import { applyEditorTheme, monaco, SEMANTIC_HIGHLIGHTING, setupMonaco } from './monaco-setup';
 
 // A read-only Monaco diff of a single file: original (branch HEAD) vs modified
 // (the working draft). Models are created/disposed with the component. `null`
@@ -23,6 +23,7 @@ export function DiffEditor({
   useEffect(() => {
     setupMonaco();
     const editor = monaco.editor.createDiffEditor(hostRef.current!, {
+      ...SEMANTIC_HIGHLIGHTING,
       automaticLayout: true,
       readOnly: true,
       renderSideBySide: true,

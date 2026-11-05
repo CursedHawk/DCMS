@@ -1070,6 +1070,10 @@
       "replay": "Přehrát na konceptu",
       "input": "Vstup",
       "refresh": "Obnovit"
+    },
+    "editorTheme": {
+      "label": "Barevný motiv editoru",
+      "auto": "Podle konzole"
     }
   },
   "openapi": {

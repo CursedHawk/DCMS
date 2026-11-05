@@ -3,7 +3,7 @@ import type * as Monaco from 'monaco-editor';
 import { useTheme } from '@dcms/ui';
 import { isBinaryPath } from './binary';
 import { isGeneratedFile, isToolchainFile, languageOf, pathOfUri, uriOf } from './paths';
-import { applyEditorTheme, monaco, setupMonaco } from './monaco-setup';
+import { applyEditorTheme, monaco, SEMANTIC_HIGHLIGHTING, setupMonaco } from './monaco-setup';
 import { useVfs } from './vfs';
 
 // The editing surface. Every file in the vfs is a Monaco model (file:/// URI);
@@ -52,6 +52,7 @@ export function MonacoEditor() {
     document.body.appendChild(overflowHost);
 
     const editor = monaco.editor.create(hostRef.current!, {
+      ...SEMANTIC_HIGHLIGHTING,
       automaticLayout: true,
       fontSize: 13,
       minimap: { enabled: false },

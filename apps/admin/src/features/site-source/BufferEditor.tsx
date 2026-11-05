@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type * as Monaco from 'monaco-editor';
 import { useTheme } from '@dcms/ui';
 import { languageOf } from './paths';
-import { applyEditorTheme, monaco, setupMonaco } from './monaco-setup';
+import { applyEditorTheme, monaco, SEMANTIC_HIGHLIGHTING, setupMonaco } from './monaco-setup';
 
 /**
  * A standalone editor over a buffer that is not a file in the workspace.
@@ -37,6 +37,7 @@ export function BufferEditor({
     setupMonaco();
     const model = monaco.editor.createModel(value, languageOf(path));
     const editor = monaco.editor.create(hostRef.current!, {
+      ...SEMANTIC_HIGHLIGHTING,
       model,
       automaticLayout: true,
       readOnly,

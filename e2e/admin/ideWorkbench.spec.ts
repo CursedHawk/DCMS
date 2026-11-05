@@ -46,6 +46,7 @@ const FAILED_RUN = {
 };
 
 test('the IDE lists, runs, traces and replays a function', async ({ page, api }) => {
+  test.setTimeout(120_000);
   api
     .on('GET', '/api/admin/repos/:id/ide', {
       branch: 'main',
@@ -98,6 +99,22 @@ test('the IDE lists, runs, traces and replays a function', async ({ page, api })
   await runs.getByRole('button', { name: 'lib/fail.ts:2' }).click();
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('throw new Error(why)');
 
+  // TypeScript coloured as VS Code's Light+ does: the language service says `fail` is a function
+  // and `why` a parameter; the grammar tells `throw` (control flow) from `function`.
+  const colour = (text: string) =>
+    page.locator('.monaco-editor .view-lines span > span').filter({ hasText: new RegExp(`^\\s*${text}\\s*$`) }).first().evaluate((e) => getComputedStyle(e).color);
+  await expect.poll(() => colour('fail'), { timeout: 30_000 }).toBe('rgb(121, 94, 38)');
+  await expect.poll(() => colour('why')).toBe('rgb(0, 16, 128)');
+  expect(await colour('throw')).toBe('rgb(175, 0, 219)');
+  expect(await colour('function')).toBe('rgb(0, 0, 255)');
+  expect(await colour('string')).toBe('rgb(38, 127, 153)');
+
+  // Another editor theme, for every editor on the page; kept for the next visit.
+  await page.getByLabel('Editor colour theme').selectOption('monokai');
+  await expect.poll(() => page.locator('.monaco-editor .monaco-editor-background').first().evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(39, 40, 34)');
+  expect(await colour('throw')).toBe('rgb(249, 38, 114)');
+  expect(await page.evaluate(() => localStorage.getItem('dcms.editorTheme'))).toBe('monokai');
+
   // Replay it against the draft: the Run tab, filled in, runs and shows its host calls.
   await runs.getByRole('button', { name: /Replay against the draft/ }).click();
   const run = page.getByTestId('run-view');
@@ -105,8 +122,8 @@ test('the IDE lists, runs, traces and replays a function', async ({ page, api })
   await run.getByRole('button', { name: /^Run$/ }).click();
   await expect(run.getByTestId('run-outcome')).toContainText('ok');
   await expect(run.getByTestId('run-trace')).toContainText('"args":["x"]');
-  const test = api.requests.find((r) => r.method === 'POST' && r.path.endsWith('/_functions/test'));
-  expect(test?.body).toMatchObject({ function: 'hello', input: { boom: true }, simulate: { trigger: { kind: 'row' } } });
+  const sent = api.requests.find((r) => r.method === 'POST' && r.path.endsWith('/_functions/test'));
+  expect(sent?.body).toMatchObject({ function: 'hello', input: { boom: true }, simulate: { trigger: { kind: 'row' } } });
 
   // The Functions view: the draft's functions as the build reads them, and what is live.
   await page.getByRole('button', { name: 'Functions' }).first().click();

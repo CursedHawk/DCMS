@@ -4,7 +4,7 @@ import { test, expect } from '../fixtures/test';
 
 /**
  * C# in the IDE (ADR 0030): a Functions repository's .cs files get Roslyn's completion,
- * diagnostics and go to definition into the generated SDK, from the language service running in
+ * diagnostics, semantic colours and go to definition into the generated SDK, from the language service running in
  * the browser. Nothing here is mocked but the server: the worker is the real one, published into
  * the dev server's public/ by `pnpm --filter @dcms/admin csharp:worker`.
  */
@@ -44,7 +44,7 @@ const SDK = [
 
 test.skip(!existsSync(WORKER), 'Publish the C# language service first: pnpm --filter @dcms/admin csharp:worker');
 
-test('a C# function gets completion, diagnostics and go to definition into the SDK', async ({ page, api }) => {
+test('a C# function gets completion, diagnostics, semantic colours and go to definition into the SDK', async ({ page, api }) => {
   test.setTimeout(120_000);
   api
     .on('GET', '/api/admin/repos/:id/ide', {
@@ -72,6 +72,16 @@ test('a C# function gets completion, diagnostics and go to definition into the S
   await page.getByRole('tab', { name: /Problems/i }).click();
   await expect(page.getByText(/CS0103: The name 'missingName' does not exist/)).toBeVisible({ timeout: 60_000 });
 
+  // Colours as VS Code's Light+ paints C#: Roslyn says what each name is (a class, a method, a
+  // parameter); the grammar knows control flow from other keywords.
+  const colour = (text: string) =>
+    page.locator('.monaco-editor .view-lines span > span').filter({ hasText: new RegExp(`^\\s*${text}\\s*$`) }).first().evaluate((e) => getComputedStyle(e).color);
+  await expect.poll(() => colour('Hello'), { timeout: 30_000 }).toBe('rgb(38, 127, 153)');
+  await expect.poll(() => colour('Run')).toBe('rgb(121, 94, 38)');
+  await expect.poll(() => colour('ctx')).toBe('rgb(0, 16, 128)');
+  expect(await colour('return')).toBe('rgb(175, 0, 219)');
+  expect(await colour('public')).toBe('rgb(0, 0, 255)');
+
   // Completion on the generated SDK, through the C# 14 extension property ctx.Db.
   await page.locator('.monaco-editor').getByText('return missingName;').click();
   await page.keyboard.press('End');
@@ -81,7 +91,8 @@ test('a C# function gets completion, diagnostics and go to definition into the S
   await page.keyboard.press('Escape');
 
   // Go to definition lands in the read-only Sdk.g.cs.
-  await page.locator('.monaco-editor').getByText('Companies.Find').first().click();
+  // Names are spans of their own now (semantic colours): click the one F12 is about.
+  await page.locator('.monaco-editor .view-lines span > span').filter({ hasText: /^Companies$/ }).first().click();
   await page.keyboard.press('F12');
   await expect(editor).toContainText('public Table<CrmCompaniesRow> Companies', { timeout: 30_000 });
 });

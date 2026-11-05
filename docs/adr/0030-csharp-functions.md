@@ -79,6 +79,7 @@ A function is a public class deriving from `Function<TIn, TOut>` and marked `[Fu
 - `Dcms.Functions.LanguageWorker` is Roslyn (Workspaces + Features) on the same browser-wasm runtime.
 - It runs in a Web Worker of the console, compiles with the same `FunctionCompilation.cs` and embeds the same references.
 - It provides diagnostics (squiggles and the Problems panel), completion, hover, signature help, go to definition (into the read-only `.dcms/Sdk.g.cs`), references and formatting.
+- **Colours** come from the language services, as in VS Code: Roslyn's classifier for C#, and TypeScript's semantic classification for TS (a subclass of Monaco's TS worker, `ts.worker.ts`). Both answer in one legend (`semanticTokens.ts`) for the visible range only, so a megabyte SDK costs nothing. The editors' themes (`editorThemes.ts`: Light+/Dark+, the console's own, GitHub, One Dark, Monokai, Solarized, high contrast) colour both languages alike; the IDE's status bar picks one for every editor on the page.
 - It is served under `/csharp/` by the admin image (about 17 MB gzipped, revalidated by ETag) and loaded with the first `.cs` model.
 - No server language server: per-session Roslyn would have cost 300–500 MB per open editor.
 

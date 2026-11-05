@@ -1,10 +1,15 @@
 import * as monaco from 'monaco-editor';
+import type * as Monaco from 'monaco-editor';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import { language as javascript } from 'monaco-editor/esm/vs/basic-languages/javascript/javascript.js';
+import { language as typescript } from 'monaco-editor/esm/vs/basic-languages/typescript/typescript.js';
 import { registerCSharp } from './csharp/client';
+import { applyTheme, defineEditorThemes } from './editorThemes';
+import { registerTypeScriptSemanticTokens } from './semanticTokens';
+import tsWorker from './ts.worker?worker';
 
 // One-time Monaco configuration shared by every DCMS source editor — the Mode B
 // IDE and the Mode A builder's code view. All language intelligence
@@ -82,7 +87,9 @@ export function setupMonaco(): typeof monaco {
     diagnosticCodesToIgnore: [],
   });
 
-  defineThemes();
+  defineEditorThemes(monaco);
+  keywordsByWord();
+  registerTypeScriptSemanticTokens(monaco);
 
   // C# (ADR 0030): Roslyn in its own worker, started by the first C# model.
   registerCSharp(monaco);
@@ -90,25 +97,27 @@ export function setupMonaco(): typeof monaco {
   return monaco;
 }
 
-function defineThemes(): void {
-  // Thin wrappers over Monaco's built-ins so the surrounding admin chrome
-  // background matches the editor gutter in both themes.
-  monaco.editor.defineTheme('dcms-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [],
-    colors: { 'editor.background': '#0b0e14' },
-  });
-  monaco.editor.defineTheme('dcms-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [],
-    colors: {},
-  });
+/**
+ * Monaco's TypeScript grammar calls every keyword just `keyword`, so `return` and `const` cannot
+ * differ in colour. Its C# grammar already says `keyword.return`; this makes TypeScript and
+ * JavaScript do the same, which the themes' control-flow and primitive-type rules rely on.
+ */
+export function keywordsByWord(): boolean {
+  const [pattern, action] = (typescript.tokenizer.common?.[0] ?? []) as [RegExp, { cases?: Record<string, unknown> }];
+  if (action?.cases?.['@keywords'] !== 'keyword') return false;
+  const common = [[pattern, { cases: { ...action.cases, '@keywords': { token: 'keyword.$0' } } }], ...typescript.tokenizer.common.slice(1)];
+  const tokenizer = { ...typescript.tokenizer, common } as Monaco.languages.IMonarchLanguage['tokenizer'];
+  monaco.languages.setMonarchTokensProvider('typescript', { ...typescript, tokenizer });
+  monaco.languages.setMonarchTokensProvider('javascript', { ...javascript, tokenizer });
+  return true;
 }
 
+/** Every editor on the page: the chosen theme, or the console's light/dark one. */
 export function applyEditorTheme(resolved: 'light' | 'dark'): void {
-  monaco.editor.setTheme(resolved === 'dark' ? 'dcms-dark' : 'dcms-light');
+  applyTheme(monaco, resolved);
 }
+
+/** For `monaco.editor.create`: semantic colours are off unless a theme or an editor turns them on. */
+export const SEMANTIC_HIGHLIGHTING = { 'semanticHighlighting.enabled': true } as const;
 
 export { monaco };

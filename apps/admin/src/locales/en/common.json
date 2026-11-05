@@ -1041,6 +1041,10 @@
       "replay": "Replay against the draft",
       "input": "Input",
       "refresh": "Refresh"
+    },
+    "editorTheme": {
+      "label": "Editor colour theme",
+      "auto": "Match the console"
     }
   },
   "openapi": {

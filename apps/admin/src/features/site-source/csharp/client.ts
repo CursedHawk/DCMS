@@ -1,9 +1,10 @@
 import type * as Monaco from 'monaco-editor';
+import { encodeTokens, LEGEND } from '../semanticTokens';
 
 /**
  * C# in the editor (ADR 0030). Monaco's own `csharp` language gives the highlighting; this wires
- * completion, hover, signature help, go to definition, references, formatting and diagnostics to
- * Roslyn, running in csharp.worker.ts. The worker starts with the first C# model, so a repository
+ * completion, hover, signature help, go to definition, references, formatting, diagnostics and
+ * semantic colouring to Roslyn, running in csharp.worker.ts. The worker starts with the first C# model, so a repository
  * without any never downloads it.
  *
  * Positions cross as character offsets into a model's text; each question is preceded by that
@@ -252,6 +253,19 @@ export function registerCSharp(monaco: typeof Monaco): void {
     async provideReferences(model, position) {
       sync(model);
       return locations(parse<Location[]>(await call<string>('References', pathOf(model), model.getOffsetAt(position))));
+    },
+  });
+
+  monaco.languages.registerDocumentRangeSemanticTokensProvider('csharp', {
+    getLegend: () => LEGEND,
+    async provideDocumentRangeSemanticTokens(model, visible) {
+      sync(model);
+      const spans = parse<number[]>(
+        await call<string>('Classify', pathOf(model), model.getOffsetAt(visible.getStartPosition()), model.getOffsetAt(visible.getEndPosition()))
+          // No colours rather than an error: the grammar's still stand.
+          .catch(() => '[]'),
+      );
+      return model.isDisposed() ? null : encodeTokens(model, spans);
     },
   });
 

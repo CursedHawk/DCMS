@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Functions.Compilation;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Classification;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -242,6 +243,57 @@ public static partial class Worker
         if (Document(path) is not { } document) return "";
         return (await (await Formatter.FormatAsync(document)).GetTextAsync()).ToString();
     }
+
+    /// <summary>
+    /// What each name in <paramref name="start"/>..<paramref name="end"/> is, for colouring:
+    /// <c>[start, length, type, modifiers]*</c> in semanticTokens.ts's legend. Keywords, strings
+    /// and comments are left to Monaco's grammar.
+    /// </summary>
+    [JSExport]
+    public static async Task<string> Classify(string path, int start, int end)
+    {
+        if (Document(path) is not { } document) return "[]";
+        var length = (await document.GetTextAsync()).Length;
+        start = Math.Clamp(start, 0, length);
+        var spans = await Classifier.GetClassifiedSpansAsync(document, TextSpan.FromBounds(start, Math.Clamp(end, start, length)));
+        var tokens = new List<int>();
+        foreach (var group in spans.GroupBy(s => s.TextSpan).OrderBy(g => g.Key.Start))
+        {
+            var type = -1;
+            var modifiers = 0;
+            foreach (var span in group)
+            {
+                if (span.ClassificationType == ClassificationTypeNames.ConstantName) modifiers = 1;
+                if (TokenTypes.TryGetValue(span.ClassificationType, out var t)) type = t;
+            }
+            if (type >= 0) tokens.AddRange([group.Key.Start, group.Key.Length, type, modifiers]);
+        }
+        return JsonSerializer.Serialize(tokens);
+    }
+
+    /// <summary>Roslyn's classifications as indices into semanticTokens.ts's <c>LEGEND.tokenTypes</c>.</summary>
+    private static readonly Dictionary<string, int> TokenTypes = new()
+    {
+        [ClassificationTypeNames.NamespaceName] = 0,
+        [ClassificationTypeNames.ClassName] = 1,
+        [ClassificationTypeNames.RecordClassName] = 1,
+        [ClassificationTypeNames.EnumName] = 2,
+        [ClassificationTypeNames.InterfaceName] = 3,
+        [ClassificationTypeNames.StructName] = 4,
+        [ClassificationTypeNames.RecordStructName] = 4,
+        [ClassificationTypeNames.TypeParameterName] = 5,
+        [ClassificationTypeNames.DelegateName] = 6,
+        [ClassificationTypeNames.ParameterName] = 7,
+        [ClassificationTypeNames.LocalName] = 8,
+        [ClassificationTypeNames.ConstantName] = 8,
+        [ClassificationTypeNames.PropertyName] = 9,
+        [ClassificationTypeNames.FieldName] = 9,
+        [ClassificationTypeNames.EnumMemberName] = 10,
+        [ClassificationTypeNames.EventName] = 11,
+        [ClassificationTypeNames.MethodName] = 13,
+        [ClassificationTypeNames.ExtensionMethodName] = 13,
+        [ClassificationTypeNames.LabelName] = 14,
+    };
 
     private static string Locations(IEnumerable<Location> locations) =>
         new JsonArray([.. locations.Distinct().Select(l => (JsonNode)new JsonObject
