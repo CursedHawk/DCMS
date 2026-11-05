@@ -252,7 +252,10 @@ public sealed class FunctionSession : IDisposable
             // imports are how its files load without a read permission (dotnet-harness.js).
             var process = Confined.Start(_o.DenoPath,
                 dotnet
+                    // --location: .NET's HTTP handler probes for streaming with new Request(""),
+                    // which a page resolves against its location and Deno refuses without one.
                     ? ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock", "--unstable-raw-imports",
+                       "--location=https://function.invalid/",
                        $"--v8-flags=--max-old-space-size={heap},--liftoff-only", _o.DotnetHarnessPath]
                     : ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
                        $"--v8-flags=--max-old-space-size={heap}", _o.SessionHarnessPath],

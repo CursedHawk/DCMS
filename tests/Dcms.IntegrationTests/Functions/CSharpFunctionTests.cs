@@ -259,13 +259,14 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         var built = await Build(new()
         {
             ["functions/Broken.cs"] = Function("broken", "return undefinedThing;"),
-            ["lib/Net.cs"] = "static class Net { public static object Client() => new System.Net.Http.HttpClient(); }",
+            // Sockets stay outside the curated set: a function reaches the network through the broker only.
+            ["lib/Net.cs"] = "static class Net { public static object Client() => new System.Net.Sockets.TcpClient(); }",
             ["lib/Native.cs"] = "static class Native { [System.Runtime.InteropServices.DllImport(\"libc\")] static extern int getpid(); }",
         });
 
         built.Ok.Should().BeFalse();
         built.Diagnostics.Should().Contain(d => d.File == "functions/Broken.cs" && d.Line == 10 && d.Code == "CS0103");
-        built.Diagnostics.Should().Contain(d => d.File == "lib/Net.cs" && d.Message.Contains("System.Net"));
+        built.Diagnostics.Should().Contain(d => d.File == "lib/Net.cs" && d.Message.Contains("Sockets"));
         built.Diagnostics.Should().Contain(d => d.File == "lib/Native.cs");
     }
 
@@ -352,6 +353,48 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         calls[0]["timeoutMs"]!.GetValue<int>().Should().Be(20_000);
         calls[1]["headers"]!["content-type"]!.GetValue<string>().Should().Be("application/json");
         calls[1]["redirect"]!.GetValue<string>().Should().Be("manual");
+    }
+
+    /// <summary>
+    /// HttpClient, and so any package written against one (ADR 0031): .NET's browser handler calls
+    /// fetch, which the harness routes to the same http.fetch host call ctx.Http.Fetch makes.
+    /// </summary>
+    [DockerFact]
+    public async Task HttpClient_goes_through_the_broker()
+    {
+        var calls = new List<JsonNode>();
+        var run = await Run(Function("client", """
+                using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"https://api.example.com/v1/customers?key={ctx.Secrets.Ref("STRIPE_KEY")}")
+                {
+                    Content = new System.Net.Http.StringContent("{\"a\":1}", System.Text.Encoding.UTF8, "application/json"),
+                };
+                request.Headers.Add("Idempotency-Key", "k1");
+                using var response = await ctx.Http.Client.SendAsync(request);
+                return new { status = (int)response.StatusCode, body = await response.Content.ReadAsStringAsync(), type = response.Content.Headers.ContentType?.MediaType };
+                """),
+            "null", "{}",
+            (op, args) =>
+            {
+                calls.Add(new JsonObject { ["op"] = op, ["args"] = args!.DeepClone() });
+                return (true, new JsonObject
+                {
+                    ["status"] = 200,
+                    ["headers"] = new JsonObject { ["content-type"] = "application/json" },
+                    ["bodyBase64"] = Convert.ToBase64String("{\"id\":\"cus_1\"}"u8.ToArray()),
+                    ["url"] = "https://api.example.com/v1/customers",
+                }, null);
+            });
+
+        run.Done["status"]!.GetValue<string>().Should().Be("ok", run.Done.ToJsonString());
+        JsonNode.DeepEquals(run.Done["result"], JsonNode.Parse("""{"status":200,"body":"{\"id\":\"cus_1\"}","type":"application/json"}"""))
+            .Should().BeTrue(run.Done["result"]!.ToJsonString());
+        calls.Should().ContainSingle();
+        calls[0]["op"]!.GetValue<string>().Should().Be("http.fetch");
+        var sent = calls[0]["args"]!;
+        sent["method"]!.GetValue<string>().Should().Be("POST");
+        sent["url"]!.GetValue<string>().Should().Contain("dcms-secret:STRIPE_KEY", "the value is the host's to put in");
+        sent["headers"]!["idempotency-key"]!.GetValue<string>().Should().Be("k1");
+        System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(sent["bodyBase64"]!.GetValue<string>())).Should().Be("{\"a\":1}");
     }
 
     [DockerTheory]

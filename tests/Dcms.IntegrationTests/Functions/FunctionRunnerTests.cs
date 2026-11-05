@@ -162,9 +162,107 @@ public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esb
         return options;
     }
 
-    private Task<BuildResult> Build(Dictionary<string, string> files, Action<ScriptRunnerOptions>? configure = null) =>
+    private Task<BuildResult> Build(Dictionary<string, string> files, Action<ScriptRunnerOptions>? configure = null,
+        List<PackageArchive>? packages = null) =>
         new FunctionBuilder(Microsoft.Extensions.Options.Options.Create(Options(configure)), NullLogger<FunctionBuilder>.Instance)
-            .BuildAsync(new BuildRequest(files, SdkTypes), TestContext.Current.CancellationToken);
+            .BuildAsync(new BuildRequest(files, SdkTypes, Packages: packages), TestContext.Current.CancellationToken);
+
+    /// <summary>An npm tarball, as `npm pack` makes one: every file under "package/".</summary>
+    public static string Tarball(Dictionary<string, string> files)
+    {
+        using var buffer = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(buffer, System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true))
+        using (var tar = new System.Formats.Tar.TarWriter(gzip, System.Formats.Tar.TarEntryFormat.Ustar))
+        {
+            foreach (var (path, text) in files)
+            {
+                var entry = new System.Formats.Tar.UstarTarEntry(System.Formats.Tar.TarEntryType.RegularFile, path.StartsWith("package/") || path.StartsWith('/') || path.Contains("..") ? path : "package/" + path)
+                {
+                    DataStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text)),
+                };
+                tar.WriteEntry(entry);
+            }
+        }
+        return Convert.ToBase64String(buffer.ToArray());
+    }
+
+    public static readonly Dictionary<string, string> TinyLib = new()
+    {
+        ["package.json"] = """{ "name": "tiny-lib", "version": "1.2.0", "type": "module", "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" }, "./extra": { "types": "./extra.d.ts", "default": "./extra.js" } } }""",
+        ["index.js"] = "export const double = (n) => n * 2;",
+        ["index.d.ts"] = "export declare const double: (n: number) => number;",
+        ["extra.js"] = "export const greet = (name) => `hello ${name}`;",
+        ["extra.d.ts"] = "export declare const greet: (name: string) => string;",
+    };
+
+    public static readonly Dictionary<string, string> NodeOnly = new()
+    {
+        ["package.json"] = """{ "name": "node-only", "version": "1.0.0", "type": "module", "main": "./index.js", "types": "./index.d.ts" }""",
+        ["index.js"] = "import { readFileSync } from \"node:fs\"; import net from \"net\"; export const read = (p) => readFileSync(p, \"utf8\") + typeof net;",
+        ["index.d.ts"] = "export declare const read: (path: string) => string;",
+    };
+
+    [DockerFact]
+    public async Task A_function_imports_the_packages_it_depends_on_and_nothing_that_needs_nodejs()
+    {
+        var packages = new List<PackageArchive>
+        {
+            new("node_modules/tiny-lib", Tarball(TinyLib)),
+            new("node_modules/node-only", Tarball(NodeOnly)),
+        };
+        var manifest = """{ "dependencies": { "tiny-lib": "^1.2.0", "node-only": "^1.0.0" } }""";
+        var uses = """
+            import { defineFunction } from "@dcms/functions";
+            import { double } from "tiny-lib";
+            import { greet } from "tiny-lib/extra";
+            export default defineFunction({ handler: (input: { n: number }) => greet(String(double(input.n))) });
+            """;
+
+        var built = await Build(new() { ["package.json"] = manifest, ["functions/uses.ts"] = uses }, packages: packages);
+        built.Diagnostics.Should().BeEmpty(string.Join("; ", built.Diagnostics.Select(d => $"{d.File}: {d.Message}")));
+        var run = await Session(built.Functions.Single().Bundle, """{"n":21}""");
+        run.Done["result"]!.GetValue<string>().Should().Be("hello 42");
+
+        var nodeOnly = await Build(new()
+        {
+            ["package.json"] = manifest,
+            ["functions/reads.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                import { read } from "node-only";
+                export default defineFunction({ handler: () => read("/etc/passwd") });
+                """,
+        }, packages: packages);
+        nodeOnly.Ok.Should().BeFalse();
+        nodeOnly.Diagnostics.Should().ContainSingle().Which.Message.Should().Contain("\"node-only\" needs Node.js (fs, net)");
+
+        var undeclared = await Build(new()
+        {
+            ["package.json"] = manifest,
+            ["functions/pads.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                import pad from "left-pad";
+                import { readFileSync } from "node:fs";
+                export default defineFunction({ handler: () => pad + readFileSync });
+                """,
+        }, packages: packages);
+        undeclared.Diagnostics.Select(d => d.Message).Should().Contain(m => m.Contains("add \"left-pad\" to package.json"))
+            .And.Contain(m => m.Contains("'node:fs' is part of Node.js"));
+    }
+
+    [DockerFact]
+    public async Task A_package_archive_cannot_escape_its_folder()
+    {
+        var evil = Tarball(new() { ["package/../../../functions/x.ts"] = "export default 1;" });
+        var built = await Build(new()
+        {
+            ["package.json"] = """{ "dependencies": { "evil": "1.0.0" } }""",
+            ["functions/f.ts"] = "import { defineFunction } from \"@dcms/functions\"; export default defineFunction({ handler: () => 1 });",
+        }, packages: [new("node_modules/evil", evil)]);
+
+        built.Ok.Should().BeFalse();
+        built.Diagnostics.Single().Message.Should().Contain("would land outside the package");
+    }
+
 
     private async Task<string> BundleOf(string code)
     {
@@ -196,7 +294,7 @@ public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esb
             ["README.md"] = "# not code",
         });
 
-        built.Diagnostics.Should().BeEmpty();
+        built.Diagnostics.Should().BeEmpty(string.Join("; ", built.Diagnostics.Select(d => $"{d.File}: {d.Message}")));
         built.Ok.Should().BeTrue();
         built.Functions.Select(f => f.Name).Should().Equal("hello", "order-paid");
         var paid = built.Functions.Single(f => f.Name == "order-paid");

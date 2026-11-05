@@ -5,6 +5,31 @@
 // it, and .NET takes the plain JavaScript path, loading everything through the harness.
 delete globalThis.process;
 
+// fetch, through the broker (ADR 0031): the http.fetch host call ctx.Http.Fetch makes, so only the
+// hosts in uses.egress answer. HttpClient runs on it (.NET's browser handler calls fetch), which
+// is why it is here: .NET's modules take fetch when they load. The same as session-harness.js's.
+// dotnet-harness.js sets host.call; a fetch with no run going is refused there.
+export const host = { call: undefined };
+const NULL_BODY = new Set([101, 103, 204, 205, 304]);
+globalThis.fetch = async (input, init) => {
+  const request = new Request(input, init);
+  const bytes = request.body === null ? null : new Uint8Array(await request.arrayBuffer());
+  const timeoutMs = init?.timeoutMs;
+  const r = await host.call("http.fetch", {
+    url: request.url,
+    method: request.method,
+    headers: Object.fromEntries(request.headers),
+    bodyBase64: bytes === null ? null : bytes.toBase64(),
+    redirect: request.redirect,
+    timeoutMs: typeof timeoutMs === "number" ? timeoutMs : null,
+    raw: true,
+  });
+  const body = NULL_BODY.has(r.status) ? null : Uint8Array.fromBase64(r.bodyBase64 ?? "");
+  const response = new Response(body, { status: r.status, headers: r.headers });
+  Object.defineProperty(response, "url", { value: r.url ?? "" });
+  return response;
+};
+
 // Every console line becomes a log line of the run. Emscripten binds console.log when .NET's
 // modules load, so this has to be in place first; Console.WriteLine in a function lands here.
 const encoder = new TextEncoder();

@@ -54,7 +54,13 @@ public sealed class ScriptRunnerOptions
     public int MaxSessionTimeoutMs { get; set; } = 300_000;
     public int DefaultSessionHeapMegabytes { get; set; } = 128;
     public int MaxSessionHeapMegabytes { get; set; } = 256;
-    public int MaxBundleChars { get; set; } = 2_000_000;
+    // With packages (ADR 0031) a bundle is megabytes: zod, date-fns and openai alone are 1.7 MB.
+    public int MaxBundleChars { get; set; } = 8_000_000;
+
+    /// <summary>What one build may unpack from its packages' archives, in bytes and in files.</summary>
+    public long MaxPackageUnpackedBytes { get; set; } = 300L * 1024 * 1024;
+
+    public int MaxPackageFiles { get; set; } = 30_000;
     public int MaxCalls { get; set; } = 1_000;
 
     /// <summary>Host-call arguments and replies together, per run.</summary>

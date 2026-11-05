@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Dcms.Plugins.Functions.Packages;
 
 namespace Dcms.Plugins.Functions.Build;
 
@@ -23,16 +24,24 @@ public sealed record BuildOutput(
 /// and the assistant's checks ask for without making one. A repository's TypeScript and C#
 /// (ADR 0030) build together, each against its half of the SDK.
 /// </summary>
-public sealed class Builder(IHttpClientFactory http, SdkTypings sdk)
+public sealed class Builder(IHttpClientFactory http, SdkTypings sdk, PackageStore store)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>What one build may install in all (ADR 0031).</summary>
+    public const long MaxPackagesBytes = 60L * 1024 * 1024;
+
     public async Task<BuildOutput> BuildAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
     {
+        var (packages, unusable) = await PackagesAsync(files, ct);
+        if (unusable.Count > 0)
+        {
+            return new BuildOutput(false, unusable, [], new Dictionary<string, string>());
+        }
         var model = await sdk.ModelAsync(ct);
         var csharp = files.Keys.Any(f => f.EndsWith(".cs", StringComparison.Ordinal)) ? SdkTypings.CSharp(model) : null;
         using var response = await http.CreateClient(BuildJob.HttpClientName)
-            .PostAsJsonAsync("/build", new { files, sdkTypes = SdkTypings.TypeScript(model), sdkCSharp = csharp }, Json, ct);
+            .PostAsJsonAsync("/build", new { files, sdkTypes = SdkTypings.TypeScript(model), sdkCSharp = csharp, packages }, Json, ct);
         response.EnsureSuccessStatusCode();
         var built = await response.Content.ReadFromJsonAsync<Response>(Json, ct)
                     ?? throw new HttpRequestException("script-runner returned no build result.");
@@ -65,6 +74,52 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk)
             Input = FunctionManifest.Schema(byName[f.Name].Input),
             Output = FunctionManifest.Schema(byName[f.Name].Output),
         }).ToList(), bundles);
+    }
+
+    /// <summary>The locked packages' archives, for script-runner to unpack offline into the build.</summary>
+    private async Task<(List<object> Packages, List<BuildJob.Diagnostic> Problems)> PackagesAsync(
+        IReadOnlyDictionary<string, string> files, CancellationToken ct)
+    {
+        var (locked, refused) = NpmLock.Read(files);
+        if (refused.Count > 0)
+        {
+            return ([], refused.Select(p => new BuildJob.Diagnostic(p, NpmLock.Lockfile)).ToList());
+        }
+        var archives = new List<object>();
+        var problems = new List<BuildJob.Diagnostic>();
+        long total = 0;
+        using var gate = new SemaphoreSlim(8);
+        var fetched = await Task.WhenAll(locked.Select(async p =>
+        {
+            await gate.WaitAsync(ct);
+            try
+            {
+                return (p, Bytes: await store.GetAsync(p.Resolved, p.Integrity, ct), Error: (string?)null);
+            }
+            catch (Exception e) when (e is PackageException or HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                return (p, Bytes: Array.Empty<byte>(), Error: $"{p.Name}@{p.Version}: {e.Message}");
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
+        foreach (var (p, bytes, error) in fetched)
+        {
+            if (error is not null)
+            {
+                problems.Add(new BuildJob.Diagnostic(error, NpmLock.Lockfile));
+                continue;
+            }
+            total += bytes.Length;
+            archives.Add(new { path = p.Path, tgz = Convert.ToBase64String(bytes) });
+        }
+        if (total > MaxPackagesBytes)
+        {
+            problems.Add(new BuildJob.Diagnostic($"A build installs at most {MaxPackagesBytes / (1024 * 1024)} MB of packages; these are {total / (1024 * 1024)} MB.", NpmLock.Lockfile));
+        }
+        return problems.Count > 0 ? ([], problems) : (archives, problems);
     }
 
     private sealed record Built(string Name, string Bundle, JsonNode? Definition, string Runtime = FunctionManifest.Runtime,

@@ -134,13 +134,13 @@ export function writeFiles(root, files) {
   return changed;
 }
 
-/** `.dcms/` (generated per environment) and a desktop build's bin/ and obj/ in .gitignore, once. */
+/** `.dcms/` (generated per environment), a desktop build's bin/ and obj/, and node_modules/ in .gitignore, once. */
 export function ignoreDcms(root) {
   if (!plainUnder(root, '.gitignore')) throw new Error('Refusing to touch .gitignore: it is a symbolic link or not a file.');
   const path = join(root, '.gitignore');
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   const has = new Set(text.split(/\r?\n/).map((l) => l.trim().replace(/\/$/, '')));
-  const missing = ['.dcms/', 'bin/', 'obj/'].filter((l) => !has.has(l.replace(/\/$/, '')));
+  const missing = ['.dcms/', 'bin/', 'obj/', 'node_modules/'].filter((l) => !has.has(l.replace(/\/$/, '')));
   if (missing.length === 0) return false;
   writeFileSync(path, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
   return true;
@@ -171,7 +171,8 @@ export function workingFiles(root, maxBytes = 1024 * 1024) {
 export function editorFiles() {
   const lib = ['esnext', 'webworker'];
   return {
-    'deno.json': `${JSON.stringify({ imports: { '@dcms/functions': './.dcms/functions.ts' }, compilerOptions: { strict: true, lib } }, null, 2)}\n`,
+    // nodeModulesDir manual: packages come from `npm install`'s node_modules, as the server's build has them.
+    'deno.json': `${JSON.stringify({ imports: { '@dcms/functions': './.dcms/functions.ts' }, nodeModulesDir: 'manual', compilerOptions: { strict: true, lib } }, null, 2)}\n`,
     'tsconfig.json': `${JSON.stringify(
       {
         compilerOptions: {

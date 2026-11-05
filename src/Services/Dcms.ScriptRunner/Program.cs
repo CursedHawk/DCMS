@@ -9,7 +9,8 @@ using Dcms.Shared.Hosting;
 // access control. A function reaches DCMS only through its caller, over the session socket.
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("script-runner", AuditProfile.Consumer);
-builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 8 * 1024 * 1024);
+// A build may carry its packages' archives (ADR 0031): up to 60 MB, base64 in JSON. Only admin-api calls this.
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 100 * 1024 * 1024);
 builder.Services.Configure<ScriptRunnerOptions>(builder.Configuration.GetSection("ScriptRunner"));
 builder.Services.AddSingleton<FunctionSession>();
 builder.Services.AddSingleton<FunctionBuilder>();

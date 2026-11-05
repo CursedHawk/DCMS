@@ -58,6 +58,54 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
     }
 
     /// <summary>
+    /// npm packages (ADR 0031): package.json's dependency, locked by package-lock.json, fetched from
+    /// the registry by its exact URL and installed only if it is what the lock's integrity says.
+    /// </summary>
+    [DockerFact]
+    public async Task A_function_uses_a_locked_npm_package_and_a_tampered_one_is_refused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        var tgz = Convert.FromBase64String(FunctionRunnerTests.Tarball(FunctionRunnerTests.TinyLib));
+        _egress.Packages["/tiny-lib/-/tiny-lib-1.2.0.tgz"] = tgz;
+        Dictionary<string, string> Files(string integrity) => new()
+        {
+            ["package.json"] = """{ "name": "fns", "dependencies": { "tiny-lib": "^1.2.0" } }""",
+            ["package-lock.json"] = $$"""
+                { "name": "fns", "lockfileVersion": 3, "packages": {
+                  "": { "name": "fns", "dependencies": { "tiny-lib": "^1.2.0" } },
+                  "node_modules/tiny-lib": { "version": "1.2.0", "resolved": "https://registry.npmjs.org/tiny-lib/-/tiny-lib-1.2.0.tgz", "integrity": "{{integrity}}" }
+                } }
+                """,
+            ["functions/doubles.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                import { double } from "tiny-lib";
+                import { greet } from "tiny-lib/extra";
+                export default defineFunction({ handler: (input: { n: number }) => greet(String(double(input.n))) });
+                """,
+        };
+
+        var files = Files("sha512-" + Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(tgz)));
+        var check = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files }), ct), ct);
+        check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());
+        var tried = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
+            new { files, function = "doubles", input = new { n = 21 } }), ct), ct);
+        tried.GetProperty("result").GetString().Should().Be("hello 42", tried.ToString());
+        _egress.Requests.Should().Contain("https://registry.npmjs.org/tiny-lib/-/tiny-lib-1.2.0.tgz");
+
+        var tampered = Files("sha512-" + Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData("something else"u8)));
+        var refused = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files = tampered }), ct), ct);
+        refused.GetProperty("ok").GetBoolean().Should().BeFalse();
+        refused.GetProperty("problems")[0].GetProperty("message").GetString().Should().Contain("integrity");
+    }
+
+    /// <summary>
     /// `dcms sdk` (ADR 0031): a desktop C# build references the server's own Dcms.Functions.Sdk,
     /// with the environment's Sdk.g.cs, and compiles against the curated BCL only, as the server does.
     /// </summary>
@@ -111,11 +159,11 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
 
             await File.WriteAllTextAsync(Path.Combine(root, "functions", "Outside.cs"), """
                 namespace Functions;
-                public static class Outside { public static object Client() => new System.Net.Http.HttpClient(); }
+                public static class Outside { public static object Client() => new System.Net.Sockets.TcpClient(); }
                 """, ct);
             (ok, output) = await DotnetBuildAsync(root, ct);
-            ok.Should().BeFalse("System.Net.Http is not in the curated BCL");
-            output.Should().Contain("CS0234");
+            ok.Should().BeFalse("System.Net.Sockets is not in the curated BCL");
+            output.Should().Contain("TcpClient").And.MatchRegex("CS0234|CS1069");
         }
         finally
         {
@@ -496,10 +544,19 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
     {
         public List<string> Requests { get; } = [];
 
+        /// <summary>The npm registry's tarballs, by path.</summary>
+        public Dictionary<string, byte[]> Packages { get; } = [];
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Requests.Add(request.RequestUri!.ToString());
             var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(ct);
+            if (request.RequestUri.Host == "registry.npmjs.org")
+            {
+                return Packages.TryGetValue(request.RequestUri.AbsolutePath, out var tgz)
+                    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(tgz) }
+                    : new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
             return request.RequestUri.AbsolutePath switch
             {
                 "/bytes" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([.. body.Reverse()]) },
@@ -853,6 +910,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
             services.AddSingleton<FunctionSocketFactory>(_ => ct =>
                 _runner!.Server.CreateWebSocketClient().ConnectAsync(new Uri(_runner.Server.BaseAddress, "session"), ct));
             services.AddHttpClient(HostCalls.EgressClientName).ConfigurePrimaryHttpMessageHandler(() => _egress);
+            services.AddHttpClient(Dcms.Plugins.Functions.Packages.PackageStore.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => _egress);
         });
     });
 

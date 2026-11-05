@@ -83,11 +83,6 @@ globalThis.__dcms = {
 // Request does the work of reading every kind of body (text, bytes, Blob, URLSearchParams,
 // FormData) and its content type.
 const NULL_BODY = new Set([101, 103, 204, 205, 304]);
-const base64 = (bytes) => {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-};
 globalThis.fetch = async (input, init) => {
   const request = new Request(input, init);
   const bytes = request.body === null ? null : new Uint8Array(await request.arrayBuffer());
@@ -96,12 +91,12 @@ globalThis.fetch = async (input, init) => {
     url: request.url,
     method: request.method,
     headers: Object.fromEntries(request.headers),
-    bodyBase64: bytes === null ? null : base64(bytes),
+    bodyBase64: bytes === null ? null : bytes.toBase64(),
     redirect: request.redirect,
     timeoutMs: typeof timeoutMs === "number" ? timeoutMs : null,
     raw: true,
   });
-  const body = NULL_BODY.has(r.status) ? null : Uint8Array.from(atob(r.bodyBase64 ?? ""), (c) => c.charCodeAt(0));
+  const body = NULL_BODY.has(r.status) ? null : Uint8Array.fromBase64(r.bodyBase64 ?? "");
   const response = new Response(body, { status: r.status, headers: r.headers });
   // Where it ended up after redirects, as a fetch says; a secret in it reads as its ref.
   Object.defineProperty(response, "url", { value: r.url ?? "" });
@@ -122,12 +117,8 @@ const scrub = (e) => {
 };
 
 try {
-  const bytes = encoder.encode(start.bundle);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  const module = await import("data:application/javascript;base64," + btoa(binary));
+  // toBase64, not a binary string: with packages a bundle is megabytes (ADR 0031).
+  const module = await import("data:application/javascript;base64," + encoder.encode(start.bundle).toBase64());
   const definition = module.default;
   if (!definition || typeof definition[RUN] !== "function") {
     throw new Error("A function's file must `export default defineFunction({ ... })` from \"@dcms/functions\". Every .ts in functions/ is a function: shared code goes outside it, in lib/ for example.");

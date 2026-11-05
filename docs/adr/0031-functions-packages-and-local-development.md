@@ -54,6 +54,20 @@ These were decided by the user on 2026-11-05.
 
 **Any public npm or NuGet package**, declared and locked. The platform fetches exact versions, checks their integrity, never runs install scripts, and caches them.
 
+#### npm, as built (P1–P3)
+
+- **The lock is the whole truth.**
+  - `package.json`'s `dependencies` must equal what `package-lock.json` (v2/v3) records for the root, or the build fails and names the packages.
+  - Every non-dev entry must come from `registry.npmjs.org` and carry a sha256/384/512 integrity. Platform-specific optional binaries are skipped.
+  - At most 300 packages, 25 MB each and 60 MB per build.
+- **admin-api fetches; script-runner stays offline.**
+  - `PackageStore` fetches each tarball by its exact URL through `PublicEgress`, checks the integrity before anything else, and caches it in the `dcms-packages` bucket under its hash, shared by every tenant.
+  - The build request carries the archives. script-runner unpacks them into `node_modules/`: regular files only, no links, nothing outside the package folder, at most 300 MB and 30,000 files.
+- **The build:**
+  - A bare import must name a dependency or a file of one.
+  - `deno.json` gets `"nodeModulesDir": "manual"`, and `deno check`/`deno info` run without `--no-npm`.
+  - A package's `node:` imports are left for esbuild to judge. esbuild bundles the package's `worker`/`browser`/ES-module build, and a package that still reaches Node.js is reported once, naming the package and the modules it needs.
+
 #### Spike P0 (2026-11-05): go for both languages
 
 Measured with the runner's own Deno 2.5.4 and esbuild 0.28.2, under the production limits for a C# run (64 MB V8 heap, 768 MB `RLIMIT_DATA`, `--liftoff-only`).

@@ -12,7 +12,8 @@ namespace Dcms.ScriptRunner;
 /// module of <c>export declare …</c>: what the code is checked against.
 /// </param>
 /// <param name="SdkCSharp">The generated C# half of the SDK (Sdk.g.cs), for a repository's <c>.cs</c> files (ADR 0030).</param>
-public sealed record BuildRequest(Dictionary<string, string> Files, string SdkTypes, string? SdkCSharp = null);
+/// <param name="Packages">The npm packages <c>package-lock.json</c> locks (ADR 0031), fetched and checked by admin-api.</param>
+public sealed record BuildRequest(Dictionary<string, string> Files, string SdkTypes, string? SdkCSharp = null, List<PackageArchive>? Packages = null);
 
 public sealed record BuildDiagnostic(string Message, string? File = null, int? Line = null, int? Column = null, string? Code = null);
 
@@ -79,6 +80,16 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
 
     [GeneratedRegex(@"\[ERROR\] (?<msg>[^\n]+)\n\s*\n\s*(?<file>[^\s:]+):(?<line>\d+):(?<col>\d+):")]
     private static partial Regex EsbuildDiagnostic();
+
+    [GeneratedRegex("^Could not resolve \"([^\"]+)\"")]
+    private static partial Regex NodeImport();
+
+    /// <summary>The package a file under node_modules belongs to, the innermost one.</summary>
+    private static string PackageOfFile(string file)
+    {
+        var after = file[(file.LastIndexOf("node_modules/", StringComparison.Ordinal) + "node_modules/".Length)..];
+        return PackageArchives.PackageOf(after) ?? after;
+    }
 
     /// <summary>
     /// A repository may mix languages (ADR 0030): its TypeScript and its C# build side by side and
@@ -211,13 +222,20 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         {
             var entries = new SortedDictionary<string, string>(StringComparer.Ordinal);
             var diagnostics = new List<BuildDiagnostic>();
+            var packages = request.Packages ?? [];
+            var dependencies = packages.Count > 0 ? Dependencies(request.Files) : [];
+            if (packages.Count > 0 && request.Files.Keys.Any(p => p.EndsWith(".ts", StringComparison.Ordinal))
+                && await PackageArchives.UnpackAsync(root.FullName, packages, _o.MaxPackageUnpackedBytes, _o.MaxPackageFiles, ct) is { } unpacked)
+            {
+                return BuildResult.Failed(new BuildDiagnostic(unpacked, "package-lock.json"));
+            }
             foreach (var (path, content) in request.Files)
             {
                 if (!(path.EndsWith(".ts", StringComparison.Ordinal) || path.EndsWith(".js", StringComparison.Ordinal)))
                 {
                     continue;
                 }
-                diagnostics.AddRange(CheckImports(root.FullName, path, content));
+                diagnostics.AddRange(CheckImports(root.FullName, path, content, dependencies));
                 var full = Path.Combine(root.FullName, path);
                 Directory.CreateDirectory(Path.GetDirectoryName(full)!);
                 await File.WriteAllTextAsync(full, content, ct);
@@ -259,6 +277,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 // What a function has at run time: the language and the web's worker APIs (fetch,
                 // crypto, URL, streams…), no DOM and no Deno, which the harness removes.
                 ["compilerOptions"] = new JsonObject { ["strict"] = true, ["lib"] = new JsonArray("esnext", "webworker") },
+                // Packages resolve from the node_modules the archives were unpacked into, never a download.
+                ["nodeModulesDir"] = packages.Count > 0 ? "manual" : "none",
             }.ToJsonString(), ct);
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -267,13 +287,13 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             {
                 foreach (var entry in entries.Values)
                 {
-                    diagnostics.AddRange(await ContainAsync(root.FullName, entry, deadline.Token));
+                    diagnostics.AddRange(await ContainAsync(root.FullName, entry, packages.Count > 0, deadline.Token));
                 }
                 if (diagnostics.Count > 0)
                 {
                     return new BuildResult(false, diagnostics, []);
                 }
-                var check = await CheckAsync(root.FullName, entries.Values, deadline.Token);
+                var check = await CheckAsync(root.FullName, entries.Values, packages.Count > 0, deadline.Token);
                 if (check.Count > 0)
                 {
                     return new BuildResult(false, check, []);
@@ -341,7 +361,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     }
 
     /// <summary>Every specifier must be <c>@dcms/functions</c> or a relative path that stays inside the repository.</summary>
-    private static IEnumerable<BuildDiagnostic> CheckImports(string root, string path, string content)
+    private static IEnumerable<BuildDiagnostic> CheckImports(string root, string path, string content, IReadOnlySet<string> dependencies)
     {
         var directory = Path.GetDirectoryName(Path.Combine(root, path))!;
         // esbuild bundles require() calls, which Deno's module graph (ContainAsync) does not list.
@@ -361,10 +381,19 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             {
                 continue;
             }
+            // A package package.json depends on, or a file of one: `zod`, `date-fns/format` (ADR 0031).
+            if (!relative && PackageArchives.PackageOf(spec) is { } package && dependencies.Contains(package))
+            {
+                continue;
+            }
             var line = content.AsSpan(0, match.Index).Count('\n') + 1;
             yield return new BuildDiagnostic(relative
                     ? $"'{spec}' is outside the repository."
-                    : $"'{spec}' cannot be imported: a function imports only \"{SdkModule}\" and its repository's own files (./…).",
+                    : IsNodeBuiltin(spec)
+                        ? $"'{spec}' is part of Node.js, which a function does not have: use the web's APIs (fetch, crypto, URL…) or the SDK."
+                        : PackageArchives.PackageOf(spec) is { } missing
+                            ? $"'{spec}' cannot be imported: add \"{missing}\" to package.json's dependencies, or in the editor's Packages."
+                            : $"'{spec}' cannot be imported: a function imports only \"{SdkModule}\", the packages package.json depends on, and its repository's own files (./…).",
                 path, line);
         }
     }
@@ -376,13 +405,13 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     /// them and quotes what it cannot parse. So the graph Deno resolves is the authority, and
     /// nothing is type-checked until every module in it is the repository's or the SDK's.
     /// </summary>
-    private async Task<List<BuildDiagnostic>> ContainAsync(string root, string entry, CancellationToken ct)
+    private async Task<List<BuildDiagnostic>> ContainAsync(string root, string entry, bool packages, CancellationToken ct)
     {
         var cache = Directory.CreateTempSubdirectory("deno-");
         try
         {
             var (exit, _, output) = await RunAsync(_o.DenoPath,
-                ["info", "--json", "--no-remote", "--no-npm", "--no-lock", "--config", "deno.json", entry],
+                ["info", "--json", "--no-remote", .. Npm(packages), "--no-lock", "--config", "deno.json", entry],
                 _o.BuildDataLimitMegabytes, root, new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName }, ct);
             var prefix = new Uri(root + Path.DirectorySeparatorChar).AbsoluteUri;
             JsonDocument graph;
@@ -411,7 +440,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                         {
                             if (dependency.TryGetProperty(kind, out var resolved)
                                 && resolved.TryGetProperty("specifier", out var to)
-                                && !(to.GetString() ?? "").StartsWith(prefix, StringComparison.Ordinal))
+                                && !(to.GetString() ?? "").StartsWith(prefix, StringComparison.Ordinal)
+                                // A package's Node.js built-in is not a file; esbuild decides whether it is reached (BundleAsync).
+                                && !(packages && IsNodeBuiltin(to.GetString()) && from.StartsWith(prefix + "node_modules/", StringComparison.Ordinal)))
                             {
                                 var line = resolved.TryGetProperty("span", out var span) ? span.GetProperty("start").GetProperty("line").GetInt32() + 1 : (int?)null;
                                 problems.Add(new BuildDiagnostic(
@@ -424,7 +455,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 // Anything listed at all must be the repository's: a dependency kind not read above still shows here.
                 var outside = graph.RootElement.GetProperty("modules").EnumerateArray()
                     .Select(m => m.GetProperty("specifier").GetString() ?? "")
-                    .Any(specifier => !specifier.StartsWith(prefix, StringComparison.Ordinal));
+                    .Any(specifier => !specifier.StartsWith(prefix, StringComparison.Ordinal) && !(packages && IsNodeBuiltin(specifier)));
                 if (outside && problems.Count == 0)
                 {
                     problems.Add(new BuildDiagnostic("The function reaches a file outside the repository.", entry));
@@ -488,13 +519,13 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         return null;
     }
 
-    private async Task<List<BuildDiagnostic>> CheckAsync(string root, IEnumerable<string> entries, CancellationToken ct)
+    private async Task<List<BuildDiagnostic>> CheckAsync(string root, IEnumerable<string> entries, bool packages, CancellationToken ct)
     {
         var cache = Directory.CreateTempSubdirectory("deno-");
         try
         {
             var (exit, output, _) = await RunAsync(_o.DenoPath,
-                ["check", "--no-remote", "--no-npm", "--no-lock", "--config", "deno.json",
+                ["check", "--no-remote", .. Npm(packages), "--no-lock", "--config", "deno.json",
                  $"--v8-flags=--max-old-space-size={_o.BuildHeapMegabytes}", .. entries],
                 _o.BuildDataLimitMegabytes, root, new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName }, ct);
             if (exit == 0)
@@ -530,7 +561,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         var outFile = $".out/{name}.js";
         var metaFile = $".out/{name}.meta.json";
         var (exit, output, _) = await RunAsync(_o.EsbuildPath,
+            // A package's worker or browser build, ES module first: what runs without Node.js (ADR 0031).
             [entry, "--bundle", "--format=esm", "--platform=neutral", "--target=es2022", "--charset=utf8",
+             "--main-fields=module,main", "--conditions=worker,browser,import",
              "--legal-comments=none", "--log-level=error", $"--alias:{SdkModule}=./.dcms/runtime.js",
              "--sourcemap=external", "--sources-content=false",
              $"--outfile={outFile}", $"--metafile={metaFile}"],
@@ -540,7 +573,19 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             var found = EsbuildDiagnostic().Matches(output).Select(m => new BuildDiagnostic(
                 m.Groups["msg"].Value.Trim(), m.Groups["file"].Value,
                 int.Parse(m.Groups["line"].Value), int.Parse(m.Groups["col"].Value))).ToList();
-            found.RemoveAll(d => !InRepository(d.File));
+            // A package that reaches Node.js: said once per package, naming what it needs.
+            var needsNode = found
+                .Select(d => (d.File, Module: NodeImport().Match(d.Message)))
+                .Where(x => x.Module.Success && x.File is not null && x.File.StartsWith("node_modules/", StringComparison.Ordinal) && IsNodeBuiltin(x.Module.Groups[1].Value))
+                .GroupBy(x => PackageOfFile(x.File!))
+                .Select(g => new BuildDiagnostic(
+                    $"The package \"{g.Key}\" needs Node.js ({string.Join(", ", g.Select(x => x.Module.Groups[1].Value.Replace("node:", "")).Distinct().Order())}), "
+                    + "which a function does not have. Use a package that works in browsers or workers, or the SDK.", "package.json"))
+                .ToList();
+            // Only the repository's own files, and what was made of a package's above: raw tool output about
+            // a package's insides helps nobody.
+            found.RemoveAll(d => !InRepository(d.File) || d.File!.StartsWith("node_modules/", StringComparison.Ordinal));
+            found.AddRange(needsNode);
             return (null, null, found.Count > 0 ? found : [new BuildDiagnostic($"Bundling failed (exit {exit}).", entry)]);
         }
 
@@ -644,6 +689,35 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     }
 
     /// <summary>A diagnostic may be passed on only if it is about the repository's own files: one about any other file can quote it.</summary>
+    /// <summary>package.json's <c>dependencies</c>: the packages a function may import by name.</summary>
+    private static HashSet<string> Dependencies(IReadOnlyDictionary<string, string> files)
+    {
+        try
+        {
+            return files.TryGetValue("package.json", out var text) && JsonNode.Parse(text)?["dependencies"] is JsonObject declared
+                ? declared.Select(d => d.Key).ToHashSet(StringComparer.Ordinal)
+                : [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string[] Npm(bool packages) => packages ? [] : ["--no-npm"];
+
+    private static readonly HashSet<string> NodeBuiltins = new(StringComparer.Ordinal)
+    {
+        "assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants", "crypto", "dgram", "diagnostics_channel",
+        "dns", "domain", "events", "fs", "http", "http2", "https", "inspector", "module", "net", "os", "path", "perf_hooks", "process",
+        "punycode", "querystring", "readline", "repl", "stream", "string_decoder", "sys", "timers", "tls", "trace_events", "tty", "url",
+        "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+    };
+
+    /// <summary><c>node:fs</c>, or a bare <c>fs</c>, <c>fs/promises</c>: Node.js, not a package.</summary>
+    private static bool IsNodeBuiltin(string? specifier) =>
+        specifier is not null && (specifier.StartsWith("node:", StringComparison.Ordinal) || NodeBuiltins.Contains(specifier.Split('/')[0]));
+
     private static bool InRepository(string? file) =>
         file is not null && SafePath().IsMatch(file) && !file.Split('/').Any(s => s.StartsWith('.'));
 }

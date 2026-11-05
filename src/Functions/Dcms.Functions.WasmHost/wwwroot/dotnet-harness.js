@@ -10,7 +10,7 @@
 // imported statically below and every .wasm through resources.js's `with { type: "bytes" }`
 // imports, all part of the module graph Deno loads before running anything. The tenant's
 // assembly arrives on stdin. So the function can read no file, this one included.
-import { quiet, write } from "./hide-node.js";
+import { host, quiet, write } from "./hide-node.js";
 import { files } from "./resources.js";
 import "./_framework/dotnet.runtime.js";
 import "./_framework/dotnet.native.js";
@@ -38,7 +38,9 @@ let entry;
 // Between a run's done line and the next start, a serving process has no run: what code left
 // running gets no host calls and no log (script-runner also retires a process busy while idle).
 let running = false;
-const bytes = (base64) => Uint8Array.from(atob(base64 ?? ""), (c) => c.charCodeAt(0));
+// fromBase64, not atob: a start message with packages is megabytes, and decoding it through a
+// string ran the 64 MB heap out (ADR 0031, spike P0).
+const bytes = (base64) => Uint8Array.fromBase64(base64 ?? "");
 
 // The reason rarely says why (Mono logs its own allocator's failure as a separate line); in
 // practice an abort is running out of WebAssembly memory, so it counts as a limit, not retried.
@@ -65,15 +67,18 @@ async function boot() {
       onExit: (code) => end(`exit ${code}`),
     })
     .create();
+  // Every op is checked by the host; nothing here is trusted.
+  const call = (op, args) =>
+    new Promise((resolve, reject) => {
+      if (!running) return reject(new Error("The run is over."));
+      const id = ++nextId;
+      pending.set(id, { resolve, reject });
+      write({ type: "call", id, op, args });
+    });
+  // fetch (hide-node.js) and so HttpClient: the reply as an object.
+  host.call = async (op, args) => JSON.parse(await call(op, args));
   setModuleImports("dcms", {
-    // Every op is checked by the host; nothing here is trusted.
-    call: (op, args) =>
-      new Promise((resolve, reject) => {
-        if (!running) return reject(new Error("The run is over."));
-        const id = ++nextId;
-        pending.set(id, { resolve, reject });
-        write({ type: "call", id, op, args: JSON.parse(args) });
-      }),
+    call: (op, args) => call(op, JSON.parse(args)),
     log: (level, message) => running && write({ type: "log", level, message }),
   });
   return (await getAssemblyExports(getConfig().mainAssemblyName)).Entry;

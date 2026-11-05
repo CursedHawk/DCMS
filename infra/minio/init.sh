@@ -6,7 +6,8 @@ set -e
 
 mc alias set local "${MINIO_URL:-http://minio:9000}" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 
-for bucket in dcms-media dcms-sites dcms-build-logs; do
+# dcms-packages: npm and NuGet archives for Functions builds, by integrity hash (ADR 0031).
+for bucket in dcms-media dcms-sites dcms-build-logs dcms-packages; do
   if mc ls "local/$bucket" >/dev/null 2>&1; then
     echo "bucket $bucket exists"
   else

@@ -8,8 +8,14 @@ what the function declared in `uses`. This page is the list. ADRs 0029 and 0030 
 ## TypeScript
 
 - **Language**: the latest JavaScript and TypeScript (`esnext`), checked in strict mode.
-- **Imports**: `@dcms/functions` and the repository's own files (`./…`, `../lib/…`). No npm
-  packages, `npm:`/`jsr:`/`https:` URLs or `node:` modules yet.
+- **Imports**: `@dcms/functions`, the repository's own files (`./…`, `../lib/…`), and the npm
+  packages `package.json` depends on (`zod`, `date-fns/format`), locked by `package-lock.json`.
+  - The build fetches each locked version from the npm registry, checks it against the lock's
+    integrity hash, and never runs an install script. A missing or stale lock fails the build.
+  - Packages bundle as their `worker`/`browser` build. One that needs Node.js (`fs`, `net`, …)
+    fails the build and says so. One that talks HTTP through `fetch` (OpenAI's, Stripe's clients)
+    goes through the same egress rules as `ctx.http.fetch`.
+  - No `npm:`/`jsr:`/`https:` specifiers and no `node:` modules.
 - **Globals**: the web's worker APIs, which the editor and the build check against
   (`lib: esnext, webworker`):
   - `fetch`, `Request`, `Response`, `Headers`, `FormData`, `URLSearchParams`, `Blob`, `File`:
@@ -40,9 +46,35 @@ what the function declared in `uses`. This page is the list. ADRs 0029 and 0030 
   - `System.Security.Cryptography` (hashes, HMAC, AES, RSA, ECDsa)
   - `System.Reflection.Metadata`, `System.Diagnostics.StackTrace`, `System.Console`
     (`Console.WriteLine` writes to the run's log)
+  - `System.Net.Http` (`HttpClient`, through the same egress rules as `ctx.Http.Fetch`),
+    `System.Net.Primitives`, `System.Net.Requests`, `System.Net.ServicePoint`,
+    `System.Net.WebHeaderCollection`, `System.Net.Security`, `System.Private.Uri`
+  - `System.Xml.ReaderWriter`, `System.Private.Xml`, `System.Xml.Linq`, `System.Xml.XDocument`,
+    `System.Private.Xml.Linq`, `System.Xml.XPath`, `System.Xml.XPath.XDocument`,
+    `System.Xml.XmlSerializer`
+  - `System.Linq.Expressions`, `System.Reflection.Emit`, `System.Reflection.Emit.ILGeneration`,
+    `System.Reflection.Emit.Lightweight`, `System.Reflection.Primitives`, `System.Runtime.Loader`
+  - `System.Threading`, `System.Threading.Channels`, `System.Threading.Thread`,
+    `System.Threading.ThreadPool`, `System.Threading.Overlapped`
+  - `System.IO.Compression`, `System.IO.Pipelines`, `System.IO.MemoryMappedFiles`,
+    `System.Formats.Asn1`
+  - `System.ComponentModel`, `System.ComponentModel.Primitives`, `System.ComponentModel.Annotations`,
+    `System.ComponentModel.TypeConverter`, `System.Collections.Specialized`, `System.Data.Common`
+  - `System.Runtime.Serialization.Primitives`, `System.Runtime.Serialization.Formatters`,
+    `System.Runtime.Serialization.Json`, `System.Runtime.Serialization.Xml`
+  - `System.Diagnostics.DiagnosticSource`, `System.Diagnostics.Tracing`,
+    `System.Diagnostics.TraceSource`, `System.Diagnostics.Contracts`
+  - `System.Runtime.InteropServices`, `System.Runtime.Intrinsics`, `System.Numerics.Vectors`,
+    `System.Text.Encoding.Extensions`, `System.Resources.Writer`, `System.Transactions.Local`,
+    `System.Security.Claims`, `System.Drawing`, `System.Drawing.Primitives`,
+    `Microsoft.Win32.Primitives`
+  - `System`, `netstandard`: facades, so packages built for .NET Standard load
   - `Dcms.Functions`: the SDK
-- **Not there**: `HttpClient` (use `ctx.Http.Fetch`), files, threads of your own (`async`/`await`
-  works), native code (`DllImport` is refused), NuGet packages (yet).
+- **Not there**: files, threads of your own (`async`/`await` works; `Thread` and the thread pool
+  are present for what packages expect, but the sandbox runs one thread), native code
+  (`DllImport` is refused), JavaScript interop. A package that needs what .NET in the browser
+  lacks fails when it reaches it, with `PlatformNotSupportedException`: Stripe.net's built-in HTTP
+  client is one.
 
 ## The SDK
 

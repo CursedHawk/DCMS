@@ -209,6 +209,15 @@ public sealed record HttpResponse(int Status, IReadOnlyDictionary<string, string
 
 public sealed class HttpApi(Context ctx)
 {
+    private static readonly Lazy<HttpClient> SharedClient = new(() => new HttpClient());
+
+    /// <summary>
+    /// A ready <see cref="HttpClient"/>, for code and packages written against one (ADR 0031). It
+    /// goes through the same broker as <see cref="Fetch"/>: only the declared hosts answer, and a
+    /// secret's <see cref="SecretsApi.Ref"/> works in its headers and URL.
+    /// </summary>
+    public HttpClient Client => SharedClient.Value;
+
     /// <summary>
     /// Outbound HTTP, to the hosts declared with <see cref="UsesEgressAttribute"/> only, through
     /// redirects to them too (<paramref name="followRedirects"/>). The body is sent as it is when
