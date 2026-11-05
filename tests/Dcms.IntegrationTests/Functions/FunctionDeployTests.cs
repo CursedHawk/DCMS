@@ -57,6 +57,86 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         if (_forgejo is not null) await _forgejo.DisposeAsync();
     }
 
+    /// <summary>
+    /// `dcms sdk` (ADR 0031): a desktop C# build references the server's own Dcms.Functions.Sdk,
+    /// with the environment's Sdk.g.cs, and compiles against the curated BCL only, as the server does.
+    /// </summary>
+    [DockerFact]
+    public async Task A_desktop_csharp_build_uses_the_servers_sdk_package_and_only_the_curated_bcl()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        var sdk = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk", slug, owner), ct), ct);
+        var version = sdk.GetProperty("package").GetString()!;
+        using var package = await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk.nupkg", slug, owner), ct);
+        package.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var root = Directory.CreateTempSubdirectory("dcms-desktop-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, ".dcms", "packages"));
+            Directory.CreateDirectory(Path.Combine(root, "functions"));
+            await File.WriteAllBytesAsync(Path.Combine(root, ".dcms", "packages", $"dcms.functions.sdk.{version}.nupkg"), await package.Content.ReadAsByteArrayAsync(ct), ct);
+            await File.WriteAllTextAsync(Path.Combine(root, ".dcms", "Sdk.g.cs"), sdk.GetProperty("csharp").GetString(), ct);
+            await File.WriteAllTextAsync(Path.Combine(root, "nuget.config"), """
+                <configuration><packageSources><clear /><add key="dcms" value=".dcms/packages" /></packageSources></configuration>
+                """, ct);
+            // As `dcms sdk` writes it (packages/cli/src/lib.mjs csharpFiles), less the version file.
+            await File.WriteAllTextAsync(Path.Combine(root, "Functions.csproj"), $"""
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>net10.0</TargetFramework><RestorePackagesPath>.dcms/nuget</RestorePackagesPath></PropertyGroup>
+                  <ItemGroup><PackageReference Include="Dcms.Functions.Sdk" Version="{version}" /></ItemGroup>
+                </Project>
+                """, ct);
+            await File.WriteAllTextAsync(Path.Combine(root, "functions", "Total.cs"), """
+                namespace Functions;
+
+                public sealed record TotalInput(List<decimal> Lines);
+
+                [Function("total")]
+                public sealed class Total : Function<TotalInput, decimal>
+                {
+                    public override Task<decimal> Run(TotalInput input, Context ctx) => Task.FromResult(input.Lines.Sum());
+                }
+                """, ct);
+
+            var (ok, output) = await DotnetBuildAsync(root, ct);
+            ok.Should().BeTrue(output);
+
+            await File.WriteAllTextAsync(Path.Combine(root, "functions", "Outside.cs"), """
+                namespace Functions;
+                public static class Outside { public static object Client() => new System.Net.Http.HttpClient(); }
+                """, ct);
+            (ok, output) = await DotnetBuildAsync(root, ct);
+            ok.Should().BeFalse("System.Net.Http is not in the curated BCL");
+            output.Should().Contain("CS0234");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static async Task<(bool Ok, string Output)> DotnetBuildAsync(string root, CancellationToken ct)
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("dotnet", ["build", "-nologo", "-v", "q"])
+        {
+            WorkingDirectory = root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        })!;
+        var stdout = process.StandardOutput.ReadToEndAsync(ct);
+        var stderr = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+        return (process.ExitCode == 0, await stdout + await stderr);
+    }
+
     [DockerFact]
     public async Task Code_merged_into_release_builds_and_goes_live_when_someone_holding_what_it_uses_deploys_it()
     {

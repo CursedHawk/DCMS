@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    Dcms.Functions.Sdk (ADR 0031): a functions repository built on a desktop the way the server
+    builds it. The usings dcms-csc adds (FunctionCompilation.GlobalUsings), C# 14, nullable on,
+    and the environment's generated SDK (.dcms/Sdk.g.cs, written by `dcms sdk`).
+  -->
+  <PropertyGroup>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Threading.Tasks" />
+    <Using Include="System.Text.Json.Nodes" />
+    <Using Include="Dcms.Functions" />
+    <Compile Include="$(MSBuildProjectDirectory)/.dcms/Sdk.g.cs" Condition="Exists('$(MSBuildProjectDirectory)/.dcms/Sdk.g.cs')" />
+  </ItemGroup>
+</Project>

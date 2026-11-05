@@ -8,6 +8,10 @@
     <!-- What a function can use: one page, served to the editor and the CLI as written. Kept here,
          not in docs/, because the service images copy src/ only. -->
     <EmbeddedResource Include="Docs\functions-runtime.md" LogicalName="functions-runtime.md" />
+    <!-- Dcms.Functions.Sdk, the package `dcms sdk` puts in a clone (Build/CSharpSdkPackage.cs). -->
+    <EmbeddedResource Include="Sdk\Dcms.Functions.Sdk.props" LogicalName="Dcms.Functions.Sdk.props" />
+    <EmbeddedResource Include="Sdk\Dcms.Functions.Sdk.targets" LogicalName="Dcms.Functions.Sdk.targets" />
+    <EmbeddedResource Include="$(DcmsSrcRoot)Functions\Dcms.Functions.WasmHost\CuratedAssemblies.txt" LogicalName="CuratedAssemblies.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +26,8 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth.Api\Dcms.Plugins.UserAuth.Api.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
+    <!-- Only as the file the C# SDK package carries; nothing here calls into it. -->
+    <ProjectReference Include="$(DcmsSrcRoot)Functions\Dcms.Functions\Dcms.Functions.csproj" />
   </ItemGroup>
 
 </Project>

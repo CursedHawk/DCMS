@@ -238,6 +238,12 @@ public static class AuditActions
     /// <summary>One device signed out from the account page, leaving the others alone.</summary>
     public const string SessionRevoked = "auth.session.revoked";
 
+    /// <summary>A dcms command line signed out from the account page (ADR 0031).</summary>
+    public const string CliDeviceRevoked = "auth.cli-device.revoked";
+
+    /// <summary>A dcms command line's sign-in code approved or denied at /connect/verify.</summary>
+    public const string CliDeviceDecided = "auth.cli-device.decided";
+
     /// <summary>The sign-in page's account list: switched to an account this browser already
     /// holds a live login for, with no password.</summary>
     public const string AccountSwitched = "auth.account.switched";

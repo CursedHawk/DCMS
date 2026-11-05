@@ -1,0 +1,17 @@
+<Project>
+  <!--
+    Only the curated BCL (CuratedAssemblies.txt), as on the server: the framework's reference
+    assemblies outside it are taken away, so what does not compile there does not compile here.
+  -->
+  <Target Name="DcmsCurateFrameworkReferences" AfterTargets="ResolveTargetingPackAssets">
+    <ReadLinesFromFile File="$(MSBuildThisFileDirectory)CuratedAssemblies.txt">
+      <Output TaskParameter="Lines" ItemName="_DcmsCuratedLine" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <_DcmsAllowed Include="@(_DcmsCuratedLine)" AssemblyName="%(Identity)" />
+      <_DcmsFramework Include="@(Reference)" Condition="'%(Reference.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" AssemblyName="%(Filename)" />
+      <_DcmsFramework Remove="@(_DcmsAllowed)" MatchOnMetadata="AssemblyName" />
+      <Reference Remove="@(_DcmsFramework)" />
+    </ItemGroup>
+  </Target>
+</Project>

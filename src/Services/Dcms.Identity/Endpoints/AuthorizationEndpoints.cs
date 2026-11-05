@@ -41,7 +41,7 @@ public static class AuthorizationEndpoints
         app.MapGet("/connect/verify", VerifyPageAsync)
             .AuditExempt("Shows the code to approve; the approval itself is recorded.");
         app.MapPost("/connect/verify", VerifyAsync)
-            .WithAudit(AuditActions.TokenIssued, category: AuditCategory.Auth);
+            .WithAudit(AuditActions.CliDeviceDecided, category: AuditCategory.Auth);
         return app;
     }
 

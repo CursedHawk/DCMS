@@ -18,6 +18,10 @@ COPY samples/ samples/
 # The console compiles every built-in plugin's admin UI in; Node's default heap is not always enough.
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm install --frozen-lockfile && pnpm --filter @dcms/admin build
+# The dcms command line (ADR 0031), served by the console that it talks to:
+# npm install -g https://<console>/downloads/dcms-cli.tgz
+RUN mkdir -p /out/downloads && cd packages/cli && npm pack --silent --pack-destination /tmp \
+    && mv /tmp/dcms-cli-*.tgz /out/downloads/dcms-cli.tgz
 
 # The IDE's C# language service (ADR 0030): Roslyn on .NET's WebAssembly runtime, served as
 # static files under /csharp/ and loaded by the console's csharp.worker.ts on the first .cs file.
@@ -31,6 +35,7 @@ FROM nginx:alpine AS runtime
 COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/admin/dist /usr/share/nginx/html
 COPY --from=csharp /out/wwwroot /usr/share/nginx/html/csharp
+COPY --from=build /out/downloads /usr/share/nginx/html/downloads
 COPY apps/admin/docker-entrypoint.sh /docker-entrypoint.d/00-dcms-runtime-config.sh
 RUN chmod +x /docker-entrypoint.d/00-dcms-runtime-config.sh
 EXPOSE 80

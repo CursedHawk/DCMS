@@ -100,6 +100,19 @@ public sealed class DeploymentService(
             `[Function("refund")]` in `functions/orders/Refund.cs` is `orders/refund`.
             The editor's "New function" starts either.
 
+            ## Develop on your machine
+
+            Clone this repository (the console's Source control shows the URLs), then, with Node 20+:
+
+                npm install -g https://<your console>/downloads/dcms-cli.tgz
+                dcms login --server https://<your console>
+                dcms link && dcms sdk      # the SDK and editor config, in .dcms/
+                dcms check                 # the server's build of your working tree
+                dcms run hello --input '{"name":"Ada"}'
+                dcms deploy                # merge main into release, build, deploy
+
+            `release` is written by the platform only: push to `main`, and deploy from here or the console.
+
             """,
     };
 

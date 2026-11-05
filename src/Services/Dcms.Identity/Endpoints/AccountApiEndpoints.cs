@@ -275,7 +275,7 @@ public static class AccountApiEndpoints
                 await authorizations.TryRevokeAsync(authorization, ct);
             }
             return Results.NoContent();
-        }).WithAudit(AuditActions.SessionRevoked, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.CliDeviceRevoked, category: AuditCategory.Auth);
 
         return app;
     }

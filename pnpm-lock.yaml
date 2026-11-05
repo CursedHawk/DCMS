@@ -325,6 +325,8 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  packages/cli: {}
+
   packages/core:
     dependencies:
       oidc-client-ts:

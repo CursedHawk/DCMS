@@ -35,4 +35,16 @@ public sealed class RuntimeReferenceTests
         curated.Where(a => !section.Contains($"`{a}`", StringComparison.Ordinal)).Should().BeEmpty("every assembly a function has is on the page");
         named.Where(n => !curated.Contains(n)).Should().BeEmpty("the page names no assembly a function does not have");
     }
+
+    [Fact]
+    public void A_desktop_build_has_the_usings_the_server_build_has()
+    {
+        var root = Root();
+        var server = File.ReadAllText(Path.Combine(root, "src/Services/Dcms.ScriptRunner.CSharp/FunctionCompilation.cs"));
+        var props = File.ReadAllText(Path.Combine(root, "src/Plugins/Dcms.Plugins.Functions/Sdk/Dcms.Functions.Sdk.props"));
+        var global = System.Text.RegularExpressions.Regex.Matches(server, @"global using ([\w.]+);").Select(m => m.Groups[1].Value);
+        var desktop = System.Text.RegularExpressions.Regex.Matches(props, "<Using Include=\"([\\w.]+)\" />").Select(m => m.Groups[1].Value);
+
+        desktop.Should().BeEquivalentTo(global).And.NotBeEmpty();
+    }
 }

@@ -40,8 +40,13 @@ internal static class AdminEndpoints
             {
                 var model = await sdk.ModelAsync(ct, May(http, authz));
                 var (typings, csharp) = (SdkTypings.TypeScript(model), SdkTypings.CSharp(model));
-                return Results.Ok(new { typings, csharp, etag = SdkTypings.ETag(typings + csharp) });
+                return Results.Ok(new { typings, csharp, etag = SdkTypings.ETag(typings + csharp), package = CSharpSdkPackage.Version });
             })
+            .RequirePluginPermission("read");
+
+        // Dcms.Functions.Sdk, for a desktop C# build (`dcms sdk` saves it in the clone).
+        endpoints.MapGet("/_functions/sdk.nupkg", () =>
+                Results.File(CSharpSdkPackage.Bytes, "application/octet-stream", CSharpSdkPackage.FileName))
             .RequirePluginPermission("read");
 
         // What a function can use (Docs/functions-runtime.md), for the editor's help and the CLI.
