@@ -24,6 +24,17 @@ namespace Dcms.Plugins.Functions.Packages;
 public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
 {
     private const int MaxPackages = NpmLock.MaxPackages;
+
+    /// <summary>One resolution's registry requests and time: a dependency graph is the registry's to describe, not to make endless.</summary>
+    private const int MaxRequests = 1_000;
+    private static readonly TimeSpan MaxTime = TimeSpan.FromSeconds(90);
+    private const int MaxDependenciesEach = 200;
+    private int _requests;
+
+    private void Spend()
+    {
+        if (++_requests > MaxRequests) throw new PackageException($"Resolving these packages took more than {MaxRequests} registry requests.");
+    }
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 
     /// <summary>Packages matching <paramref name="query"/>, ten at most: name, latest version, what it says it is.</summary>
@@ -133,8 +144,11 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
 
     // ---------------- npm ----------------
 
-    public async Task<Dictionary<string, string>> NpmAsync(IReadOnlyDictionary<string, string> files, string name, string? range, bool remove, CancellationToken ct)
+    public async Task<Dictionary<string, string>> NpmAsync(IReadOnlyDictionary<string, string> files, string name, string? range, bool remove, CancellationToken cancel)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        deadline.CancelAfter(MaxTime);
+        var ct = deadline.Token;
         var manifest = (files.TryGetValue(NpmLock.Manifest, out var text) ? Parse(text) as JsonObject : null)
                        ?? new JsonObject { ["name"] = "functions", ["private"] = true };
         var dependencies = manifest["dependencies"] as JsonObject ?? new JsonObject();
@@ -183,6 +197,7 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
             };
             if (info["dependencies"] is JsonObject deps && deps.Count > 0)
             {
+                if (deps.Count > MaxDependenciesEach) throw new PackageException($"{want.Name} {version} lists more than {MaxDependenciesEach} dependencies.");
                 entry["dependencies"] = deps.DeepClone();
                 foreach (var (dep, depRange) in deps)
                 {
@@ -262,6 +277,7 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
         {
             throw new PackageException($"'{name}' is not an npm package name.");
         }
+        Spend();
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{NpmLock.Registry}{name.Replace("/", "%2f", StringComparison.Ordinal)}");
         // The abbreviated document: versions, dependencies and dist, without readmes.
         request.Headers.Accept.ParseAdd("application/vnd.npm.install-v1+json");
@@ -280,8 +296,11 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
          "netstandard1.6", "netstandard1.5", "netstandard1.4", "netstandard1.3", "netstandard1.2", "netstandard1.1", "netstandard1.0"];
 
     public async Task<Dictionary<string, string>> NuGetAsync(IReadOnlyDictionary<string, string> files, string id, string? version, bool remove,
-        IReadOnlySet<string> framework, CancellationToken ct)
+        IReadOnlySet<string> framework, CancellationToken cancel)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        deadline.CancelAfter(MaxTime);
+        var ct = deadline.Token;
         var project = files.TryGetValue(NuGetLock.Project, out var text) ? XDocument.Parse(text) : XDocument.Parse(CSharpProject);
         var root = project.Root!;
         var ns = root.Name.Namespace;
@@ -343,6 +362,10 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
                     {
                         chosenVersions[dep] = lowest;
                         moved = true;
+                        if (chosenVersions.Count > MaxPackages)
+                        {
+                            throw new PackageException($"These packages need more than {MaxPackages} packages in all.");
+                        }
                     }
                 }
             }
@@ -396,6 +419,7 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
     private async Task<List<NuGetVersion>> NuGetVersionsAsync(string id, CancellationToken ct)
     {
         if (!PackageArchivesNames.NuGet().IsMatch(id)) throw new PackageException($"'{id}' is not a NuGet package id.");
+        Spend();
         using var response = await http.CreateClient(PackageStore.HttpClientName).GetAsync($"{NuGetLock.Feed}{id.ToLowerInvariant()}/index.json", ct);
         if (!response.IsSuccessStatusCode) throw new PackageException($"There is no NuGet package {id}.");
         var index = await response.Content.ReadFromJsonAsync<JsonObject>(ct);
@@ -408,6 +432,7 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
     {
         var lowerId = id.ToLowerInvariant();
         var lowerVersion = version.ToNormalizedString().ToLowerInvariant();
+        Spend();
         using var response = await http.CreateClient(PackageStore.HttpClientName).GetAsync($"{NuGetLock.Feed}{lowerId}/{lowerVersion}/{lowerId}.nuspec", ct);
         if (!response.IsSuccessStatusCode) throw new PackageException($"NuGet has no {id} {version}.");
         var nuspec = XDocument.Parse(await response.Content.ReadAsStringAsync(ct));
@@ -423,10 +448,13 @@ public sealed class PackageResolver(IHttpClientFactory http, PackageStore store)
             var best = Frameworks.FirstOrDefault(byFramework.ContainsKey) ?? (byFramework.ContainsKey("") ? "" : null);
             chosen = best is null ? [] : byFramework[best].Elements().Where(e => e.Name.LocalName == "dependency");
         }
-        return chosen
+        var dependencies = chosen
             .Select(d => ((string?)d.Attribute("id") ?? "", VersionRange.TryParse((string?)d.Attribute("version") ?? "0.0.0", out var r) ? r : VersionRange.All))
             .Where(d => d.Item1.Length > 0)
             .ToList();
+        return dependencies.Count > MaxDependenciesEach
+            ? throw new PackageException($"{id} {version} lists more than {MaxDependenciesEach} dependencies.")
+            : dependencies;
     }
 
     /// <summary>A nuspec's framework name as a short moniker: ".NETStandard2.0" is netstandard2.0, "net8.0" stays.</summary>

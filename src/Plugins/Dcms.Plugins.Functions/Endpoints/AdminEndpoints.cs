@@ -145,12 +145,22 @@ internal static class AdminEndpoints
             .SkipAudit("Reads the assemblies of packages the caller's own lock names; changes nothing.");
 
         endpoints.MapPost("/_functions/packages", (PackageChange body, Packages.PackageResolver packages, CancellationToken ct) =>
-                Run(async () => Results.Ok(new
+                Run(async () =>
                 {
-                    files = body.Ecosystem == "nuget"
-                        ? await packages.NuGetAsync(body.Files, body.Name, body.Version, body.Remove, CSharpSdkPackage.Framework, ct)
-                        : await packages.NpmAsync(body.Files, body.Name, body.Version, body.Remove, ct),
-                })))
+                    try
+                    {
+                        return Results.Ok(new
+                        {
+                            files = body.Ecosystem == "nuget"
+                                ? await packages.NuGetAsync(body.Files, body.Name, body.Version, body.Remove, CSharpSdkPackage.Framework, ct)
+                                : await packages.NpmAsync(body.Files, body.Name, body.Version, body.Remove, ct),
+                        });
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        return Results.BadRequest(new { error = "Resolving these packages took longer than 90 s." });
+                    }
+                }))
             .RequirePluginPermission("edit")
             .AuditAs("package.changed");
 
