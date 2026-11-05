@@ -170,6 +170,7 @@ const COMMANDS = {
 
   async deploy() {
     const link = readLink(repoRoot());
+    console.log(`Deploying ${link.app} in ${link.tenant} (${link.environment}).`);
     const merge = await api(`/api/admin/repos/${link.repoId}/git/merge`, link, { head: 'main' });
     if (merge.conflict) {
       for (const f of merge.files ?? []) console.error(`conflict: ${f.path}`);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -14,6 +14,7 @@ import {
   keptTokens,
   parseInput,
   readCredentials,
+  readLink,
   workingFiles,
   writeCredentials,
   writeFiles,
@@ -39,7 +40,7 @@ test('the working tree is what git does not ignore, less .dcms and binaries', ()
   execFileSync('git', ['init', '-q'], { cwd: root });
   writeFiles(root, { 'functions/a.ts': 'export {}\n', '.dcms/functions.ts': 'x', 'dist/out.js': 'y', '.gitignore': 'dist/\n' });
   writeFileSync(join(root, 'logo.png'), Buffer.from([137, 80, 0, 1]));
-  assert.deepEqual(Object.keys(workingFiles(root)).sort(), ['.gitignore', 'functions/a.ts']);
+  assert.deepEqual(Object.keys(workingFiles(root)).sort(), ['functions/a.ts']);
 });
 
 test('.dcms/ is ignored once', () => {
@@ -84,4 +85,25 @@ test('a C# repository gets the server\'s SDK package, and a project and source o
   assert.deepEqual(Object.keys(csharpFiles('1.0.0-sdk.abc', new Uint8Array([1]), () => true)).length, 2);
   assert.deepEqual(writeFiles(root, { 'bytes.bin': new Uint8Array([0, 1]) }), ['bytes.bin']);
   assert.deepEqual(writeFiles(root, { 'bytes.bin': new Uint8Array([0, 1]) }), []);
+});
+
+test('a clone cannot point a read or a write outside itself, or a command at another app', () => {
+  const root = temp();
+  const outside = temp();
+  writeFileSync(join(outside, 'id_rsa'), 'secret');
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  writeFiles(root, { 'functions/a.ts': 'export {}\n', '.env': 'KEY=1\n', 'README.md': '# x\n' });
+  symlinkSync(join(outside, 'id_rsa'), join(root, 'functions', 'key.ts'));
+  symlinkSync(outside, join(root, 'lib'));
+  assert.deepEqual(Object.keys(workingFiles(root)), ['functions/a.ts']);
+
+  symlinkSync(join(outside, 'id_rsa'), join(root, 'deno.json'));
+  assert.throws(() => writeFiles(root, { 'deno.json': '{}' }), /symbolic link/);
+  assert.throws(() => writeFiles(root, { 'lib/x.ts': '' }), /symbolic link/);
+  assert.equal(readFileSync(join(outside, 'id_rsa'), 'utf8'), 'secret');
+
+  mkdirSync(join(root, '.dcms'));
+  writeFileSync(join(root, '.dcms', 'link.json'), '{"app":"other"}');
+  execFileSync('git', ['add', '-f', '.dcms/link.json'], { cwd: root });
+  assert.throws(() => readLink(root), /committed/);
 });

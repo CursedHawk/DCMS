@@ -1,6 +1,6 @@
 // Pure helpers and the files the CLI keeps: no network here, so they test without a server.
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -62,13 +62,42 @@ export function repoRoot(cwd = process.cwd()) {
 export function readLink(root) {
   const path = join(root, LINK_FILE);
   if (!existsSync(path)) throw new Error('This folder is not linked. Run `dcms link` in your clone.');
+  // `dcms link` writes it and .dcms/ is ignored: one that came with the clone could point your
+  // sign-in at another app, so it is not believed.
+  if (git(root, 'ls-files', '--', LINK_FILE)) {
+    throw new Error(`${LINK_FILE} is committed in this repository. Remove it from git, then run \`dcms link\`.`);
+  }
+  if (!plainUnder(root, LINK_FILE)) throw new Error(`${LINK_FILE} is not a plain file.`);
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+/**
+ * Whether path, under root, is reached through no symbolic link: a clone is someone else's
+ * content, and a link in it could point a read or a write anywhere on this machine.
+ * True for a path that does not exist yet, as long as no folder on the way is a link.
+ */
+export function plainUnder(root, path) {
+  const parts = path.split(/[\\/]/);
+  if (parts.some((p) => p === '..' || p === '')) return false;
+  let at = root;
+  for (const part of parts) {
+    at = join(at, part);
+    let stat;
+    try {
+      stat = lstatSync(at);
+    } catch {
+      return true; // not there yet: nothing below it can be a link
+    }
+    if (stat.isSymbolicLink()) return false;
+  }
+  return lstatSync(at).isFile();
 }
 
 /** Writes files under root, creating folders; returns what changed. */
 export function writeFiles(root, files) {
   const changed = [];
   for (const [path, text] of Object.entries(files)) {
+    if (!plainUnder(root, path)) throw new Error(`Refusing to write ${path}: it, or a folder on the way, is a symbolic link or not a file.`);
     const full = join(root, path);
     if (existsSync(full) && Buffer.compare(readFileSync(full), Buffer.from(text)) === 0) continue;
     mkdirSync(dirname(full), { recursive: true });
@@ -89,13 +118,20 @@ export function ignoreDcms(root) {
   return true;
 }
 
-/** The working tree as the server checks it: tracked and new files git does not ignore. */
+/** What the server's build reads: source, and JSON a function may import. */
+const SOURCE = /\.(ts|mts|js|mjs|cs|json)$/;
+
+/**
+ * The working tree as the server checks it: tracked and new source files git does not ignore.
+ * Never a symbolic link, nothing under a dot-folder or named with a dot (.env, .npmrc…), and
+ * nothing that is not source: this is sent to the server, and a clone is someone else's content.
+ */
 export function workingFiles(root, maxBytes = 1024 * 1024) {
   const files = {};
   for (const path of git(root, 'ls-files', '-co', '--exclude-standard', '-z').split('\0')) {
-    if (!path || path.startsWith('.dcms/')) continue;
+    if (!path || !SOURCE.test(path) || path.split('/').some((p) => p.startsWith('.'))) continue;
     const full = join(root, path);
-    if (!existsSync(full)) continue; // deleted, not yet staged
+    if (!existsSync(full) || !plainUnder(root, path)) continue; // deleted, or a link
     const bytes = readFileSync(full);
     if (bytes.length > maxBytes || bytes.includes(0)) continue; // binary or huge: not source
     files[path] = bytes.toString('utf8');
@@ -138,6 +174,7 @@ export function hasCSharp(root) {
  * is, and (when absent) a project and a NuGet source that use it.
  */
 export function csharpFiles(version, nupkg, exists) {
+  if (!/^[0-9A-Za-z.-]+$/.test(version)) throw new Error(`The server named an odd package version: ${version}`);
   const files = {
     [`.dcms/packages/dcms.functions.sdk.${version}.nupkg`]: nupkg,
     '.dcms/version.props': `<Project>\n  <PropertyGroup>\n    <DcmsFunctionsSdkVersion>${version}</DcmsFunctionsSdkVersion>\n  </PropertyGroup>\n</Project>\n`,
