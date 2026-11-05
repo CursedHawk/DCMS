@@ -126,6 +126,34 @@ internal static class AdminEndpoints
             .RequirePluginPermission("secrets")
             .AuditAs("secret.deleted");
 
+        // Packages (ADR 0031): the IDE's search, and adding or removing one in the caller's draft.
+        // The answer is the manifest and lock to write: the draft is the caller's, and theirs to commit.
+        endpoints.MapGet("/_functions/packages/search", (string ecosystem, string q, Packages.PackageResolver packages, CancellationToken ct) =>
+                Run(async () => Results.Ok(await packages.SearchAsync(ecosystem, q, ct))))
+            .RequirePluginPermission("read");
+
+        // The locked npm packages' declarations, for the editor's type checker: package.json + its lock in, files out.
+        endpoints.MapPost("/_functions/packages/types", (DraftFiles body, Packages.PackageResolver packages, CancellationToken ct) =>
+                Run(async () => Results.Ok(await packages.TypesAsync(body.Files, ct))))
+            .RequirePluginPermission("read")
+            .SkipAudit("Reads the declarations of packages the caller's own lock names; changes nothing.");
+
+        // The locked NuGet packages' assemblies, for the editor's C# service: Functions.csproj + its lock in.
+        endpoints.MapPost("/_functions/packages/assemblies", (DraftFiles body, Packages.PackageResolver packages, CancellationToken ct) =>
+                Run(async () => Results.Ok(await packages.AssembliesAsync(body.Files, CSharpSdkPackage.Framework, ct))))
+            .RequirePluginPermission("read")
+            .SkipAudit("Reads the assemblies of packages the caller's own lock names; changes nothing.");
+
+        endpoints.MapPost("/_functions/packages", (PackageChange body, Packages.PackageResolver packages, CancellationToken ct) =>
+                Run(async () => Results.Ok(new
+                {
+                    files = body.Ecosystem == "nuget"
+                        ? await packages.NuGetAsync(body.Files, body.Name, body.Version, body.Remove, CSharpSdkPackage.Framework, ct)
+                        : await packages.NpmAsync(body.Files, body.Name, body.Version, body.Remove, ct),
+                })))
+            .RequirePluginPermission("edit")
+            .AuditAs("package.changed");
+
         // The editor's checks: its draft built as a deployment would be, and tried, without making one.
         endpoints.MapPost("/_functions/check", (DraftFiles body, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.CheckAsync(body.Files, ct))))
@@ -155,6 +183,10 @@ internal static class AdminEndpoints
 
     public sealed record SecretBody(string Value);
 
+    /// <param name="Ecosystem"><c>npm</c> or <c>nuget</c>.</param>
+    /// <param name="Files">The draft's manifest and lock (package.json + package-lock.json, or Functions.csproj + packages.lock.json).</param>
+    public sealed record PackageChange(string Ecosystem, string Name, string? Version, bool Remove, Dictionary<string, string> Files);
+
     public sealed record DraftFiles(Dictionary<string, string> Files);
 
     public sealed record DraftTest(Dictionary<string, string> Files, string Function, JsonNode? Input = null, RunSimulation? Simulate = null);
@@ -176,6 +208,10 @@ internal static class AdminEndpoints
             return Results.Conflict(new { error = e.Message });
         }
         catch (ContractValidationException e)
+        {
+            return Results.BadRequest(new { error = e.Message });
+        }
+        catch (Packages.PackageException e)
         {
             return Results.BadRequest(new { error = e.Message });
         }

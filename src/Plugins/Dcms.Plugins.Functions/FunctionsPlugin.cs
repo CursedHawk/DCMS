@@ -186,6 +186,7 @@ public sealed class FunctionsPlugin : IPlugin
         services.AddScoped<SdkTypings>();
         services.AddScoped<Builder>();
         services.AddScoped<Packages.PackageStore>();
+        services.AddScoped<Packages.PackageResolver>();
         // Package archives (ADR 0031): from the public registry only, by exact URL.
         services.AddHttpClient(Packages.PackageStore.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(60))
             .ConfigurePrimaryHttpMessageHandler(() => PublicEgress.Handler(allowPrivate: host.Configuration.GetValue("Functions:EgressAllowLocal", false)));

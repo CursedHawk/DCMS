@@ -77,7 +77,19 @@ These were decided by the user on 2026-11-05.
   - dcms-csc compiles against those DLLs and reads their metadata without loading them. Any assembly reference outside the curated set, the SDK and the packages is refused, and so is any P/Invoke.
   - The assemblies go with the deployment as `@nuget/{name}.dll` bundles, at most 16 MB: the run's start message carries them, and the function's V8 heap parses it. The start message may be 80 MB.
 - **Running:** the harness loads them (`Entry.Load`, plus an `AssemblyResolve` hook) before the function's assembly, and a kept process loads them once.
-- **Not yet:** the IDE's C# language service does not see package types, so the editor marks their use until P5.
+
+#### The IDE's package manager (P5)
+
+- **Endpoints:**
+  - The Functions view's **Packages** section searches npm or NuGet (`/_functions/packages/search`, proxied).
+  - Adding or removing a package (`POST /_functions/packages`, *edit*) returns the manifest and lock to write into the caller's draft. It is committed like any other edit, and audited as `package.changed`.
+- **`PackageResolver` writes what a desktop `npm install` / `dotnet restore` accepts:**
+  - **npm:** the highest version in range, the `latest` tag first. A package goes at the top of `node_modules` unless a different version is already there, then under the package that needs it. Peer and optional dependencies are not installed.
+  - **NuGet:** the latest stable version unless one is given. Dependencies take the lowest version their range allows, and the highest of those when two ask. The `.nupkg` is hashed into the lock. Packages the framework provides (the curated BCL) are pruned, as .NET 10's restore does.
+- **The editor sees the packages:**
+  - `/_functions/packages/types` returns the locked npm packages' `.d.ts` files and `package.json` files, mounted under `file:///node_modules/` beside the SDK.
+  - `/_functions/packages/assemblies` returns the locked NuGet packages' assemblies (the build's `lib/` choice) to the C# language worker's `Packages` export.
+  - Both are fetched again when a lock changes.
 
 #### Spike P0 (2026-11-05): go for both languages
 

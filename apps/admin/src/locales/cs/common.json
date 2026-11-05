@@ -1003,6 +1003,16 @@
     "repository": "Repozitář",
     "functions": "Funkce",
     "fn": {
+      "packages": {
+        "title": "Balíčky",
+        "none": "Žádné balíčky. Přidejte je vyhledáním v npm nebo NuGet níže.",
+        "remove": "Odebrat {{name}}",
+        "ecosystem": "Registr balíčků",
+        "search": "Hledat balíčky…",
+        "add": "Přidat",
+        "noResults": "Nic nenalezeno.",
+        "hint": "Přidání nebo odebrání balíčku změní ve vašem konceptu package.json a package-lock.json (npm) nebo Functions.csproj a packages.lock.json (NuGet): commitněte je jako každou změnu. Build nainstaluje přesně to, co říká zámek."
+      },
       "title": "Funkce",
       "recheck": "Zkontrolovat znovu",
       "none": "Zatím žádné funkce: přidejte functions/<název>.ts nebo třídu C# označenou [Function(\"název\")].",

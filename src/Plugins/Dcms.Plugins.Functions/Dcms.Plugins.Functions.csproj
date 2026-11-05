@@ -15,6 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="NuGet.Versioning" />
+    <PackageReference Include="Semver" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Functions.Api\Dcms.Plugins.Functions.Api.csproj" />
     <!-- First-party: owns the functions schema (ADR 0029). -->

@@ -25,6 +25,11 @@ public static class CSharpSdkPackage
 
     public static string FileName => $"{Id.ToLowerInvariant()}.{Version}.nupkg";
 
+    /// <summary>The curated BCL's assembly names: packages of these names are the framework's, never installed.</summary>
+    public static readonly IReadOnlySet<string> Framework = Encoding.UTF8.GetString(Resource("CuratedAssemblies.txt"))
+        .Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#'))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private static (byte[], string) Build()
     {
         var dll = typeof(Dcms.Functions.Function<,>).Assembly.Location;

@@ -107,8 +107,9 @@ public static partial class PackageArchives
     /// folder's DLLs. A package with only native code or only a .NET Framework build is refused;
     /// one with no library at all (analyzers, a meta-package) gives nothing.
     /// </summary>
+    /// <param name="framework">Assembly names the runtime has itself: a package's copy of one is left out, the framework's wins.</param>
     public static (List<(string Package, string Name, byte[] Bytes)> Assemblies, List<string> Problems) Libraries(
-        IEnumerable<PackageArchive> archives, long maxBytes)
+        IEnumerable<PackageArchive> archives, long maxBytes, IReadOnlySet<string>? framework = null)
     {
         var assemblies = new List<(string, string, byte[])>();
         var problems = new List<string>();
@@ -144,6 +145,7 @@ public static partial class PackageArchives
                     using var copy = new MemoryStream();
                     stream.CopyTo(copy);
                     var file = name.Split('/')[2];
+                    if (framework?.Contains(Path.GetFileNameWithoutExtension(file)) == true) continue;
                     if (assemblies.Any(a => string.Equals(a.Item2, file, StringComparison.OrdinalIgnoreCase)))
                     {
                         problems.Add($"{package} brings {file}, which another package brings too.");

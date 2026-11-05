@@ -86,6 +86,11 @@ function sync(model: Monaco.editor.ITextModel): void {
 const parse = <T>(json: string): T => JSON.parse(json) as T;
 
 /** Errors and warnings of one C# model, for the Problems panel. */
+/** The repository's NuGet packages' assemblies, base64 (ADR 0031): replaces the set the language service compiles against. */
+export function csharpPackages(assemblies: string[]): Promise<void> {
+  return call<void>('Packages', JSON.stringify(assemblies));
+}
+
 export async function csharpDiagnostics(model: Monaco.editor.ITextModel): Promise<CSharpDiagnostic[]> {
   sync(model);
   return parse<CSharpDiagnostic[]>(await call<string>('Diagnostics', pathOf(model)));

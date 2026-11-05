@@ -154,6 +154,88 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
     }
 
     /// <summary>
+    /// The IDE's package manager (ADR 0031): adding a package writes the manifest and a lock the
+    /// build accepts, from the registries' metadata; removing one takes it out of both.
+    /// </summary>
+    [DockerFact]
+    public async Task Adding_a_package_writes_a_lock_the_build_installs()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        // npm: tiny-lib 1.2.0 (the latest) needs tiny-dep ^2.0.0.
+        var lib = Convert.FromBase64String(FunctionRunnerTests.Tarball(FunctionRunnerTests.TinyLib));
+        var dep = Convert.FromBase64String(FunctionRunnerTests.Tarball(new() { ["package.json"] = """{ "name": "tiny-dep", "version": "2.1.0" }""", ["index.js"] = "export default 1;" }));
+        string Sri(byte[] b) => "sha512-" + Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(b));
+        _egress.Packages["/tiny-lib/-/tiny-lib-1.2.0.tgz"] = lib;
+        _egress.Packages["/tiny-dep/-/tiny-dep-2.1.0.tgz"] = dep;
+        _egress.Packages["/tiny-lib"] = System.Text.Encoding.UTF8.GetBytes($$"""
+            { "name": "tiny-lib", "dist-tags": { "latest": "1.2.0" }, "versions": {
+              "1.0.0": { "dist": { "tarball": "https://registry.npmjs.org/tiny-lib/-/tiny-lib-1.0.0.tgz", "integrity": "sha512-AAAA" } },
+              "1.2.0": { "dependencies": { "tiny-dep": "^2.0.0" }, "dist": { "tarball": "https://registry.npmjs.org/tiny-lib/-/tiny-lib-1.2.0.tgz", "integrity": "{{Sri(lib)}}" } } } }
+            """);
+        _egress.Packages["/tiny-dep"] = System.Text.Encoding.UTF8.GetBytes($$"""
+            { "name": "tiny-dep", "dist-tags": { "latest": "3.0.0" }, "versions": {
+              "2.1.0": { "dist": { "tarball": "https://registry.npmjs.org/tiny-dep/-/tiny-dep-2.1.0.tgz", "integrity": "{{Sri(dep)}}" } },
+              "3.0.0": { "dist": { "tarball": "https://registry.npmjs.org/tiny-dep/-/tiny-dep-3.0.0.tgz", "integrity": "sha512-BBBB" } } } }
+            """);
+
+        var added = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages", slug, owner,
+            new { ecosystem = "npm", name = "tiny-lib", remove = false, files = new Dictionary<string, string>() }), ct), ct);
+        var npmFiles = added.GetProperty("files").Deserialize<Dictionary<string, string>>()!;
+        JsonNode.Parse(npmFiles["package.json"])!["dependencies"]!["tiny-lib"]!.GetValue<string>().Should().Be("^1.2.0");
+        var locked = JsonNode.Parse(npmFiles["package-lock.json"])!["packages"]!;
+        locked["node_modules/tiny-lib"]!["version"]!.GetValue<string>().Should().Be("1.2.0");
+        locked["node_modules/tiny-dep"]!["version"]!.GetValue<string>().Should().Be("2.1.0", "the highest version its range allows");
+
+        npmFiles["functions/doubles.ts"] = """
+            import { defineFunction } from "@dcms/functions";
+            import { double } from "tiny-lib";
+            export default defineFunction({ handler: (input: { n: number }) => double(input.n) });
+            """;
+        var tried = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
+            new { files = npmFiles, function = "doubles", input = new { n = 4 } }), ct), ct);
+        tried.GetProperty("result").GetInt32().Should().Be(8, tried.ToString());
+        // The editor's view of them: declarations and package.json files only.
+        var types = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages/types", slug, owner, new { files = npmFiles }), ct), ct);
+        types.EnumerateObject().Select(p => p.Name).Should().Contain("node_modules/tiny-lib/index.d.ts").And.NotContain("node_modules/tiny-lib/index.js");
+
+        var removed = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages", slug, owner,
+            new { ecosystem = "npm", name = "tiny-lib", remove = true, files = npmFiles }), ct), ct);
+        JsonNode.Parse(removed.GetProperty("files").GetProperty("package-lock.json").GetString()!)!["packages"]!.AsObject()
+            .Select(p => p.Key).Should().Equal("");
+
+        // NuGet: Tiny.Money 1.0.0, no dependencies.
+        var nupkg = Convert.FromBase64String(CSharpFunctionTests.Nupkg("Tiny.Money",
+            "namespace Tiny.Money; public static class Calc { public static decimal Double(decimal x) => x * 2; }"));
+        _egress.Packages["/v3-flatcontainer/tiny.money/index.json"] = """{ "versions": ["0.9.0", "1.0.0", "2.0.0-beta"] }"""u8.ToArray();
+        _egress.Packages["/v3-flatcontainer/tiny.money/1.0.0/tiny.money.nuspec"] = """<package><metadata><id>Tiny.Money</id><version>1.0.0</version><dependencies><group targetFramework=".NETStandard2.0" /></dependencies></metadata></package>"""u8.ToArray();
+        _egress.Packages["/v3-flatcontainer/tiny.money/1.0.0/tiny.money.1.0.0.nupkg"] = nupkg;
+        var csAdded = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages", slug, owner,
+            new { ecosystem = "nuget", name = "Tiny.Money", remove = false, files = new Dictionary<string, string>() }), ct), ct);
+        var csFiles = csAdded.GetProperty("files").Deserialize<Dictionary<string, string>>()!;
+        csFiles["Functions.csproj"].Should().Contain("<PackageReference Include=\"Tiny.Money\" Version=\"1.0.0\" />", "the latest stable version");
+        csFiles["functions/Doubles.cs"] = """
+            namespace Functions;
+            [Function("cs-doubles")]
+            public sealed class Doubles : Function<decimal, decimal>
+            {
+                public override Task<decimal> Run(decimal input, Context ctx) => Task.FromResult(Tiny.Money.Calc.Double(input));
+            }
+            """;
+        var csTried = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
+            new { files = csFiles, function = "cs-doubles", input = 5 }), ct), ct);
+        csTried.GetProperty("result").GetDecimal().Should().Be(10m, csTried.ToString());
+        var assemblies = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages/assemblies", slug, owner, new { files = csFiles }), ct), ct);
+        assemblies.GetArrayLength().Should().Be(1, "Tiny.Money's one assembly, for the editor's C# service");
+    }
+
+    /// <summary>
     /// `dcms sdk` (ADR 0031): a desktop C# build references the server's own Dcms.Functions.Sdk,
     /// with the environment's Sdk.g.cs, and compiles against the curated BCL only, as the server does.
     /// </summary>

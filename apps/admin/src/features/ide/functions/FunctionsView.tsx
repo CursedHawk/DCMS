@@ -7,6 +7,7 @@ import { BookOpen, Plus, RefreshCw } from 'lucide-react';
 import { AgentMarkdown } from '../../../components/AgentMarkdown';
 import { api } from '../../../lib/api';
 import { useVfs } from '../../site-source';
+import { PackagesPanel } from './PackagesPanel';
 import { typeText, type Schema } from './typeText';
 
 /** A function as the build read it (DeploymentService.DraftCheck.Specs). */
@@ -194,6 +195,8 @@ export function FunctionsView({ functionsApi, onNew }: { functionsApi: string; o
             </li>
           ))}
         </ul>
+
+        <PackagesPanel functionsApi={functionsApi} />
 
         <div className="border-t pt-3">
           <p className="font-medium">{t('ide.fn.deployment')}</p>

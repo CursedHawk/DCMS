@@ -132,6 +132,15 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
 
     private static bool IsCSharp(string path) => path.EndsWith(".cs", StringComparison.Ordinal);
 
+    /// <summary>The curated BCL dcms-csc compiles against (its refs/CuratedAssemblies.txt); null when it is not beside it.</summary>
+    private HashSet<string>? Framework()
+    {
+        var list = Path.Combine(Path.GetDirectoryName(_o.CSharpCompilerPath) ?? "", "refs", "CuratedAssemblies.txt");
+        return File.Exists(list)
+            ? File.ReadAllLines(list).Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : null;
+    }
+
     /// <summary>
     /// The repository's C#, compiled by dcms-csc (ADR 0030) under the same confinement as Deno:
     /// Roslyn reads no file but the request and runs none of the tenant's code, but a crafted
@@ -139,7 +148,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     /// </summary>
     private async Task<BuildResult> BuildCSharpAsync(BuildRequest request, CancellationToken ct)
     {
-        var (libraries, unusable) = PackageArchives.Libraries(request.Packages ?? [], _o.MaxPackageAssemblyBytes);
+        var (libraries, unusable) = PackageArchives.Libraries(request.Packages ?? [], _o.MaxPackageAssemblyBytes, Framework());
         if (unusable.Count > 0)
         {
             return BuildResult.Failed(unusable.Select(p => new BuildDiagnostic(p, "packages.lock.json")).ToArray());

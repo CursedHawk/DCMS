@@ -46,6 +46,22 @@ public static partial class Worker
         }
     }
 
+    private static List<MetadataReference>? s_framework;
+
+    /// <summary>
+    /// The repository's NuGet packages' assemblies (ADR 0031), base64, as the build compiles
+    /// against them: replaces whatever set was there, the curated BCL and the SDK staying.
+    /// </summary>
+    [JSExport]
+    public static void Packages(string json)
+    {
+        s_framework ??= References();
+        using var list = System.Text.Json.JsonDocument.Parse(json);
+        var packages = list.RootElement.EnumerateArray()
+            .Select(p => (MetadataReference)MetadataReference.CreateFromImage(Convert.FromBase64String(p.GetString() ?? "")));
+        Workspace.TryApplyChanges(Project.WithMetadataReferences(s_framework.Concat(packages)).Solution);
+    }
+
     private static List<MetadataReference> References()
     {
         var assembly = typeof(Worker).Assembly;

@@ -975,6 +975,16 @@
     "repository": "Repository",
     "functions": "Functions",
     "fn": {
+      "packages": {
+        "title": "Packages",
+        "none": "No packages. Search npm or NuGet below to add one.",
+        "remove": "Remove {{name}}",
+        "ecosystem": "Package registry",
+        "search": "Search packages…",
+        "add": "Add",
+        "noResults": "Nothing found.",
+        "hint": "Adding or removing a package changes package.json and package-lock.json (npm) or Functions.csproj and packages.lock.json (NuGet) in your draft: commit them like any change. The build installs exactly what the lock says."
+      },
       "title": "Functions",
       "recheck": "Check again",
       "none": "No functions yet: add functions/<name>.ts, or a C# class marked [Function(\"name\")].",

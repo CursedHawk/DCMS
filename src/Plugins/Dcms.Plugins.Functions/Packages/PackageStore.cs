@@ -58,6 +58,32 @@ public sealed class PackageStore(IHttpClientFactory http, IObjectStorage storage
         return fetched;
     }
 
+    /// <summary>
+    /// An archive no lock vouches for yet, for the resolver to hash into one (ADR 0031): fetched
+    /// from the registry, and cached under the hash it turns out to have.
+    /// </summary>
+    public async Task<byte[]> GetUncheckedAsync(string url, CancellationToken ct)
+    {
+        using var response = await http.CreateClient(HttpClientName).GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new PackageException($"{url} answered {(int)response.StatusCode}.");
+        }
+        await using var body = await response.Content.ReadAsStreamAsync(ct);
+        var bytes = await ReadBoundedAsync(body, ct);
+        try
+        {
+            var key = Integrity.Key("sha512-" + Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(bytes)));
+            using var copy = new MemoryStream(bytes, writable: false);
+            await storage.PutAsync(Bucket, key, copy, bytes.Length, "application/octet-stream", ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.LogWarning(e, "Could not cache {Url}.", url);
+        }
+        return bytes;
+    }
+
     private static async Task<byte[]> ReadBoundedAsync(Stream stream, CancellationToken ct)
     {
         using var buffer = new MemoryStream();

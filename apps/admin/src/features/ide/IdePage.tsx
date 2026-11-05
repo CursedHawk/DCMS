@@ -41,7 +41,7 @@ import {
   useVfs,
 } from '../site-source';
 import type { SiteTemplate } from '../site-source/ide';
-import { SDK_URI } from '../site-source/csharp/client';
+import { csharpPackages, SDK_URI } from '../site-source/csharp/client';
 import { type IdeCommand, modifierLabel } from './commands';
 import { IdeCommandPalette, type PaletteMode } from './IdeCommandPalette';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
@@ -195,6 +195,57 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
       if (repo.functionsApi) defaults.setCompilerOptions(before);
     };
   }, [repo?.types, repo?.functionsApi]);
+
+  // The locked npm packages' declarations (ADR 0031), beside the SDK's under file:///node_modules,
+  // so an import of one type-checks as the build checks it. Fetched again when the lock changes.
+  const npmLock = useVfs((s) => (repo?.functionsApi ? s.files['package-lock.json'] : undefined));
+  useEffect(() => {
+    if (!repo?.functionsApi || !npmLock) return;
+    let disposed = false;
+    const libs: { dispose(): void }[] = [];
+    const id = setTimeout(() => {
+      const { files } = useVfs.getState();
+      void api
+        .post<Record<string, string>>(`${repo.functionsApi}/packages/types`, {
+          files: { 'package.json': files['package.json'] ?? '{}', 'package-lock.json': npmLock },
+        })
+        .then((types) => {
+          if (disposed) return;
+          const defaults = setupMonaco().languages.typescript.typescriptDefaults;
+          for (const [path, text] of Object.entries(types)) libs.push(defaults.addExtraLib(text, `file:///${path}`));
+        })
+        .catch(() => {
+          // The build reports what is wrong with the packages; the editor just goes without their types.
+        });
+    }, 500);
+    return () => {
+      disposed = true;
+      clearTimeout(id);
+      for (const lib of libs) lib.dispose();
+    };
+  }, [repo?.functionsApi, npmLock]);
+
+  // The locked NuGet packages' assemblies, for the C# language service (ADR 0031).
+  const nugetLock = useVfs((s) => (repo?.functionsApi ? s.files['packages.lock.json'] : undefined));
+  useEffect(() => {
+    if (!repo?.functionsApi || !nugetLock) return;
+    let disposed = false;
+    const id = setTimeout(() => {
+      const { files } = useVfs.getState();
+      void api
+        .post<string[]>(`${repo.functionsApi}/packages/assemblies`, {
+          files: { 'Functions.csproj': files['Functions.csproj'] ?? '', 'packages.lock.json': nugetLock },
+        })
+        .then((assemblies) => (disposed ? undefined : csharpPackages(assemblies)))
+        .catch(() => {
+          // The build says what is wrong; the editor goes without the packages' types.
+        });
+    }, 500);
+    return () => {
+      disposed = true;
+      clearTimeout(id);
+    };
+  }, [repo?.functionsApi, nugetLock]);
 
   // Live deployments and commits for everyone with this site open. `sub` identifies this user
   // so the hook can tell your own publish (which already toasted) from a colleague's.
