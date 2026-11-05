@@ -102,7 +102,10 @@ globalThis.fetch = async (input, init) => {
     raw: true,
   });
   const body = NULL_BODY.has(r.status) ? null : Uint8Array.from(atob(r.bodyBase64 ?? ""), (c) => c.charCodeAt(0));
-  return new Response(body, { status: r.status, headers: r.headers });
+  const response = new Response(body, { status: r.status, headers: r.headers });
+  // Where it ended up after redirects, as a fetch says; a secret in it reads as its ref.
+  Object.defineProperty(response, "url", { value: r.url ?? "" });
+  return response;
 };
 
 const RUN = Symbol.for("dcms.run");

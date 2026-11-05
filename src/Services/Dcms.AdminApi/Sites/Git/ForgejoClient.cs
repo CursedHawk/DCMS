@@ -294,7 +294,7 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
     // ---------- branch protection ----------
 
     /// <summary>
-    /// Lets only the bot push to <paramref name="branch"/> (on), or anyone with write access again
+    /// Lets only the bot push or merge pull requests into <paramref name="branch"/> (on), or anyone with write access again
     /// (off). Idempotent both ways.
     /// </summary>
     public async Task ProtectBranchAsync(string owner, string repo, string branch, bool on, CancellationToken ct)
@@ -314,6 +314,10 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
             enable_push = true,
             enable_push_whitelist = true,
             push_whitelist_usernames = new[] { bot.Login },
+            // A pull request merged in Forgejo's UI is not a push: without this, anyone with
+            // write could merge into the branch through one, around the push whitelist.
+            enable_merge_whitelist = true,
+            merge_whitelist_usernames = new[] { bot.Login },
         };
         // In place when it exists: no moment in which the branch is open.
         using var updated = await http.PatchAsJsonAsync(rule, body, Json, ct);

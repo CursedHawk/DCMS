@@ -280,13 +280,14 @@ public sealed partial class HostCalls(
 
         // {{dcms-secret:NAME}} (ctx.secrets.ref): the value goes in here, never into the sandbox.
         var headers = new List<(string Name, string Value, bool Secret)>();
+        var substituted = new Dictionary<string, string>(StringComparer.Ordinal); // a value as sent → its ref
         foreach (var (name, value) in (args?["headers"] as JsonObject ?? []).Take(50))
         {
             if (value?.GetValueKind() != JsonValueKind.String || name.Equals("host", StringComparison.OrdinalIgnoreCase)) continue;
             var text = value.GetValue<string>();
-            headers.Add((name, await WithSecretsAsync(text, escape: false, ct), SecretRef().IsMatch(text)));
+            headers.Add((name, await WithSecretsAsync(text, escape: false, substituted, ct), SecretRef().IsMatch(text)));
         }
-        url = new Uri(await WithSecretsAsync(url.OriginalString, escape: true, ct));
+        url = new Uri(await WithSecretsAsync(url.OriginalString, escape: true, substituted, ct));
 
         for (var hop = 0; ; hop++)
         {
@@ -326,8 +327,9 @@ public sealed partial class HostCalls(
                         body = null;
                         headers.RemoveAll(h => h.Name.StartsWith("content-", StringComparison.OrdinalIgnoreCase));
                     }
-                    // Credentials stay with the host they were meant for.
-                    if (!string.Equals(next.IdnHost, url.IdnHost, StringComparison.OrdinalIgnoreCase))
+                    // Credentials stay with the origin they were meant for: the same scheme, host and
+                    // port, so an https → http downgrade on the same host drops them too.
+                    if (Uri.Compare(next, url, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) != 0)
                     {
                         headers.RemoveAll(h => h.Secret || h.Name.ToLowerInvariant() is "authorization" or "cookie" or "proxy-authorization");
                     }
@@ -338,9 +340,11 @@ public sealed partial class HostCalls(
                 var answer = new JsonObject();
                 foreach (var (name, values) in response.Headers.Concat(response.Content.Headers))
                 {
-                    answer[name.ToLowerInvariant()] = string.Join(", ", values);
+                    answer[name.ToLowerInvariant()] = Redact(string.Join(", ", values), substituted);
                 }
-                var result = new JsonObject { ["status"] = status, ["headers"] = answer, ["url"] = url.AbsoluteUri };
+                // What the function sees names a secret by its ref, never by its value: a URL that
+                // carried one, or a Location that echoes it.
+                var result = new JsonObject { ["status"] = status, ["headers"] = answer, ["url"] = Redact(url.AbsoluteUri, substituted) };
                 if (raw) result["bodyBase64"] = Convert.ToBase64String(bytes);
                 else result["body"] = Encoding.UTF8.GetString(bytes);
                 return result;
@@ -368,7 +372,7 @@ public sealed partial class HostCalls(
     }
 
     /// <summary>Each <c>{{dcms-secret:NAME}}</c> replaced by the secret, for a secret the function declared.</summary>
-    private async Task<string> WithSecretsAsync(string text, bool escape, CancellationToken ct)
+    private async Task<string> WithSecretsAsync(string text, bool escape, Dictionary<string, string> substituted, CancellationToken ct)
     {
         var refs = SecretRef().Matches(text);
         if (refs.Count == 0) return text;
@@ -387,8 +391,24 @@ public sealed partial class HostCalls(
                 throw new HostCallException($"The secret {name} holds a line break and cannot go into a request.");
             }
             values[name] = escape ? Uri.EscapeDataString(value) : value;
+            if (value.Length > 0)
+            {
+                substituted[value] = $"{{{{dcms-secret:{name}}}}}";
+                substituted[Uri.EscapeDataString(value)] = $"{{{{dcms-secret:{name}}}}}";
+            }
         }
         return SecretRef().Replace(text, m => values[m.Groups[1].Value]);
+    }
+
+    /// <summary>Each secret value the broker put into this request, back to its ref.</summary>
+    private static string Redact(string text, Dictionary<string, string> substituted)
+    {
+        // Longest first, so a value that contains another is replaced whole.
+        foreach (var (value, reference) in substituted.OrderByDescending(p => p.Key.Length))
+        {
+            text = text.Replace(value, reference, StringComparison.Ordinal);
+        }
+        return text;
     }
 
     private static byte[] Base64(string encoded)

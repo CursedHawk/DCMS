@@ -314,6 +314,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
                     const reply = await ctx.http.fetch("https://api.example.com/ping", { headers: { authorization: `Bearer ${key}` } });
                     // The global fetch, a secret the function never holds, bytes both ways, and redirects.
                     const viaRef = await (await fetch("https://api.example.com/ping", { headers: { authorization: "Bearer " + ctx.secrets.ref("STRIPE_KEY") } })).text();
+                    const inQuery = (await fetch("https://api.example.com/ping?key=" + ctx.secrets.ref("STRIPE_KEY"))).url;
+                    const downgraded = await (await fetch("https://api.example.com/downgrade", { headers: { authorization: "Bearer " + ctx.secrets.ref("STRIPE_KEY") } })).text();
                     const echoed = new Uint8Array(await (await fetch("https://api.example.com/bytes", { method: "POST", body: new Uint8Array([0, 255, 7]) })).arrayBuffer());
                     const redirected = await fetch("https://api.example.com/redirect");
                     const posted = await ctx.http.fetch("https://api.example.com/json", { method: "POST", body: { a: 1 } });
@@ -331,7 +333,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
                       try { await attempt(); refusals.push("allowed"); } catch (e) { refusals.push((e as Error).message); }
                     }
                     ctx.log.info("created", created.name);
-                    return { name: created.name, count, status: reply.status, pong: await reply.text(), viaRef, echoed: [...echoed],
+                    return { name: created.name, count, status: reply.status, pong: await reply.text(), viaRef, inQuery, downgraded, echoed: [...echoed],
                              redirected: [redirected.status, await redirected.text()], posted: await posted.text(), deno: typeof (globalThis as any).Deno,
                              doubled, job: job.id, viaContract: viaContract?.name ?? null, refusals };
                   },
@@ -377,6 +379,9 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         refusals[7].Should().Contain("Following companies.deal reads deals");
         refusals[8].Should().Contain("uses.contracts: [\"dynamic-apps.config@1\"]");
         result.GetProperty("viaRef").GetString().Should().Be("pong for Bearer sk_test_1", "the platform put the secret in");
+        result.GetProperty("inQuery").GetString().Should().NotContain("sk_test_1", "the URL a function reads back names the secret by its ref")
+            .And.Contain("dcms-secret");
+        result.GetProperty("downgraded").GetString().Should().Be("pong for ", "credentials do not follow a redirect from https to http");
         result.GetProperty("echoed").EnumerateArray().Select(b => b.GetInt32()).Should().Equal(7, 255, 0);
         result.GetProperty("redirected").EnumerateArray().Select(v => v.ToString()).Should().Equal("200", "pong for ");
         result.GetProperty("posted").GetString().Should().Be("application/json {\"a\":1}");
@@ -385,7 +390,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         result.GetProperty("viaContract").GetString().Should().Be("Acme", "a declared contract runs with the vouched permissions");
         run.GetProperty("logs").GetString().Should().Contain("[info] created Acme");
         _egress.Requests.Should().Equal(
-            "https://api.example.com/ping", "https://api.example.com/ping", "https://api.example.com/bytes",
+            "https://api.example.com/ping", "https://api.example.com/ping", "https://api.example.com/ping?key=sk_test_1",
+            "https://api.example.com/downgrade", "http://api.example.com/ping", "https://api.example.com/bytes",
             "https://api.example.com/redirect", "https://api.example.com/ping", "https://api.example.com/json", "https://api.example.com/away");
 
         // Running it acts with what it was vouched for, which the deploy permission alone is not.
@@ -418,6 +424,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
             {
                 "/bytes" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([.. body.Reverse()]) },
                 "/redirect" => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("/ping", UriKind.Relative) } },
+                "/downgrade" => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("http://api.example.com/ping") } },
                 "/away" => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://evil.example.org/x") } },
                 "/json" => new HttpResponseMessage(HttpStatusCode.OK)
                 {

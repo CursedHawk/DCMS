@@ -89,8 +89,10 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
         panel.GetProperty("httpUrl").GetString().Should().EndWith($"{repo.RepoFullName}.git");
         (await _forgejo.GetJsonAsync($"/api/v1/repos/{repo.RepoFullName}/collaborators/owner-git/permission"))
             .GetProperty("permission").GetString().Should().Be("write");
-        (await _forgejo.GetJsonAsync($"/api/v1/repos/{repo.RepoFullName}/branch_protections/release"))
-            .GetProperty("push_whitelist_usernames").EnumerateArray().Select(u => u.GetString()).Should().Equal("bot");
+        var protection = await _forgejo.GetJsonAsync($"/api/v1/repos/{repo.RepoFullName}/branch_protections/release");
+        protection.GetProperty("push_whitelist_usernames").EnumerateArray().Select(u => u.GetString()).Should().Equal("bot");
+        protection.GetProperty("enable_merge_whitelist").GetBoolean().Should().BeTrue("a pull request merge is not a push");
+        protection.GetProperty("merge_whitelist_usernames").EnumerateArray().Select(u => u.GetString()).Should().Equal("bot");
         var hash = ide.GetProperty("hashes").GetProperty("functions/hello.ts").GetString();
         // `dcms link`: a clone's remote names its tenant, environment and app, for a member only.
         var remote = Uri.EscapeDataString(panel.GetProperty("httpUrl").GetString()!);
