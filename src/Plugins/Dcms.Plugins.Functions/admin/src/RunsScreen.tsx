@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Badge, Button, DataTable, Input, LoadFailed, type Column } from '@dcms/ui';
-import { usePluginT, type PluginScreenProps } from '@dcms/plugin-ui';
-import { useRun, useRuns, type RunStatus, type RunSummary } from './api';
+import { usePluginHost, usePluginT, type PluginScreenProps } from '@dcms/plugin-ui';
+import { useRepo, useRun, useRuns, type RunStatus, type RunSummary } from './api';
 
 const TONE: Record<RunStatus, 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline'> = {
   Pending: 'secondary',
@@ -22,6 +22,13 @@ export function RunsScreen({ instance }: PluginScreenProps) {
   const runs = useRuns(slug, { function: fn.trim() || undefined, status: status || undefined, page });
   const [open, setOpen] = useState<string | null>(null);
   const run = useRun(slug, open);
+  const host = usePluginHost();
+  const repo = useRepo(slug);
+  // The editor's Runs tab: the same history beside the code, with replay against the draft.
+  const openInEditor = (fn: string) => {
+    const search = new URLSearchParams({ name: instance!.name, slug, kind: 'functions', runs: fn });
+    host.navigate(`/repos/${repo.data!.id}/code?${search}`);
+  };
 
   const columns = useMemo<Column<RunSummary>[]>(() => [
     { id: 'function', header: t('runs.function'), primary: true, cell: (r) => <span className="font-mono">{r.function}</span> },
@@ -50,7 +57,12 @@ export function RunsScreen({ instance }: PluginScreenProps) {
       </div>
       {open && run.data ? (
         <section className="space-y-3 rounded-lg border p-4">
-          <h3 className="text-sm font-semibold">{t('runs.detail', { function: run.data.run.function, deployment: run.data.run.deployment })}</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">{t('runs.detail', { function: run.data.run.function, deployment: run.data.run.deployment })}</h3>
+            {repo.data ? (
+              <Button variant="outline" size="sm" onClick={() => openInEditor(run.data!.run.function)}>{t('runs.openInEditor')}</Button>
+            ) : null}
+          </div>
           {run.data.run.error ? <p className="text-sm text-destructive">{run.data.run.error}</p> : null}
           <Block title={t('runs.input')} value={run.data.input} />
           <Block title={t('runs.result')} value={run.data.result} />

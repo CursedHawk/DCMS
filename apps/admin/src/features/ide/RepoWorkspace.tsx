@@ -12,6 +12,8 @@ export interface RepoSearch {
   slug?: string;
   /** What the repository holds, when the console knows it: `functions`. */
   kind?: string;
+  /** Open on the Runs tab, filtered to this function ('' for all): from the app's Runs screen. */
+  runs?: string;
 }
 
 /** An app's address as the server issues them; anything else is ignored, not trusted. */
@@ -34,6 +36,7 @@ export function RepoWorkspace({ repoId, search }: { repoId: string; search: Repo
       back: slug ? `/apps/${slug}/code` : '/',
       types: functions ? { module: '@dcms/functions', path: `/admin/plugins/${slug}/_functions/sdk` } : undefined,
       functionsApi: functions ? `/admin/plugins/${slug}/_functions` : undefined,
+      runs: functions ? search.runs?.slice(0, 63) : undefined,
     };
   }, [search, t]);
 

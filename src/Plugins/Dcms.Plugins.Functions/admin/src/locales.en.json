@@ -72,7 +72,8 @@
     "triggerDetail": "Trigger",
     "logs": "Log",
     "noLogs": "Nothing logged.",
-    "meta": "Attempt {{attempts}} · {{calls}} host calls · depth {{depth}}"
+    "meta": "Attempt {{attempts}} · {{calls}} host calls · depth {{depth}}",
+    "openInEditor": "Open in the editor"
   },
   "runStatus": {
     "Pending": "Waiting",

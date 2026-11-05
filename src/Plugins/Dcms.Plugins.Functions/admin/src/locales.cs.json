@@ -72,7 +72,8 @@
     "triggerDetail": "Spouštěč",
     "logs": "Log",
     "noLogs": "Nic nezalogováno.",
-    "meta": "Pokus {{attempts}} · {{calls}} volání hostitele · hloubka {{depth}}"
+    "meta": "Pokus {{attempts}} · {{calls}} volání hostitele · hloubka {{depth}}",
+    "openInEditor": "Otevřít v editoru"
   },
   "runStatus": {
     "Pending": "Čeká",

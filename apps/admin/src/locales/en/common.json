@@ -941,7 +941,8 @@
         "output": "Output",
         "console": "Console",
         "build": "Build",
-        "run": "Run"
+        "run": "Run",
+        "runs": "Runs"
       },
       "hide": "Hide panel",
       "resize": "Resize panel",
@@ -1027,6 +1028,19 @@
         "message": "Message",
         "schedule": "Schedule"
       }
+    },
+    "runs": {
+      "filterFunction": "Function…",
+      "status": "Status",
+      "anyStatus": "Any status",
+      "empty": "No runs yet.",
+      "newer": "Newer",
+      "older": "Older",
+      "pick": "Pick a run to see its input, result, calls and log.",
+      "meta": "deployment {{deployment}} · {{trigger}} · attempt {{attempts}}",
+      "replay": "Replay against the draft",
+      "input": "Input",
+      "refresh": "Refresh"
     }
   },
   "openapi": {

@@ -79,6 +79,8 @@ export interface RepoTarget {
   types?: { module: string; path: string };
   /** A Functions app's admin routes (`/admin/plugins/{slug}/_functions`): the agent builds and runs drafts there. */
   functionsApi?: string;
+  /** Open on the Runs tab, filtered to this function ('' for all). */
+  runs?: string;
 }
 
 export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget }) {
@@ -122,6 +124,12 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
   // Resizable layout: the sidebar view and preview panels remember their width
   // (px) in localStorage; double-clicking a divider restores the default.
   const panel = usePanelState();
+  // Opened from the app's Runs screen: start on the Runs tab (workbench W4).
+  const openOnRuns = repo?.functionsApi && repo.runs !== undefined;
+  const { show: showPanel } = panel;
+  useEffect(() => {
+    if (openOnRuns) showPanel('runs');
+  }, [openOnRuns, showPanel]);
   const [panelHeight, setPanelHeight, resetPanelHeight] = useStoredWidth(
     'dcms.ide.panelHeight',
     220,
@@ -678,6 +686,7 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
             previewEnabled={showPreview}
             onEnablePreview={() => setShowPreview(true)}
             functionsApi={repo?.functionsApi}
+            runsFunction={repo?.runs}
           />
         </div>
         {showPreview && !repo && (

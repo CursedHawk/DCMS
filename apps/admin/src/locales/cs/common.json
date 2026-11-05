@@ -969,7 +969,8 @@
         "output": "Výstup",
         "console": "Konzole",
         "build": "Sestavení",
-        "run": "Spustit"
+        "run": "Spustit",
+        "runs": "Běhy"
       },
       "hide": "Skrýt panel",
       "resize": "Změnit velikost panelu",
@@ -1056,6 +1057,19 @@
         "message": "Zpráva",
         "schedule": "Plán"
       }
+    },
+    "runs": {
+      "filterFunction": "Funkce…",
+      "status": "Stav",
+      "anyStatus": "Jakýkoli stav",
+      "empty": "Zatím žádné běhy.",
+      "newer": "Novější",
+      "older": "Starší",
+      "pick": "Vyberte běh a uvidíte jeho vstup, výsledek, volání a log.",
+      "meta": "nasazení {{deployment}} · {{trigger}} · pokus {{attempts}}",
+      "replay": "Přehrát na konceptu",
+      "input": "Vstup",
+      "refresh": "Obnovit"
     }
   },
   "openapi": {
