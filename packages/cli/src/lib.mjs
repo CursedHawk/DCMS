@@ -1,6 +1,6 @@
 // Pure helpers and the files the CLI keeps: no network here, so they test without a server.
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -14,9 +14,12 @@ export function authOrigin(server) {
   return url.origin;
 }
 
+export function configDir(env = process.env) {
+  return join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'dcms');
+}
+
 export function credentialsPath(env = process.env) {
-  const base = env.XDG_CONFIG_HOME || join(homedir(), '.config');
-  return join(base, 'dcms', 'credentials.json');
+  return join(configDir(env), 'credentials.json');
 }
 
 // ponytail: a 0600 file, like gh and npm without a keyring; move to the OS keychain if asked.
@@ -25,6 +28,10 @@ export function readCredentials(path = credentialsPath()) {
 }
 
 export function writeCredentials(value, path = credentialsPath()) {
+  writePrivate(path, value);
+}
+
+function writePrivate(path, value) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, JSON.stringify(value, null, 2), { mode: 0o600 });
   chmodSync(path, 0o600);
@@ -44,7 +51,6 @@ export function keptTokens(tokens, now = Date.now()) {
   };
 }
 
-export const LINK_FILE = join('.dcms', 'link.json');
 
 export function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -59,16 +65,28 @@ export function repoRoot(cwd = process.cwd()) {
   }
 }
 
-export function readLink(root) {
-  const path = join(root, LINK_FILE);
-  if (!existsSync(path)) throw new Error('This folder is not linked. Run `dcms link` in your clone.');
-  // `dcms link` writes it and .dcms/ is ignored: one that came with the clone could point your
-  // sign-in at another app, so it is not believed.
-  if (git(root, 'ls-files', '--', LINK_FILE)) {
-    throw new Error(`${LINK_FILE} is committed in this repository. Remove it from git, then run \`dcms link\`.`);
+// Which app a clone is, kept with this machine's sign-in and keyed by the clone's real path:
+// never in the clone, which is someone else's content and could otherwise name another app.
+const linksPath = (env) => join(configDir(env), 'links.json');
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+export function writeLink(root, link, env = process.env) {
+  const { tenant, environment, app, repoId } = link;
+  if (![tenant, environment, app].every((v) => typeof v === 'string' && NAME.test(v)) || !GUID.test(String(repoId))) {
+    throw new Error('The server answered with a link this command line does not understand.');
   }
-  if (!plainUnder(root, LINK_FILE)) throw new Error(`${LINK_FILE} is not a plain file.`);
-  return JSON.parse(readFileSync(path, 'utf8'));
+  const path = linksPath(env);
+  const links = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
+  links[realpathSync(root)] = { tenant, environment, app, repoId, plugin: link.plugin, repo: link.repo };
+  writePrivate(path, links);
+}
+
+export function readLink(root, env = process.env) {
+  const path = linksPath(env);
+  const link = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8'))[realpathSync(root)] : undefined;
+  if (!link) throw new Error('This clone is not linked. Run `dcms link` in it.');
+  return link;
 }
 
 /**
@@ -109,6 +127,7 @@ export function writeFiles(root, files) {
 
 /** `.dcms/` (generated per environment) and a desktop build's bin/ and obj/ in .gitignore, once. */
 export function ignoreDcms(root) {
+  if (!plainUnder(root, '.gitignore')) throw new Error('Refusing to touch .gitignore: it is a symbolic link or not a file.');
   const path = join(root, '.gitignore');
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   const has = new Set(text.split(/\r?\n/).map((l) => l.trim().replace(/\/$/, '')));

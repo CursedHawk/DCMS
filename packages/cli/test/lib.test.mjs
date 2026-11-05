@@ -15,6 +15,7 @@ import {
   parseInput,
   readCredentials,
   readLink,
+  writeLink,
   workingFiles,
   writeCredentials,
   writeFiles,
@@ -102,8 +103,17 @@ test('a clone cannot point a read or a write outside itself, or a command at ano
   assert.throws(() => writeFiles(root, { 'lib/x.ts': '' }), /symbolic link/);
   assert.equal(readFileSync(join(outside, 'id_rsa'), 'utf8'), 'secret');
 
+  // The link lives with the sign-in, keyed by the clone's real path; the clone cannot supply one.
+  const env = { XDG_CONFIG_HOME: temp() };
   mkdirSync(join(root, '.dcms'));
   writeFileSync(join(root, '.dcms', 'link.json'), '{"app":"other"}');
-  execFileSync('git', ['add', '-f', '.dcms/link.json'], { cwd: root });
-  assert.throws(() => readLink(root), /committed/);
+  assert.throws(() => readLink(root, env), /not linked/);
+  const link = { tenant: 'acme', environment: 'production', app: 'fn', repoId: '0b0e7c2e-1111-4222-8333-944445555666' };
+  writeLink(root, link, env);
+  assert.equal(readLink(root, env).app, 'fn');
+  assert.throws(() => writeLink(root, { ...link, repoId: '../x' }, env), /does not understand/);
+
+  symlinkSync(join(outside, 'id_rsa'), join(root, '.gitignore'));
+  assert.throws(() => ignoreDcms(root), /symbolic link/);
+  assert.equal(readFileSync(join(outside, 'id_rsa'), 'utf8'), 'secret');
 });

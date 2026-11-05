@@ -15,7 +15,6 @@ import {
   hasCSharp,
   ignoreDcms,
   keptTokens,
-  LINK_FILE,
   parseInput,
   readCredentials,
   readLink,
@@ -25,6 +24,7 @@ import {
   workingFiles,
   writeCredentials,
   writeFiles,
+  writeLink,
 } from './lib.mjs';
 
 const HELP = `dcms — develop DCMS functions on your own machine
@@ -87,8 +87,7 @@ const COMMANDS = {
     const root = repoRoot();
     const remote = git(root, 'remote', 'get-url', values.remote);
     const found = await api(`/api/admin/me/repos?remote=${encodeURIComponent(remote)}`);
-    writeFiles(root, { [LINK_FILE]: `${JSON.stringify(found, null, 2)}\n` });
-    ignoreDcms(root);
+    writeLink(root, found);
     console.log(`Linked to ${found.app} in ${found.tenant} (${found.environment}). Next: dcms sdk`);
   },
 
@@ -171,7 +170,7 @@ const COMMANDS = {
   async deploy() {
     const link = readLink(repoRoot());
     console.log(`Deploying ${link.app} in ${link.tenant} (${link.environment}).`);
-    const merge = await api(`/api/admin/repos/${link.repoId}/git/merge`, link, { head: 'main' });
+    const merge = await api(`/api/admin/repos/${encodeURIComponent(link.repoId)}/git/merge`, link, { head: 'main' });
     if (merge.conflict) {
       for (const f of merge.files ?? []) console.error(`conflict: ${f.path}`);
       throw new Error('main does not merge into release cleanly. Resolve it in the IDE, then deploy again.');
