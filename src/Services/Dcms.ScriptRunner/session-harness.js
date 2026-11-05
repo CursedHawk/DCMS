@@ -94,7 +94,7 @@ try {
   const module = await import("data:application/javascript;base64," + btoa(binary));
   const definition = module.default;
   if (!definition || typeof definition[RUN] !== "function") {
-    throw new Error("A function's file must `export default defineFunction({ ... })` from \"@dcms/functions\".");
+    throw new Error("A function's file must `export default defineFunction({ ... })` from \"@dcms/functions\". Every .ts in functions/ is a function: shared code goes outside it, in lib/ for example.");
   }
   if (start.mode === "describe") {
     // Everything but the handler: what it is triggered by, who may call it, what it uses.

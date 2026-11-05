@@ -83,10 +83,20 @@ foreach (var type in compilation.GetSymbolsWithName(_ => true, SymbolFilter.Type
     var function = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Dcms.Functions.FunctionAttribute");
     if (function is null) continue;
     var location = type.Locations.FirstOrDefault();
-    var name = function.ConstructorArguments.FirstOrDefault().Value as string ?? "";
-    if (!Regex.IsMatch(name, "^[a-z][a-z0-9-]{0,62}$"))
+    var own = function.ConstructorArguments.FirstOrDefault().Value as string ?? "";
+    if (!Regex.IsMatch(own, "^[a-z][a-z0-9-]{0,62}$"))
     {
-        Report($"[Function(\"{name}\")]: a function's name is lowercase letters, digits and dashes, starting with a letter.", location);
+        Report($"[Function(\"{own}\")]: a function's name is lowercase letters, digits and dashes, starting with a letter.", location);
+        continue;
+    }
+    // Its folder under functions/ comes first, as for TypeScript: [Function("refund")] in
+    // functions/orders/Refund.cs is "orders/refund", called at /api/{app}/fn/orders/refund.
+    var file = location?.GetLineSpan().Path ?? "";
+    var folder = file.StartsWith("functions/", StringComparison.Ordinal) ? Path.GetDirectoryName(file[10..])?.Replace('\\', '/') ?? "" : "";
+    var name = folder.Length == 0 ? own : $"{folder}/{own}";
+    if (!Regex.IsMatch(name, "^(?=.{1,64}$)[a-z][a-z0-9-]*(?:/[a-z][a-z0-9-]*){0,3}$"))
+    {
+        Report($"'{name}': a function's folders under functions/ are part of its name, so they are lowercase letters, digits and dashes too, at most four deep and 64 characters in all.", location);
         continue;
     }
     if (!names.Add(name))

@@ -56,10 +56,13 @@ public interface IFunctionsCode
     Task<CodeOverview> OverviewAsync(CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
-        Description = "Every file of a branch of the app's repository (main by default). Each functions/{name}.ts is one function: "
-            + "it must `export default defineFunction({...})` from \"@dcms/functions\" and may import other files of the repository, nothing else. "
-            + "A C# function is a public class deriving from Function<TIn, TOut> marked [Function(\"name\")] in any .cs file, its triggers and uses "
-            + "as attributes ([OnRow], [Http], [UsesTable], …); a repository may hold both languages.")]
+        Description = "Every file of a branch of the app's repository (main by default). Each .ts under functions/ is one function, its path there its name "
+            + "and its HTTP path (functions/orders/total.ts is \"orders/total\", /api/{app}/fn/orders/total): "
+            + "it must `export default defineFunction({...})` from \"@dcms/functions\" and may import other files of the repository, nothing else; "
+            + "shared code goes outside functions/, in lib/. "
+            + "A C# function is a public class deriving from Function<TIn, TOut> marked [Function(\"name\")], its triggers and uses "
+            + "as attributes ([OnRow], [Http], [UsesTable], …); its folder under functions/ prefixes the name (functions/orders/Refund.cs "
+            + "with [Function(\"refund\")] is \"orders/refund\"). A repository may hold both languages.")]
     Task<CodeFiles> ReadFilesAsync(CodeRef input, CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = FunctionsPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai,

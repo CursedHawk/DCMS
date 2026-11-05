@@ -35,13 +35,14 @@ public static partial class SiteEndpoints
         "accept", "accept-language", "content-type", "user-agent", "origin", "referer", "if-none-match", "if-modified-since",
     };
 
-    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
+    /// <summary>A function's name is its path: functions/orders/total.ts is <c>/fn/orders/total</c>.</summary>
+    [GeneratedRegex(@"^(?=.{1,64}$)[a-z][a-z0-9-]*(?:/[a-z][a-z0-9-]*){0,3}$")]
     private static partial Regex FunctionName();
 
     public static void Map(IPluginEndpointBuilder endpoints)
     {
-        endpoints.MapGet("/fn/{function}", InvokeAsync).PermissionExempt(Exempt);
-        endpoints.MapPost("/fn/{function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(
+        endpoints.MapGet("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt);
+        endpoints.MapPost("/fn/{**function}", InvokeAsync).PermissionExempt(Exempt).SkipAudit(
             "Each function's access is its own declaration, checked by admin-api; a failed run is in the run history.");
     }
 

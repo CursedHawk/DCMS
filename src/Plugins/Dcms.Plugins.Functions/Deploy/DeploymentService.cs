@@ -84,13 +84,18 @@ public sealed class DeploymentService(
         ["README.md"] = """
             # Functions
 
-            Each file in `functions/` is one function, named by its file: `functions/hello.ts` is `hello`.
+            Each `.ts` file in `functions/` is one function, named by its path there, which is also where it
+            answers over HTTP: `functions/hello.ts` is `hello` (`/api/{app}/fn/hello`), and
+            `functions/orders/total.ts` is `orders/total` (`/api/{app}/fn/orders/total`).
             It must `export default defineFunction({ ... })` from `"@dcms/functions"`, and may import other
-            files of this repository. Merge into `release` to build; deploy the build from the app's Deployments.
+            files of this repository: keep shared code outside `functions/`, in `lib/` for example.
+            Merge into `release` to build; deploy the build from the app's Deployments.
 
             Functions may be C# too, beside TypeScript: a public class deriving from `Function<TIn, TOut>`,
-            marked `[Function("name")]`, in any `.cs` file, its triggers and uses as attributes
-            (`[OnRow]`, `[Http]`, `[UsesTable]`, …). A new `functions/<Name>.cs` in the editor starts as one.
+            marked `[Function("name")]`, its triggers and uses as attributes (`[OnRow]`, `[Http]`,
+            `[UsesTable]`, …). Its folder in `functions/` comes before its name, as for TypeScript:
+            `[Function("refund")]` in `functions/orders/Refund.cs` is `orders/refund`.
+            The editor's "New function" starts either.
 
             """,
     };

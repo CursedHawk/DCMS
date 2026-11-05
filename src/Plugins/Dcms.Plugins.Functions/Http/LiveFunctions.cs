@@ -117,12 +117,15 @@ public static class LiveFunctions
                     ["schema"] = new JsonObject { ["type"] = "string" },
                 }]
                 : null;
-            paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", "get", $"{instance.Slug}_fn_{function.Name}_get",
+            // "orders/total" is /fn/orders/total, operation …_fn_orders_total_get, client fn.orders.total.get.
+            var segments = function.Name.Split('/');
+            var id = $"{instance.Slug}_fn_{string.Join('_', segments)}";
+            paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", "get", $"{id}_get",
                 $"Call {function.Name}", description + "\n\nThe query string is the input.", new JsonObject(),
-                Parameters: parameters, ClientPath: ["fn", function.Name, "get"]));
-            paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", "post", $"{instance.Slug}_fn_{function.Name}_post",
+                Parameters: parameters, ClientPath: ["fn", .. segments, "get"]));
+            paths.Add(new OpenApiPathFragment($"/fn/{function.Name}", "post", $"{id}_post",
                 $"Call {function.Name}", description, new JsonObject(), RequestBodySchema: new JsonObject(),
-                Parameters: parameters, ClientPath: ["fn", function.Name, "post"]));
+                Parameters: parameters, ClientPath: ["fn", .. segments, "post"]));
         }
         return new OpenApiFragment(instance.Name, $"{instance.Description}\n\n{manifest.Description}", paths, new Dictionary<string, JsonNode>());
     }

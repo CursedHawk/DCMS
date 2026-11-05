@@ -56,7 +56,7 @@ export function functionsTools(base: string): ToolSpec<TenantToolContext>[] {
       input_schema: {
         type: 'object',
         properties: {
-          function: { type: 'string', description: 'The function\'s name: functions/{name}.ts is {name}; a C# class is the name in its [Function("name")].' },
+          function: { type: 'string', description: 'The function\'s name, which is its path: functions/orders/total.ts is "orders/total"; a C# class is its folder under functions/ and the name in its [Function("name")].' },
           input: { description: 'What the function receives as its input.' },
         },
         required: ['function'],

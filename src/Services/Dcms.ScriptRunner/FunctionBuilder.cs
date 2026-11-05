@@ -60,8 +60,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     [GeneratedRegex(@"^(?:[A-Za-z0-9_][A-Za-z0-9_\-.]*/){0,9}[A-Za-z0-9_][A-Za-z0-9_\-.]*$")]
     private static partial Regex SafePath();
 
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,62}$")]
-    private static partial Regex FunctionName();
+    /// <summary>A function's name, which is its path under <c>/api/{app}/fn/</c>: up to four folders deep, 64 characters in all.</summary>
+    [GeneratedRegex(@"^(?=.{1,64}$)[a-z][a-z0-9-]*(?:/[a-z][a-z0-9-]*){0,3}$")]
+    public static partial Regex FunctionName();
 
     // Static imports and re-exports, side-effect imports, and dynamic imports of a literal.
     [GeneratedRegex("""(?:\b(?:import|export)\s[^'"`;]*?\bfrom\s*|\bimport\s*\(?\s*)(['"])(?<spec>[^'"\n]+)\1""")]
@@ -217,11 +218,12 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 Directory.CreateDirectory(Path.GetDirectoryName(full)!);
                 await File.WriteAllTextAsync(full, content, ct);
 
-                var parts = path.Split('/');
-                if (parts.Length == 2 && parts[0] == FunctionsDirectory && path.EndsWith(".ts", StringComparison.Ordinal)
+                // Every .ts under functions/ is a function, its path there its name and its HTTP path:
+                // functions/orders/total.ts is "orders/total", /api/{app}/fn/orders/total.
+                if (path.StartsWith(FunctionsDirectory + "/", StringComparison.Ordinal) && path.EndsWith(".ts", StringComparison.Ordinal)
                     && !path.EndsWith(".d.ts", StringComparison.Ordinal))
                 {
-                    var name = parts[1][..^3];
+                    var name = path[(FunctionsDirectory.Length + 1)..^3];
                     if (FunctionName().IsMatch(name))
                     {
                         entries[name] = path;
@@ -229,7 +231,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                     else
                     {
                         diagnostics.Add(new BuildDiagnostic(
-                            "A function's file name is its name: lowercase letters, digits and dashes, starting with a letter.", path));
+                            "A function's path under functions/ is its name: lowercase letters, digits and dashes, starting with a letter, "
+                            + "in at most four folders and 64 characters. Shared code goes outside functions/, in lib/ for example.", path));
                     }
                 }
             }

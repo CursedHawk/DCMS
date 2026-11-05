@@ -125,6 +125,35 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
     }
 
     [DockerFact]
+    public async Task A_functions_folders_are_its_path_in_both_languages()
+    {
+        var built = await Build(new()
+        {
+            ["functions/orders/total.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                import { sum } from "../../lib/sum.ts";
+                export default defineFunction({ handler: () => sum([1, 2]) });
+                """,
+            ["lib/sum.ts"] = "export const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);",
+            ["functions/orders/Refund.cs"] = Function("refund", "return 1;"),
+            ["lib/Shared.cs"] = Function("loose", "return 2;").Replace("class F", "class G"),
+        });
+
+        built.Diagnostics.Should().BeEmpty();
+        built.Functions.Select(f => f.Name).Should().BeEquivalentTo(["orders/total", "orders/refund", "loose"]);
+
+        // A folder is part of the name, so it follows the name's rules; shared code belongs outside functions/.
+        var bad = await Build(new()
+        {
+            ["functions/Orders/Refund.cs"] = Function("refund", "return 1;"),
+            ["functions/helpers/util.ts"] = "export const x = 1;",
+        });
+        bad.Ok.Should().BeFalse();
+        bad.Diagnostics.Should().Contain(d => d.File == "functions/Orders/Refund.cs" && d.Message.Contains("'Orders/refund'"));
+        bad.Diagnostics.Should().Contain(d => d.File == "functions/helpers/util.ts" && d.Message.Contains("lib/"));
+    }
+
+    [DockerFact]
     public async Task Compile_errors_name_the_file_and_line_and_the_build_offers_only_the_curated_bcl()
     {
         var built = await Build(new()

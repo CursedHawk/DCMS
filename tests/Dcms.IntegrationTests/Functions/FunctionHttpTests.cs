@@ -89,6 +89,10 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
                   handler: () => respond(201, "made", { "content-type": "text/plain", "set-cookie": "x=1", location: "/there" }),
                 });
                 """,
+            ["functions/orders/total.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({ access: { http: ["public"] }, handler: () => "nested" });
+                """,
             ["functions/partner.ts"] = """
                 import { defineFunction } from "@dcms/functions";
                 export default defineFunction({ access: { http: ["apiKey"] }, handler: () => "for partners" });
@@ -123,6 +127,12 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         var post = await (await Call(HttpMethod.Post, "/api/fn/fn/hello", new { name = "Grace" })).Content.ReadFromJsonAsync<JsonElement>(ct);
         post.GetProperty("message").GetString().Should().Be("Hello, Grace!");
         post.GetProperty("method").GetString().Should().Be("POST");
+
+        // A function in a folder answers at its path.
+        var nested = await Call(HttpMethod.Get, "/api/fn/fn/orders/total");
+        nested.StatusCode.Should().Be(HttpStatusCode.OK, await nested.Content.ReadAsStringAsync(ct));
+        (await nested.Content.ReadFromJsonAsync<string>(ct)).Should().Be("nested");
+        (await Call(HttpMethod.Get, "/api/fn/fn/orders")).StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         // Its own answer: status and allowed headers; never a cookie.
         var made = await Call(HttpMethod.Get, "/api/fn/fn/made");
@@ -182,11 +192,12 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         paths["/api/fn/fn/hello"]!["post"]!["x-dcms-client"]!.AsArray().Select(p => p!.GetValue<string>()).Should().Equal("fn", "hello", "post");
         paths["/api/fn/fn/partner"]!["get"]!["parameters"]![0]!["name"]!.GetValue<string>().Should().Be("X-Api-Key");
         paths.ContainsKey("/api/fn/fn/internal").Should().BeFalse();
+        paths["/api/fn/fn/orders/total"]!["get"]!["x-dcms-client"]!.AsArray().Select(p => p!.GetValue<string>()).Should().Equal("fn", "orders", "total", "get");
         using (var scope = admin.Services.CreateScope())
         {
             var live = await LiveFunctions.ReadAsync(scope.ServiceProvider.GetRequiredService<FunctionsDbContext>(), tenantId, tenantId, instanceId, ct);
             live.Deployment.Should().Be(1);
-            live.Functions.Select(f => f.Name).Should().BeEquivalentTo(["hello", "made", "partner", "members", "boom"]);
+            live.Functions.Select(f => f.Name).Should().BeEquivalentTo(["hello", "made", "orders/total", "partner", "members", "boom"]);
         }
 
         // Signed-in only, called anonymously.
