@@ -37,6 +37,11 @@ export function EditorTabs() {
     return [...pinned, ...rest];
   }, [openTabs, pinnedTabs]);
 
+  // A middle button's mousedown would start the browser's autoscroll instead.
+  const middle = (e: React.MouseEvent) => {
+    if (e.button === 1) e.preventDefault();
+  };
+
   if (openTabs.length === 0 && openDiffs.length === 0) return <div className="h-9 border-b bg-card" />;
 
   return (
@@ -48,11 +53,20 @@ export function EditorTabs() {
           <div
             key={path}
             className={cn(
-              'group flex items-center gap-2 border-r px-3 text-xs',
+              'group flex items-center gap-2 border-r pr-3 text-xs',
               active ? 'bg-background text-foreground' : 'text-muted-foreground hover:bg-background/50',
             )}
           >
-            <button type="button" onClick={() => setActive(path)} title={path}>
+            {/* The whole tab's height and its left edge are the button: a click on the tab's padding
+                used to land on nothing, and took a second click. A middle click closes it. */}
+            <button
+              type="button"
+              className="flex h-full items-center pl-3"
+              onClick={() => setActive(path)}
+              onMouseDown={middle}
+              onAuxClick={(e) => e.button === 1 && closeTab(path)}
+              title={path}
+            >
               {baseName(path)}
             </button>
             <button
@@ -86,15 +100,17 @@ export function EditorTabs() {
           <div
             key={`diff:${d.path}`}
             className={cn(
-              'group flex items-center gap-2 border-r px-3 text-xs',
+              'group flex items-center gap-2 border-r pr-3 text-xs',
               active ? 'bg-background text-foreground' : 'text-muted-foreground hover:bg-background/50',
             )}
           >
             <button
               type="button"
               onClick={() => setActiveDiff(d.path)}
+              onMouseDown={middle}
+              onAuxClick={(e) => e.button === 1 && closeDiff(d.path)}
               title={`${d.path} (diff)`}
-              className="flex items-center gap-1.5"
+              className="flex h-full items-center gap-1.5 pl-3"
             >
               <GitCompare className="h-3 w-3 shrink-0" />
               {baseName(d.path)}
