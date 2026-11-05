@@ -100,7 +100,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
 
         var detail = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{firstId}", slug, owner), ct), ct);
         detail.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().BeEquivalentTo(
-            "plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write", "plugin:functions:secrets", "plugin:functions:deploy");
+            "plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write", "plugin:functions:secrets", "plugin:functions:deploy",
+            "plugin:functions:egress");
         var spec = detail.GetProperty("functions").EnumerateArray().Single(f => f.GetProperty("name").GetString() == "orders");
         spec.GetProperty("uses").GetProperty("egress").EnumerateArray().Single().GetString().Should().Be("api.stripe.com");
 
@@ -311,19 +312,28 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
                     const count = await db.crm.companies.count();
                     const key = await ctx.secrets.get("STRIPE_KEY");
                     const reply = await ctx.http.fetch("https://api.example.com/ping", { headers: { authorization: `Bearer ${key}` } });
+                    // The global fetch, a secret the function never holds, bytes both ways, and redirects.
+                    const viaRef = await (await fetch("https://api.example.com/ping", { headers: { authorization: "Bearer " + ctx.secrets.ref("STRIPE_KEY") } })).text();
+                    const echoed = new Uint8Array(await (await fetch("https://api.example.com/bytes", { method: "POST", body: new Uint8Array([0, 255, 7]) })).arrayBuffer());
+                    const redirected = await fetch("https://api.example.com/redirect");
+                    const posted = await ctx.http.fetch("https://api.example.com/json", { method: "POST", body: { a: 1 } });
                     const doubled = await ctx.functions.invoke<number>("double", { n: count });
                     const job = await ctx.jobs.enqueue("double", { n: 1 }, { dedupeKey: "once" });
                     const viaContract = await ctx.plugins.crm.dynamicAppsRecords.getRecord({ table: "companies", id: created.id });
                     const refusals: string[] = [];
                     for (const attempt of [() => db.crm.deals.find(), () => db.crm.companies.delete(created.id),
                                            () => ctx.http.fetch("https://evil.example.org/"), () => ctx.secrets.get("OTHER"),
+                                           () => fetch("https://api.example.com/away"),
+                                           () => fetch("https://api.example.com/ping", { headers: { authorization: ctx.secrets.ref("OTHER") } }),
                                            () => db.crm.companies.find({ expand: ["deal"] }),
                                            () => db.crm.companies.count({ field: "deal.title", op: "eq", value: "x" }),
                                            () => ctx.plugins.crm.dynamicAppsConfig.getSummary({})]) {
                       try { await attempt(); refusals.push("allowed"); } catch (e) { refusals.push((e as Error).message); }
                     }
                     ctx.log.info("created", created.name);
-                    return { name: created.name, count, status: reply.status, pong: await reply.text(), doubled, job: job.id, viaContract: viaContract?.name ?? null, refusals };
+                    return { name: created.name, count, status: reply.status, pong: await reply.text(), viaRef, echoed: [...echoed],
+                             redirected: [redirected.status, await redirected.text()], posted: await posted.text(), deno: typeof (globalThis as any).Deno,
+                             doubled, job: job.id, viaContract: viaContract?.name ?? null, refusals };
                   },
                 });
                 """,
@@ -336,6 +346,9 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var built = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().First();
         built.GetProperty("status").GetString().Should().Be("Ready", built.ToString());
         var builtId = built.GetProperty("id").GetGuid();
+        // Sending requests out is what deploying it takes too.
+        (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{builtId}", slug, owner), ct), ct))
+            .GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:functions:egress");
 
         // Nothing is live yet; the build can be tried, under the caller's permissions.
         (await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, owner, new { function = "double", input = new { n = 2 } }), ct))
@@ -358,12 +371,22 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         refusals[1].Should().Contain("\"delete\"");
         refusals[2].Should().Contain("uses.egress");
         refusals[3].Should().Contain("uses.secrets");
-        refusals[4].Should().Contain("Following companies.deal reads deals", "a lookup leads into another table");
-        refusals[5].Should().Contain("Following companies.deal reads deals");
-        refusals[6].Should().Contain("uses.contracts: [\"dynamic-apps.config@1\"]");
+        refusals[4].Should().Contain("uses.egress: [\"evil.example.org\"]", "a redirect goes only where the function may");
+        refusals[5].Should().Contain("uses.secrets: [\"OTHER\"]", "a secret ref is a secret like any other");
+        refusals[6].Should().Contain("Following companies.deal reads deals", "a lookup leads into another table");
+        refusals[7].Should().Contain("Following companies.deal reads deals");
+        refusals[8].Should().Contain("uses.contracts: [\"dynamic-apps.config@1\"]");
+        result.GetProperty("viaRef").GetString().Should().Be("pong for Bearer sk_test_1", "the platform put the secret in");
+        result.GetProperty("echoed").EnumerateArray().Select(b => b.GetInt32()).Should().Equal(7, 255, 0);
+        result.GetProperty("redirected").EnumerateArray().Select(v => v.ToString()).Should().Equal("200", "pong for ");
+        result.GetProperty("posted").GetString().Should().Be("application/json {\"a\":1}");
+        result.GetProperty("deno").GetString().Should().Be("undefined");
+        run.GetProperty("trace").ToString().Should().NotContain("sk_test_1", "a secret ref never enters the trace");
         result.GetProperty("viaContract").GetString().Should().Be("Acme", "a declared contract runs with the vouched permissions");
         run.GetProperty("logs").GetString().Should().Contain("[info] created Acme");
-        _egress.Requests.Should().ContainSingle().Which.Should().Be("https://api.example.com/ping");
+        _egress.Requests.Should().Equal(
+            "https://api.example.com/ping", "https://api.example.com/ping", "https://api.example.com/bytes",
+            "https://api.example.com/redirect", "https://api.example.com/ping", "https://api.example.com/json", "https://api.example.com/away");
 
         // Running it acts with what it was vouched for, which the deploy permission alone is not.
         var deployer = await SeedRoleAsync(tenantId, ["plugin:functions:read", "plugin:functions:deploy"], ct);
@@ -387,13 +410,21 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
     {
         public List<string> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Requests.Add(request.RequestUri!.ToString());
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(ct);
+            return request.RequestUri.AbsolutePath switch
             {
-                Content = new StringContent($"pong for {request.Headers.Authorization}"),
-            });
+                "/bytes" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([.. body.Reverse()]) },
+                "/redirect" => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("/ping", UriKind.Relative) } },
+                "/away" => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://evil.example.org/x") } },
+                "/json" => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent($"{request.Content!.Headers.ContentType} {System.Text.Encoding.UTF8.GetString(body)}"),
+                },
+                _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"pong for {request.Headers.Authorization}") },
+            };
         }
     }
 

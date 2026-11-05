@@ -14,4 +14,7 @@ public static class FunctionsPermissions
     public const string Logs = $"plugin:{PluginId}:logs";
     public const string Keys = $"plugin:{PluginId}:keys";
     public const string Secrets = $"plugin:{PluginId}:secrets";
+
+    /// <summary>Deploying functions that send requests to other hosts (<c>uses.egress</c>): what they send can be your data.</summary>
+    public const string Egress = $"plugin:{PluginId}:egress";
 }

@@ -59,8 +59,11 @@ public static class PublicEgress
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
             var first = address.GetAddressBytes()[0];
+            var v6 = address.GetAddressBytes();
             return !(address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast
-                     || (first & 0xFE) == 0xFC); // fc00::/7, unique local
+                     || (first & 0xFE) == 0xFC                                    // fc00::/7, unique local
+                     || (v6[0] == 0x20 && v6[1] == 0x02)                          // 2002::/16, 6to4: wraps any IPv4
+                     || (v6[0] == 0x00 && v6[1] == 0x64 && v6[2] == 0xFF && v6[3] == 0x9B)); // 64:ff9b::/96, NAT64
         }
         var b = address.GetAddressBytes();
         return !(b[0] == 0                                   // 0.0.0.0/8
@@ -69,6 +72,8 @@ public static class PublicEgress
                  || (b[0] == 192 && b[1] == 168)             // 192.168/16
                  || (b[0] == 169 && b[1] == 254)             // link-local, cloud metadata
                  || (b[0] == 100 && b[1] is >= 64 and <= 127) // 100.64/10, CGNAT
+                 || (b[0] == 192 && b[1] == 0 && b[2] == 0)  // 192.0.0/24, IETF protocol assignments
+                 || (b[0] == 198 && b[1] is 18 or 19)        // 198.18/15, benchmarking
                  || b[0] >= 224);                            // multicast, reserved
     }
 }

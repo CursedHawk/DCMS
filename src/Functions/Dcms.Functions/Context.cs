@@ -135,6 +135,13 @@ public sealed class SecretsApi(Context ctx)
     /// <summary>A secret of this app, as declared with <see cref="UsesSecretsAttribute"/>; null when it is not set.</summary>
     public async Task<string?> Get(string name) =>
         (await ctx.CallAsync("secrets.get", new JsonObject { ["name"] = name }))?.GetValue<string>();
+
+    /// <summary>
+    /// Stands for the secret in an <see cref="HttpApi.Fetch"/>'s URL or headers, e.g.
+    /// <c>["Authorization"] = $"Bearer {ctx.Secrets.Ref("STRIPE_KEY")}"</c>: the host puts the
+    /// value in, so it never reaches the function, its log or its trace.
+    /// </summary>
+    public string Ref(string name) => $"{{{{dcms-secret:{name}}}}}";
 }
 
 public sealed record EmailMessage(IReadOnlyList<string> To, string Subject, string? Text = null, string? Html = null, string? ReplyTo = null);
@@ -187,23 +194,53 @@ public sealed class LinksApi(Context ctx)
         });
 }
 
-public sealed record HttpResponse(int Status, IReadOnlyDictionary<string, string> Headers, string? Body)
+/// <param name="Bytes">The body as it came.</param>
+/// <param name="Url">Where it came from, after any redirects.</param>
+public sealed record HttpResponse(int Status, IReadOnlyDictionary<string, string> Headers, byte[] Bytes, string Url)
 {
     public bool IsSuccess => Status is >= 200 and < 300;
 
+    /// <summary>The body as UTF-8 text.</summary>
+    public string Body => System.Text.Encoding.UTF8.GetString(Bytes);
+
     /// <summary>The body read as JSON.</summary>
-    public T? Json<T>() => Body is null ? default : JsonSerializer.Deserialize<T>(Body, Wire.Options);
+    public T? Json<T>() => Bytes.Length == 0 ? default : JsonSerializer.Deserialize<T>(Bytes, Wire.Options);
 }
 
 public sealed class HttpApi(Context ctx)
 {
-    /// <summary>Outbound HTTP, to the hosts declared with <see cref="UsesEgressAttribute"/> only. A body that is not a string is sent as JSON.</summary>
-    public async Task<HttpResponse> Fetch(string url, string method = "GET", IReadOnlyDictionary<string, string>? headers = null, object? body = null) =>
-        Context.Read<HttpResponse>(await ctx.CallAsync("http.fetch", new JsonObject
+    /// <summary>
+    /// Outbound HTTP, to the hosts declared with <see cref="UsesEgressAttribute"/> only, through
+    /// redirects to them too (<paramref name="followRedirects"/>). The body is sent as it is when
+    /// it is <c>byte[]</c> or <c>string</c>, else as JSON. <paramref name="timeoutMs"/>: 10 s
+    /// unless said, at most 30 s.
+    /// </summary>
+    public async Task<HttpResponse> Fetch(string url, string method = "GET", IReadOnlyDictionary<string, string>? headers = null,
+        object? body = null, int? timeoutMs = null, bool followRedirects = true)
+    {
+        var sent = new Dictionary<string, string>(headers ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+        byte[]? bytes = body switch
+        {
+            null => null,
+            byte[] b => b,
+            string s => System.Text.Encoding.UTF8.GetBytes(s),
+            _ => JsonSerializer.SerializeToUtf8Bytes(body, Wire.Options),
+        };
+        if (body is not (null or byte[] or string)) sent.TryAdd("content-type", "application/json");
+        var answer = await ctx.CallAsync("http.fetch", new JsonObject
         {
             ["url"] = url,
             ["method"] = method,
-            ["headers"] = Context.Node(headers ?? new Dictionary<string, string>()),
-            ["body"] = body switch { null => null, string s => s, _ => JsonSerializer.Serialize(body, Wire.Options) },
-        }))!;
+            ["headers"] = Context.Node(sent),
+            ["bodyBase64"] = bytes is null ? null : Convert.ToBase64String(bytes),
+            ["redirect"] = followRedirects ? "follow" : "manual",
+            ["timeoutMs"] = timeoutMs,
+            ["raw"] = true,
+        });
+        return new HttpResponse(
+            answer?["status"]?.GetValue<int>() ?? 0,
+            (answer?["headers"] as JsonObject)?.ToDictionary(h => h.Key, h => h.Value?.GetValue<string>() ?? "") ?? [],
+            answer?["bodyBase64"]?.GetValue<string>() is { } encoded ? Convert.FromBase64String(encoded) : [],
+            answer?["url"]?.GetValue<string>() ?? url);
+    }
 }

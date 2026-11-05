@@ -44,6 +44,10 @@ internal static class AdminEndpoints
             })
             .RequirePluginPermission("read");
 
+        // What a function can use (Docs/functions-runtime.md), for the editor's help and the CLI.
+        endpoints.MapGet("/_functions/runtime", () => Results.Ok(new { markdown = RuntimeReference.Text }))
+            .RequirePluginPermission("read");
+
         endpoints.MapGet("/_functions/deployments", (DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.ListAsync(ct))))
             .RequirePluginPermission("read");
@@ -184,4 +188,17 @@ internal static class AdminEndpoints
             ? Results.StatusCode(StatusCodes.Status304NotModified)
             : Results.Text(text, contentType);
     }
+}
+
+/// <summary>Docs/functions-runtime.md, embedded at build.</summary>
+internal static class RuntimeReference
+{
+    private static readonly Lazy<string> Loaded = new(() =>
+    {
+        using var stream = typeof(RuntimeReference).Assembly.GetManifestResourceStream("functions-runtime.md")!;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    });
+
+    public static string Text => Loaded.Value;
 }

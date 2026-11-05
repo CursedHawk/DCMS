@@ -272,6 +272,10 @@ public sealed class RunTrace
         {
             call["body"] = $"({content.Length} characters)";
         }
+        if (call["bodyBase64"] is JsonValue bytes && bytes.TryGetValue<string>(out var encoded))
+        {
+            call["bodyBase64"] = $"({encoded.Length / 4 * 3} bytes)";
+        }
         return call;
     }
 }

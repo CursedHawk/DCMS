@@ -27,7 +27,7 @@ const options = {
   noEmit: true,
   skipLibCheck: true,
   types: [],
-  lib: ["lib.es2022.d.ts"],
+  lib: ["lib.esnext.d.ts", "lib.webworker.d.ts"],
   baseUrl: root,
   paths: { "@dcms/functions": [".dcms/functions.ts"] },
 };

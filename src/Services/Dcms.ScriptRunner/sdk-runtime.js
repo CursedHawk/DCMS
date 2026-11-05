@@ -5,6 +5,7 @@
 
 const RUN = Symbol.for("dcms.run");
 const call = (op, args) => globalThis.__dcms.call(op, args);
+const PLAIN = new Set([Object.prototype, Array.prototype, null]);
 
 /** db.<app>.<table>.<method>(...) and plugins.<instance>.<contract>.<operation>(...): a path and its arguments. */
 const chain = (op, path = []) =>
@@ -26,7 +27,12 @@ const context = (c) =>
     functions: Object.freeze({ invoke: (name, input) => call("functions.invoke", { name, input }) }),
     jobs: Object.freeze({ enqueue: (fn, payload, options) => call("jobs.enqueue", { function: fn, payload, options }) }),
     messages: Object.freeze({ emit: (topic, payload) => call("messages.emit", { topic, payload }) }),
-    secrets: Object.freeze({ get: (name) => call("secrets.get", { name }) }),
+    secrets: Object.freeze({
+      get: (name) => call("secrets.get", { name }),
+      // Stands for the value in an http.fetch's URL or headers; the broker puts it in, so the
+      // value itself never reaches the function.
+      ref: (name) => `{{dcms-secret:${name}}}`,
+    }),
     email: Object.freeze({ send: (message) => call("email.send", message) }),
     notifications: Object.freeze({ raise: (notification) => call("notifications.raise", notification) }),
     content: Object.freeze({
@@ -44,15 +50,14 @@ const context = (c) =>
         }),
     }),
     http: Object.freeze({
-      async fetch(url, init = {}) {
-        const headers = init.headers instanceof Headers ? Object.fromEntries(init.headers) : init.headers;
-        const r = await call("http.fetch", {
-          url: String(url),
-          method: init.method ?? "GET",
-          headers: headers ?? {},
-          body: init.body == null ? null : typeof init.body === "string" ? init.body : JSON.stringify(init.body),
-        });
-        return new Response(r.body, { status: r.status, headers: r.headers });
+      // The global fetch (the harness's, through the broker), and a plain object or array body
+      // sent as JSON, which fetch itself would send as "[object Object]".
+      fetch(url, init = {}) {
+        const json = init.body != null && typeof init.body === "object" && PLAIN.has(Object.getPrototypeOf(init.body));
+        if (!json) return fetch(url, init);
+        const headers = new Headers(init.headers);
+        if (!headers.has("content-type")) headers.set("content-type", "application/json");
+        return fetch(url, { ...init, headers, body: JSON.stringify(init.body) });
       },
     }),
     log: console,

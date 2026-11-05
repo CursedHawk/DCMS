@@ -256,7 +256,9 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             await File.WriteAllTextAsync(Path.Combine(root.FullName, "deno.json"), new JsonObject
             {
                 ["imports"] = new JsonObject { [SdkModule] = "./.dcms/functions.ts" },
-                ["compilerOptions"] = new JsonObject { ["strict"] = true },
+                // What a function has at run time: the language and the web's worker APIs (fetch,
+                // crypto, URL, streams…), no DOM and no Deno, which the harness removes.
+                ["compilerOptions"] = new JsonObject { ["strict"] = true, ["lib"] = new JsonArray("esnext", "webworker") },
             }.ToJsonString(), ct);
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);

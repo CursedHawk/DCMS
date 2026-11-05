@@ -12,8 +12,14 @@
 // The function itself could write to stdout too; that changes nothing it could not do anyway:
 // a forged call is checked like any other, a forged result is its own.
 
+// What the harness needs of Deno, kept before the function can see it: afterwards there is no
+// Deno (and no Node `process`) at all. Nothing in them would work without a permission anyway;
+// gone, a function sees what its types say it has (webworker + ES), not a namespace that throws.
+const { stdout, stdin, exit } = Deno;
+delete globalThis.Deno;
+delete globalThis.process;
+
 const encoder = new TextEncoder();
-const stdout = Deno.stdout;
 const write = (message) => {
   const bytes = encoder.encode(JSON.stringify(message) + "\n");
   let offset = 0;
@@ -44,7 +50,7 @@ async function* lines(readable) {
   }
 }
 
-const incoming = lines(Deno.stdin.readable);
+const incoming = lines(stdin.readable);
 const first = await incoming.next();
 const start = JSON.parse(first.value);
 
@@ -70,6 +76,33 @@ globalThis.__dcms = {
       write({ type: "call", id, op, args: args === undefined ? null : args });
     });
   },
+};
+
+// fetch, as the web has it, through the broker: the same http.fetch host call ctx.http.fetch
+// makes, so only the hosts in uses.egress answer. A library written against fetch works as is.
+// Request does the work of reading every kind of body (text, bytes, Blob, URLSearchParams,
+// FormData) and its content type.
+const NULL_BODY = new Set([101, 103, 204, 205, 304]);
+const base64 = (bytes) => {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+};
+globalThis.fetch = async (input, init) => {
+  const request = new Request(input, init);
+  const bytes = request.body === null ? null : new Uint8Array(await request.arrayBuffer());
+  const timeoutMs = init?.timeoutMs;
+  const r = await globalThis.__dcms.call("http.fetch", {
+    url: request.url,
+    method: request.method,
+    headers: Object.fromEntries(request.headers),
+    bodyBase64: bytes === null ? null : base64(bytes),
+    redirect: request.redirect,
+    timeoutMs: typeof timeoutMs === "number" ? timeoutMs : null,
+    raw: true,
+  });
+  const body = NULL_BODY.has(r.status) ? null : Uint8Array.from(atob(r.bodyBase64 ?? ""), (c) => c.charCodeAt(0));
+  return new Response(body, { status: r.status, headers: r.headers });
 };
 
 const RUN = Symbol.for("dcms.run");
@@ -107,4 +140,4 @@ try {
   write({ type: "done", ok: false, error: scrub(e) });
 }
 // Pending host calls and timers must not keep a finished function alive.
-Deno.exit(0);
+exit(0);

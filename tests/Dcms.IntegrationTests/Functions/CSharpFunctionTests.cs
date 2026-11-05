@@ -319,6 +319,41 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         run.Logs.Should().Equal("info: looking 100", "log: console is the log too");
     }
 
+    [DockerFact]
+    public async Task Fetch_sends_and_reads_bytes_and_a_secret_ref_stays_a_ref()
+    {
+        var calls = new List<JsonNode>();
+        var run = await Run(Function("fetcher", """
+                var sent = await ctx.Http.Fetch("https://api.example.com/upload", "POST",
+                    new Dictionary<string, string> { ["Authorization"] = $"Bearer {ctx.Secrets.Ref("STRIPE_KEY")}" },
+                    new byte[] { 0, 255 }, timeoutMs: 20_000);
+                var json = await ctx.Http.Fetch("https://api.example.com/json", "POST", body: new { a = 1 }, followRedirects: false);
+                return new { sent.Status, bytes = sent.Bytes.Length, text = sent.Body, sent.Url, item = json.Json<JsonObject>()?["ok"]?.GetValue<bool>() };
+                """),
+            "null", "{}",
+            (op, args) =>
+            {
+                calls.Add(args!.DeepClone());
+                return (true, new JsonObject
+                {
+                    ["status"] = 201,
+                    ["headers"] = new JsonObject { ["content-type"] = "application/json" },
+                    ["bodyBase64"] = Convert.ToBase64String("{\"ok\":true}"u8.ToArray()),
+                    ["url"] = "https://api.example.com/final",
+                }, null);
+            });
+
+        run.Done["status"]!.GetValue<string>().Should().Be("ok", run.Done.ToJsonString());
+        JsonNode.DeepEquals(run.Done["result"], JsonNode.Parse("""{"status":201,"bytes":11,"text":"{\"ok\":true}","url":"https://api.example.com/final","item":true}"""))
+            .Should().BeTrue(run.Done["result"]!.ToJsonString());
+        calls[0]["headers"]!["Authorization"]!.GetValue<string>().Should().Be("Bearer {{dcms-secret:STRIPE_KEY}}", "the value is the host's to put in");
+        calls[0]["bodyBase64"]!.GetValue<string>().Should().Be("AP8=");
+        calls[0]["redirect"]!.GetValue<string>().Should().Be("follow");
+        calls[0]["timeoutMs"]!.GetValue<int>().Should().Be(20_000);
+        calls[1]["headers"]!["content-type"]!.GetValue<string>().Should().Be("application/json");
+        calls[1]["redirect"]!.GetValue<string>().Should().Be("manual");
+    }
+
     [DockerTheory]
     [InlineData("return System.IO.File.ReadAllText(\"/etc/passwd\");", "/etc/passwd")]
     [InlineData("return string.Join(\",\", System.IO.Directory.GetFiles(\"/app\"));", "/app")]

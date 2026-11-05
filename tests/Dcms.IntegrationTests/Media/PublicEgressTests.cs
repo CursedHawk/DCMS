@@ -22,6 +22,10 @@ public class PublicEgressTests
     [InlineData("fd00::1")]
     [InlineData("::ffff:10.0.0.1")]
     [InlineData("224.0.0.1")]
+    [InlineData("198.18.0.1")]
+    [InlineData("192.0.0.8")]
+    [InlineData("64:ff9b::a00:1")]
+    [InlineData("2002:a00:1::1")]
     public void Internal_addresses_are_not_public(string address) =>
         PublicEgress.IsPublic(IPAddress.Parse(address)).Should().BeFalse();
 

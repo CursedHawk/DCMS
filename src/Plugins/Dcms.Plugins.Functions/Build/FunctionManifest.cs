@@ -153,6 +153,11 @@ public static partial class FunctionManifest
             {
                 required.Add(FunctionsPermissions.Secrets);
             }
+            // Requests leave the platform: whatever the function reads can go with them.
+            if (function.Uses.Egress.Count > 0)
+            {
+                required.Add(FunctionsPermissions.Egress);
+            }
             if (function.Uses.Content)
             {
                 required.Add(Dcms.Shared.Security.PlatformPermissions.ContentRead);

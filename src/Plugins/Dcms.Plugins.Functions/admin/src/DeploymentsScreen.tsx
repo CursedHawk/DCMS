@@ -98,6 +98,19 @@ export function DeploymentsScreen({ instance }: PluginScreenProps) {
           {detail.data.functions.length ? (
             <p className="text-sm text-muted-foreground">{detail.data.functions.map((f) => f.name).join(', ')}</p>
           ) : null}
+          {/* Where its data may go: every host any of its functions sends requests to. */}
+          {detail.data.functions.some((f) => f.uses.egress.length) ? (
+            <div className="space-y-1" data-testid="deployment-egress">
+              <p className="text-sm">{t('deployments.egress')}</p>
+              <ul className="space-y-0.5 text-xs">
+                {detail.data.functions.filter((f) => f.uses.egress.length).map((f) => (
+                  <li key={f.name}>
+                    <span className="font-mono">{f.name}</span>: <span className="font-mono">{f.uses.egress.join(', ')}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
       ) : null}
     </div>

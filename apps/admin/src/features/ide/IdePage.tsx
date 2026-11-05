@@ -168,6 +168,11 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
     let disposed = false;
     let lib: { dispose(): void } | undefined;
     let sdk: { dispose(): void } | undefined;
+    // A function runs with the language and the web's worker APIs only (no DOM, no Deno): the
+    // editor checks against exactly that, as the server's build does (ADR 0029).
+    const defaults = setupMonaco().languages.typescript.typescriptDefaults;
+    const before = defaults.getCompilerOptions();
+    if (repo.functionsApi) defaults.setCompilerOptions({ ...before, lib: ['esnext', 'webworker'] });
     void api.get<{ typings: string; csharp?: string }>(path).then(({ typings, csharp }) => {
       if (disposed) return;
       const monaco = setupMonaco();
@@ -187,8 +192,9 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
       disposed = true;
       lib?.dispose();
       sdk?.dispose();
+      if (repo.functionsApi) defaults.setCompilerOptions(before);
     };
-  }, [repo?.types]);
+  }, [repo?.types, repo?.functionsApi]);
 
   // Live deployments and commits for everyone with this site open. `sub` identifies this user
   // so the hook can tell your own publish (which already toasted) from a colleague's.

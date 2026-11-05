@@ -173,7 +173,15 @@ public static class FunctionTypings
           jobs: { enqueue(fn: string, payload?: Json, options?: { dedupeKey?: string }): Promise<{ id: string }> };
           /** To every function on the topic in this environment, as declared in uses.messages.emit. */
           messages: { emit(topic: string, payload?: Json): Promise<{ started: number }> };
-          secrets: { get(name: string): Promise<string | null> };
+          secrets: {
+            get(name: string): Promise<string | null>;
+            /**
+             * Stands for the secret in an http.fetch's (or fetch's) URL or headers, e.g.
+             * `{ Authorization: "Bearer " + ctx.secrets.ref("STRIPE_KEY") }`: the host puts the
+             * value in, so it never reaches the function, its log or its trace.
+             */
+            ref(name: string): string;
+          };
           /** At most 20 recipients. Text is escaped; html is sanitized. As declared in uses.email. */
           email: { send(message: { to: string | string[]; subject: string; text?: string; html?: string; replyTo?: string }): Promise<{ recipients: number }> };
           /** To members holding `audience` (the first of uses.notifications when left out). */
@@ -194,8 +202,12 @@ public static class FunctionTypings
               delete(table: string, id: string): Promise<void>;
             };
           };
-          /** fetch, to the hosts in `uses.egress` only. */
-          http: { fetch(url: string | URL, init?: { method?: string; headers?: Record<string, string>; body?: string | Json }): Promise<Response> };
+          /**
+           * fetch, to the hosts in `uses.egress` only (redirects too), as the global fetch does; a
+           * plain object or array body is sent as JSON. 10 s unless `timeoutMs` says (at most 30 s);
+           * at most 5 MB each way and 50 requests a run.
+           */
+          http: { fetch(url: string | URL | Request, init?: Omit<RequestInit, "body"> & { body?: BodyInit | Json | null }): Promise<Response> };
           log: Pick<Console, "log" | "info" | "debug" | "warn" | "error">;
           /** The HTTP call that started this run; null for any other trigger. */
           request: Request | null;
@@ -219,6 +231,13 @@ public static class FunctionTypings
 
         /** An HTTP answer of your own: return respond(201, body, headers). Any other return value is sent as JSON with 200. */
         export declare function respond(status: number, body?: Json | string, headers?: Record<string, string>): HttpResponse;
+
+        declare global {
+          interface RequestInit {
+            /** How long to wait for the answer: 10 s unless said, at most 30 s. */
+            timeoutMs?: number;
+          }
+        }
 
         """;
 

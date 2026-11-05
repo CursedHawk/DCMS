@@ -45,7 +45,8 @@
     "empty": "Zatím žádná sestavení.",
     "detail": "Nasazení {{number}}",
     "problems": "Co sestavení našlo",
-    "permissions": "Nasazení vyžaduje:"
+    "permissions": "Nasazení vyžaduje:",
+    "egress": "Hostitelé, kterým jeho funkce posílají požadavky"
   },
   "deploymentStatus": {
     "Building": "Sestavuje se",

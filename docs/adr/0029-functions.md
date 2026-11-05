@@ -78,6 +78,15 @@ Outbound HTTP:
 - goes through `PublicEgress`, which checks at connect time, so a redirect or a DNS name pointing at an internal address is refused;
 - has fixed time and size caps.
 
+As extended (#611 M1, 2026-11-05):
+- **The gate.** Deploying a function with `uses.egress` needs `plugin:functions:egress`, vouched like secrets (user decision). The broker checks it on every request. A migration added it to the vouched set of deployments made before it existed.
+- **The global `fetch` is the broker's.** The harness defines `fetch` as the `http.fetch` host call and deletes `Deno` and `process` before the function runs. `ctx.http.fetch` delegates to it (and sends a plain object as JSON). Bundles built earlier keep their text-only call.
+- **The types match.** The build (`deno.json`), the type-schema reader and the editor all check against `esnext` + `webworker`: no DOM and no `Deno`.
+- **Bytes, redirects and limits.** Bodies cross as base64 both ways, up to 5 MB each. Lines may now carry 8 MB, and host-call I/O is 16 MB a run. Redirects are followed (up to 5) when the request says `follow`, the fetch default, and each hop is re-checked against `uses.egress`. Credentials and secret refs are dropped on a change of host. `timeoutMs` is 10 s unless said, at most 30 s.
+- **Secret refs.** `ctx.secrets.ref(name)` is `{{dcms-secret:NAME}}`. The broker substitutes it in a fetch's URL (escaped) and headers, for declared secrets with `plugin:functions:secrets`. The value never enters the sandbox or the trace.
+- **More of the internet is refused.** `PublicEgress` also refuses 198.18/15, 192.0.0/24, 64:ff9b::/96 and 2002::/16.
+- **What a function can use** is one page, `src/Plugins/Dcms.Plugins.Functions/Docs/functions-runtime.md`. It is served at `/_functions/runtime` and shown from the IDE's Functions view, and a unit test keeps its C# assembly list equal to `CuratedAssemblies.txt`.
+
 What each call needs, as the broker (`Runtime/HostCalls.cs`) checks it:
 - `db.<app>.<table>.<method>`: the table and verb in `uses.tables`, and the matching `plugin:dynamic-apps:data-*`. Following a lookup (`expand`, or a filter, sort or select on `company.name`) needs `read` on the target table too. It goes through `dynamic-apps.automation@1`, an in-process contract on the system plane flows used, which checks no member permission itself: the broker does.
 - `plugins.<instance>.<contract>.<operation>`: the contract in `uses.contracts`, called through the contract dispatcher on the admin plane with the vouched set as the caller's permissions. Deploying vouches for every admin operation's permission of each declared contract. Platform (`dcms.*`) contracts are never callable.

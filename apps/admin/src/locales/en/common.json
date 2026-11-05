@@ -1001,7 +1001,8 @@
         "event": "On {{name}}"
       },
       "takes": "takes",
-      "returns": "returns"
+      "returns": "returns",
+      "runtime": "What can a function use?"
     },
     "run": {
       "function": "Function",
@@ -1140,6 +1141,13 @@
     "sessionLastSeen": "Last used {{when}}",
     "sessionSignedIn": "Signed in {{when}}",
     "sessionUnknownDevice": "Unrecognised device",
+    "devices": "Command lines",
+    "devicesHint": "Every dcms command line you signed in with dcms login. Sign one out and it can no longer act as you.",
+    "devicesFailed": "Could not load your command lines.",
+    "noDevices": "No command line is signed in.",
+    "deviceName": "dcms command line",
+    "deviceEnded": "Command line signed out.",
+    "deviceEndFailed": "Could not sign that command line out. Try again.",
     "gitPassword": "Git password",
     "changePasswordHint": "Change the password you use for git and sign-in. It stays in sync with the git server.",
     "setPasswordHint": "You signed in with Google and have no password yet. Set one to clone over HTTPS, or add an SSH key below.",

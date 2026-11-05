@@ -231,6 +231,34 @@ public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esb
         built.Diagnostics.Should().AllSatisfy(d => d.Message.Should().NotContain("/tmp/"));
     }
 
+    [DockerFact]
+    public async Task A_function_is_checked_against_what_it_has_at_run_time()
+    {
+        var built = await Build(new()
+        {
+            ["functions/deno.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({ handler: () => Deno.readTextFileSync("/etc/hostname") });
+                """,
+            ["functions/dom.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({ handler: () => document.title });
+                """,
+            ["functions/web.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({
+                  async handler() {
+                    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("x"));
+                    const response: Response = await fetch(new URL("https://example.com"), { method: "GET" });
+                    return [digest.byteLength, response.status];
+                  },
+                });
+                """,
+        });
+
+        built.Diagnostics.Select(d => (d.File, d.Code)).Should().BeEquivalentTo([("functions/deno.ts", "TS2304"), ("functions/dom.ts", "TS2584")]);
+    }
+
     [DockerTheory]
     [InlineData("import x from '/etc/hostname';")]
     [InlineData("import x from 'file:///etc/passwd';")]
@@ -335,10 +363,13 @@ public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esb
     }
 
     [DockerTheory]
-    [InlineData("return Deno.readTextFileSync('/etc/hostname')", "read access")]
-    [InlineData("return Deno.env.toObject()", "env access")]
-    [InlineData("return (await fetch('http://169.254.169.254/')).status", "net access")]
-    [InlineData("return await new Deno.Command('/bin/sh').output()", "run access")]
+    // Deno and Node's process are gone before the function runs (and its types never had them).
+    [InlineData("return (globalThis as any).Deno.readTextFileSync('/etc/hostname')", "undefined")]
+    [InlineData("return (globalThis as any).Deno.env.toObject()", "undefined")]
+    [InlineData("return await new (globalThis as any).Deno.Command('/bin/sh').output()", "undefined")]
+    [InlineData("return (globalThis as any).process.env", "undefined")]
+    // fetch is the platform's: a host call the broker decides (here, there is none).
+    [InlineData("return (await fetch('http://169.254.169.254/')).status", "no broker")]
     // A literal specifier is refused at build time (above); a computed one only the sandbox can stop.
     [InlineData("const p = ['file:///etc', 'passwd'].join('/'); return await import(p)", "read access")]
     public async Task A_function_run_is_as_sandboxed_as_a_flow_script(string body, string reason)
@@ -375,12 +406,6 @@ public sealed class FunctionRunnerTests(DenoBinary deno, FunctionRunnerTests.Esb
             """);
 
         (await Session(loop, limits: """{ "timeoutMs": 500 }""")).Done["error"]!.GetValue<string>().Should().Contain("longer than");
-        // Closing its output does not take a function off the clock.
-        var mute = await BundleOf("""
-            import { defineFunction } from "@dcms/functions";
-            export default defineFunction({ handler() { Deno.stdout.close(); while (true) {} } });
-            """);
-        (await Session(mute, limits: """{ "timeoutMs": 500 }""")).Done["error"]!.GetValue<string>().Should().Contain("longer than");
         (await Session(chatty, broker: (_, _) => (true, null, null), configure: o => o.MaxCalls = 10)).Done["error"]!.GetValue<string>().Should().Contain("at most 10 host calls");
         (await Session(big, configure: o => o.MaxResultChars = 100_000)).Done["error"]!.GetValue<string>().Should().Contain("result is at most");
 

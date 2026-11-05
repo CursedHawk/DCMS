@@ -67,6 +67,8 @@ public sealed class FunctionsPlugin : IPlugin
                 "Create and revoke the keys outside callers use to invoke functions."),
             new PermissionDefinition("secrets", "Manage secrets",
                 "Set the secret values functions read. A value can be replaced, never read back."),
+            new PermissionDefinition("egress", "Let functions call the internet",
+                "Deploy functions that send requests to other hosts. What they send can include your data."),
         ],
         consumes:
         [

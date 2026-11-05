@@ -45,7 +45,8 @@
     "empty": "No builds yet.",
     "detail": "Deployment {{number}}",
     "problems": "What the build found",
-    "permissions": "Deploying it takes:"
+    "permissions": "Deploying it takes:",
+    "egress": "Hosts its functions send requests to"
   },
   "deploymentStatus": {
     "Building": "Building",

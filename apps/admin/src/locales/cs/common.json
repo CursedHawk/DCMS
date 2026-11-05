@@ -1030,7 +1030,8 @@
         "event": "Při {{name}}"
       },
       "takes": "přijímá",
-      "returns": "vrací"
+      "returns": "vrací",
+      "runtime": "Co může funkce používat?"
     },
     "run": {
       "function": "Funkce",
@@ -1169,6 +1170,13 @@
     "sessionLastSeen": "Naposledy použito {{when}}",
     "sessionSignedIn": "Přihlášeno {{when}}",
     "sessionUnknownDevice": "Neznámé zařízení",
+    "devices": "Příkazové řádky",
+    "devicesHint": "Každý příkazový řádek dcms, ve kterém jste se přihlásili přes dcms login. Odhlášený už za vás nemůže jednat.",
+    "devicesFailed": "Příkazové řádky se nepodařilo načíst.",
+    "noDevices": "Žádný příkazový řádek není přihlášen.",
+    "deviceName": "Příkazový řádek dcms",
+    "deviceEnded": "Příkazový řádek byl odhlášen.",
+    "deviceEndFailed": "Příkazový řádek se nepodařilo odhlásit. Zkuste to znovu.",
     "gitPassword": "Git heslo",
     "changePasswordHint": "Změňte heslo, které používáte pro git a přihlášení. Zůstává synchronizované s git serverem.",
     "setPasswordHint": "Přihlásili jste se přes Google a nemáte heslo. Nastavte si ho pro klonování přes HTTPS, nebo níže přidejte SSH klíč.",

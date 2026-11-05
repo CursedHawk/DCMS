@@ -58,12 +58,12 @@ public sealed class ScriptRunnerOptions
     public int MaxCalls { get; set; } = 1_000;
 
     /// <summary>Host-call arguments and replies together, per run.</summary>
-    public long MaxIoBytes { get; set; } = 5 * 1024 * 1024;
+    public long MaxIoBytes { get; set; } = 16 * 1024 * 1024;
     public int MaxLogChars { get; set; } = 64_000;
     public int MaxResultChars { get; set; } = 1_000_000;
 
     /// <summary>One line from Deno, or one message from the caller.</summary>
-    public int MaxMessageBytes { get; set; } = 2 * 1024 * 1024;
+    public int MaxMessageBytes { get; set; } = 8 * 1024 * 1024;
 
     public int MaxBuildFiles { get; set; } = 500;
     public int MaxBuildBytes { get; set; } = 5 * 1024 * 1024;

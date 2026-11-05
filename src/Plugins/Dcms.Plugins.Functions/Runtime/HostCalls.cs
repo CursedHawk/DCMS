@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.Functions.Api;
@@ -33,7 +34,7 @@ public sealed class RunBudget
 /// the deployer vouched for — and then runs here, in the caller's process and scope, through the
 /// same contracts any plugin uses, so their owners audit what they do. The sandbox only asks.
 /// </summary>
-public sealed class HostCalls(
+public sealed partial class HostCalls(
     RunTarget target,
     RunTrigger trigger,
     int depth,
@@ -49,7 +50,10 @@ public sealed class HostCalls(
     public const string EgressClientName = "functions-egress";
     public const int MaxFetches = 50;
     public const int MaxFetchBytes = 5 * 1024 * 1024;
-    public const int MaxFetchBodyChars = 1024 * 1024;
+    public const int MaxFetchBodyBytes = 5 * 1024 * 1024;
+    public const int MaxRedirects = 5;
+    public const int DefaultFetchTimeoutMs = 10_000;
+    public const int MaxFetchTimeoutMs = 30_000;
     public const int MaxEnqueues = 100;
     public const int MaxInvokes = 50;
     public const int MaxEmits = 100;
@@ -254,65 +258,153 @@ public sealed class HostCalls(
         {
             throw new HostCallException("http.fetch takes an absolute http(s) URL.");
         }
-        var host = url.IdnHost.ToLowerInvariant();
-        if (!Uses.Egress.Any(allowed => allowed == host || (allowed.StartsWith("*.") && host.EndsWith(allowed[1..]))))
-        {
-            throw new HostCallException($"This function does not declare uses.egress: [\"{host}\"].");
-        }
-        if (++budget.Fetches > MaxFetches)
-        {
-            throw new HostCallException($"A run, with the functions it invokes, makes at most {MaxFetches} requests.");
-        }
+        Egress(url);
+        Vouched(FunctionsPermissions.Egress);
         var method = (args?["method"]?.GetValue<string>() ?? "GET").ToUpperInvariant();
         if (!Methods.Contains(method))
         {
             throw new HostCallException($"http.fetch does not send {method}.");
         }
-        var body = args?["body"]?.GetValue<string>();
-        if (body?.Length > MaxFetchBodyChars)
+        // The global fetch (and so ctx.http.fetch) sends bytes and wants bytes back; a bundle built
+        // before it sends text and reads text, and follows no redirect: both still work as they did.
+        var raw = args?["raw"]?.GetValue<bool>() == true;
+        var redirect = args?["redirect"]?.GetValue<string>() ?? "manual";
+        var timeoutMs = Math.Clamp(args?["timeoutMs"]?.GetValueKind() == JsonValueKind.Number ? args["timeoutMs"]!.GetValue<int>() : DefaultFetchTimeoutMs,
+            100, MaxFetchTimeoutMs);
+        byte[]? body = args?["bodyBase64"]?.GetValue<string>() is { } encoded ? Base64(encoded)
+            : args?["body"]?.GetValue<string>() is { } plain ? Encoding.UTF8.GetBytes(plain) : null;
+        if (body?.Length > MaxFetchBodyBytes)
         {
-            throw new HostCallException($"A request body is at most {MaxFetchBodyChars / 1024} KiB.");
+            throw new HostCallException($"A request body is at most {MaxFetchBodyBytes / (1024 * 1024)} MB.");
         }
 
-        using var request = new HttpRequestMessage(new HttpMethod(method), url);
-        if (body is not null) request.Content = new StringContent(body, Encoding.UTF8);
-        if (args?["headers"] is JsonObject headers)
+        // {{dcms-secret:NAME}} (ctx.secrets.ref): the value goes in here, never into the sandbox.
+        var headers = new List<(string Name, string Value, bool Secret)>();
+        foreach (var (name, value) in (args?["headers"] as JsonObject ?? []).Take(50))
         {
-            foreach (var (name, value) in headers.Take(50))
+            if (value?.GetValueKind() != JsonValueKind.String || name.Equals("host", StringComparison.OrdinalIgnoreCase)) continue;
+            var text = value.GetValue<string>();
+            headers.Add((name, await WithSecretsAsync(text, escape: false, ct), SecretRef().IsMatch(text)));
+        }
+        url = new Uri(await WithSecretsAsync(url.OriginalString, escape: true, ct));
+
+        for (var hop = 0; ; hop++)
+        {
+            Egress(url);
+            if (++budget.Fetches > MaxFetches)
             {
-                if (value?.GetValueKind() != JsonValueKind.String || name.Equals("host", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!request.Headers.TryAddWithoutValidation(name, value.GetValue<string>()))
+                throw new HostCallException($"A run, with the functions it invokes, makes at most {MaxFetches} requests.");
+            }
+            using var request = new HttpRequestMessage(new HttpMethod(method), url);
+            if (body is not null) request.Content = new ByteArrayContent(body);
+            foreach (var (name, value, _) in headers)
+            {
+                if (!request.Headers.TryAddWithoutValidation(name, value))
                 {
-                    request.Content ??= new StringContent("");
+                    request.Content ??= new ByteArrayContent([]);
                     request.Content.Headers.Remove(name);
-                    request.Content.Headers.TryAddWithoutValidation(name, value.GetValue<string>());
+                    request.Content.Headers.TryAddWithoutValidation(name, value);
                 }
             }
-        }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        try
-        {
-            using var response = await http.CreateClient(EgressClientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-            var bytes = await ReadBoundedAsync(response, timeout.Token);
-            var answer = new JsonObject();
-            foreach (var (name, values) in response.Headers.Concat(response.Content.Headers))
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(timeoutMs);
+            try
             {
-                answer[name.ToLowerInvariant()] = string.Join(", ", values);
+                using var response = await http.CreateClient(EgressClientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                var status = (int)response.StatusCode;
+                if (status is 301 or 302 or 303 or 307 or 308 && response.Headers.Location is { } location && redirect != "manual")
+                {
+                    if (redirect == "error") throw new HostCallException($"{url.IdnHost} redirected, and the request said not to follow.");
+                    if (hop >= MaxRedirects) throw new HostCallException($"More than {MaxRedirects} redirects.");
+                    var next = new Uri(url, location);
+                    if (next.Scheme is not ("https" or "http")) throw new HostCallException("A redirect may only go to an http(s) URL.");
+                    // As browsers do: 303, and a POST's 301/302, are followed with a GET and no body.
+                    if (status == 303 || (status is 301 or 302 && method == "POST"))
+                    {
+                        method = method == "HEAD" ? "HEAD" : "GET";
+                        body = null;
+                        headers.RemoveAll(h => h.Name.StartsWith("content-", StringComparison.OrdinalIgnoreCase));
+                    }
+                    // Credentials stay with the host they were meant for.
+                    if (!string.Equals(next.IdnHost, url.IdnHost, StringComparison.OrdinalIgnoreCase))
+                    {
+                        headers.RemoveAll(h => h.Secret || h.Name.ToLowerInvariant() is "authorization" or "cookie" or "proxy-authorization");
+                    }
+                    url = next;
+                    continue;
+                }
+                var bytes = await ReadBoundedAsync(response, timeout.Token);
+                var answer = new JsonObject();
+                foreach (var (name, values) in response.Headers.Concat(response.Content.Headers))
+                {
+                    answer[name.ToLowerInvariant()] = string.Join(", ", values);
+                }
+                var result = new JsonObject { ["status"] = status, ["headers"] = answer, ["url"] = url.AbsoluteUri };
+                if (raw) result["bodyBase64"] = Convert.ToBase64String(bytes);
+                else result["body"] = Encoding.UTF8.GetString(bytes);
+                return result;
             }
-            return new JsonObject { ["status"] = (int)response.StatusCode, ["headers"] = answer, ["body"] = Encoding.UTF8.GetString(bytes) };
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            throw new HostCallException($"{host} did not answer within 10 s.");
-        }
-        catch (HttpRequestException)
-        {
-            // Includes the egress handler refusing a private address: say no more than that.
-            throw new HostCallException($"{host} could not be reached.");
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new HostCallException($"{url.IdnHost} did not answer within {timeoutMs / 1000.0:0.#} s.");
+            }
+            catch (HttpRequestException)
+            {
+                // Includes the egress handler refusing a private address: say no more than that.
+                throw new HostCallException($"{url.IdnHost} could not be reached.");
+            }
         }
     }
+
+    /// <summary>Only the hosts the function declared, checked again on every redirect.</summary>
+    private void Egress(Uri url)
+    {
+        var host = url.IdnHost.ToLowerInvariant();
+        if (!Uses.Egress.Any(allowed => allowed == host || (allowed.StartsWith("*.") && host.EndsWith(allowed[1..]))))
+        {
+            throw new HostCallException($"This function does not declare uses.egress: [\"{host}\"].");
+        }
+    }
+
+    /// <summary>Each <c>{{dcms-secret:NAME}}</c> replaced by the secret, for a secret the function declared.</summary>
+    private async Task<string> WithSecretsAsync(string text, bool escape, CancellationToken ct)
+    {
+        var refs = SecretRef().Matches(text);
+        if (refs.Count == 0) return text;
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in refs.Select(m => m.Groups[1].Value).Distinct())
+        {
+            if (!Uses.Secrets.Contains(name))
+            {
+                throw new HostCallException($"This function does not declare uses.secrets: [\"{name}\"].");
+            }
+            Vouched(FunctionsPermissions.Secrets);
+            var secret = await context.Contracts.Get<IPluginSecrets>().GetAsync(new SecretName(name, target.Deployment.InstanceId), ct);
+            var value = secret.Value ?? throw new HostCallException($"The secret {name} is not set.");
+            if (value.Contains('\r') || value.Contains('\n'))
+            {
+                throw new HostCallException($"The secret {name} holds a line break and cannot go into a request.");
+            }
+            values[name] = escape ? Uri.EscapeDataString(value) : value;
+        }
+        return SecretRef().Replace(text, m => values[m.Groups[1].Value]);
+    }
+
+    private static byte[] Base64(string encoded)
+    {
+        try
+        {
+            return Convert.FromBase64String(encoded);
+        }
+        catch (FormatException)
+        {
+            throw new HostCallException("http.fetch: the body is not base64.");
+        }
+    }
+
+    [GeneratedRegex(@"(?:\{\{|%7B%7B)dcms-secret:([A-Z_][A-Z0-9_]{0,63})(?:\}\}|%7D%7D)", RegexOptions.IgnoreCase)]
+    private static partial Regex SecretRef();
 
     private static async Task<byte[]> ReadBoundedAsync(HttpResponseMessage response, CancellationToken ct)
     {
