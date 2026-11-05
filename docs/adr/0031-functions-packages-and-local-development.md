@@ -50,9 +50,27 @@ These were decided by the user on 2026-11-05.
   - `dcms sdk` saves it into the clone's `.dcms/packages`, a local NuGet source.
   - **Rejected:** a CI-published package on the GitLab registry. It needs a token for a private project, and it can drift from the server a clone talks to.
 
-### Packages (#611 M3, to come)
+### Packages (#611 M3)
 
-**Any public npm or NuGet package**, declared and locked. The platform fetches exact versions, checks their integrity, never runs install scripts, and caches them. The details, and the spike's results, will be recorded here when that milestone lands.
+**Any public npm or NuGet package**, declared and locked. The platform fetches exact versions, checks their integrity, never runs install scripts, and caches them.
+
+#### Spike P0 (2026-11-05): go for both languages
+
+Measured with the runner's own Deno 2.5.4 and esbuild 0.28.2, under the production limits for a C# run (64 MB V8 heap, 768 MB `RLIMIT_DATA`, `--liftoff-only`).
+
+**npm** (zod 4, date-fns 4, openai 7, stripe 23):
+- `deno check` resolves them offline from `node_modules` with `"nodeModulesDir": "manual"`. It must run without `--no-npm`, which turns package resolution off altogether.
+- esbuild bundles them with `--platform=neutral --main-fields=module,main --conditions=worker,browser,import`.
+- They run in the permission-less sandbox through the `fetch` shim. That includes the OpenAI and Stripe clients, whose `worker` builds use `fetch`.
+- A Node-only package (nodemailer) fails at bundle with `Could not resolve "node:…"`. The build reports that as "needs Node.js".
+- Bundles grow: zod + date-fns + openai is 1.7 MB. `MaxBundleChars` (2 M) has to become configurable.
+
+**NuGet** (Newtonsoft.Json 13, NodaTime 3.2, Stripe.net 48):
+- Package DLLs load before the function's (`Assembly.Load(bytes)` and an `AssemblyResolve` hook) and run. NodaTime runs with its time-zone database. The run peaks at about 175 MB RSS, against roughly 165 MB with no packages.
+- **The 64 MB heap holds only if the start message's base64 is decoded with `Uint8Array.fromBase64`.** The harness's old `Uint8Array.from(atob(…), fn)` ran the V8 heap out with about 5 MB of packages.
+- **Every assembly the runtime ships must be rooted whole.** An assembly that is shipped but trimmed has method bodies removed, and calling one crashes Mono (`transform.c: should not be reached`). That happened to Newtonsoft on any serialization. The curated set grows by about 45 assemblies (XML, `System.Linq.Expressions`, `System.Net.Http`, `netstandard`, …), and the runtime from 16 to 19 MB of wasm.
+- **`HttpClient` works through the same `fetch` shim**, provided the shim is installed before .NET's modules load, and Deno runs with `--location`: the runtime probes for streaming with `new Request("")`.
+- **Some packages need what browser-wasm lacks**, and fail at run time with `PlatformNotSupportedException`. Stripe.net's default HTTP client reads `ServicePointManager.SecurityProtocol`. That cannot be seen statically in general, so it is documented and not checked.
 
 ## Consequences
 
