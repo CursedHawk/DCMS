@@ -16,9 +16,11 @@ export const write = (message) => {
   }
 };
 const text = (args) => args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+// Set by dotnet-harness.js between runs of a serving process: no run, no log.
+export const quiet = { now: false };
 for (const level of ["log", "info", "debug", "warn", "error"]) {
-  console[level] = (...args) => write({ type: "log", level, message: text(args) });
+  console[level] = (...args) => quiet.now || write({ type: "log", level, message: text(args) });
 }
 for (const level of ["table", "dir", "trace"]) {
-  console[level] = (...args) => write({ type: "log", level: "log", message: text(args) });
+  console[level] = (...args) => quiet.now || write({ type: "log", level: "log", message: text(args) });
 }

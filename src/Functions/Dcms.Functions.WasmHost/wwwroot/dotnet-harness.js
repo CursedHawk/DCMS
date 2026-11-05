@@ -10,7 +10,7 @@
 // imported statically below and every .wasm through resources.js's `with { type: "bytes" }`
 // imports, all part of the module graph Deno loads before running anything. The tenant's
 // assembly arrives on stdin. So the function can read no file, this one included.
-import { write } from "./hide-node.js";
+import { quiet, write } from "./hide-node.js";
 import { files } from "./resources.js";
 import "./_framework/dotnet.runtime.js";
 import "./_framework/dotnet.native.js";
@@ -35,6 +35,9 @@ async function* lines(readable) {
 const pending = new Map();
 let nextId = 0;
 let entry;
+// Between a run's done line and the next start, a serving process has no run: what code left
+// running gets no host calls and no log (script-runner also retires a process busy while idle).
+let running = false;
 const bytes = (base64) => Uint8Array.from(atob(base64 ?? ""), (c) => c.charCodeAt(0));
 
 // The reason rarely says why (Mono logs its own allocator's failure as a separate line); in
@@ -66,16 +69,19 @@ async function boot() {
     // Every op is checked by the host; nothing here is trusted.
     call: (op, args) =>
       new Promise((resolve, reject) => {
+        if (!running) return reject(new Error("The run is over."));
         const id = ++nextId;
         pending.set(id, { resolve, reject });
         write({ type: "call", id, op, args: JSON.parse(args) });
       }),
-    log: (level, message) => write({ type: "log", level, message }),
+    log: (level, message) => running && write({ type: "log", level, message }),
   });
   return (await getAssemblyExports(getConfig().mainAssemblyName)).Entry;
 }
 
 async function run(start) {
+  running = true;
+  quiet.now = false;
   try {
     if (start.mode !== "run") throw new Error("A C# function is described by its build, not by running it.");
     entry ??= await boot();
@@ -88,6 +94,13 @@ async function run(start) {
   } catch (e) {
     // A .NET-side stack overflow surfaces here as V8's RangeError: a limit, like running out of memory.
     write({ type: "done", ok: false, error: String(e instanceof Error ? e.message : e), limit: e instanceof RangeError });
+  }
+  running = false;
+  quiet.now = true;
+  // Calls still waiting belong to the run that ended: refuse them rather than answer them later.
+  for (const [id, waiting] of pending) {
+    pending.delete(id);
+    waiting.reject(new Error("The run is over."));
   }
   // Pending host calls and timers must not keep a finished function alive.
   if (!start.serve) Deno.exit(0);

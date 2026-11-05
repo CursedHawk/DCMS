@@ -99,6 +99,9 @@ Limits:
   - after `MaxWarmRuns` (500) runs;
   - after `WarmIdleSeconds` (300) idle;
   - on any limit, crash or caller gone mid-run.
+- **A kept process must be quiet between runs** (security review). Work a function leaves running (a timer, `Task.Run`) would escape the run's wall-time limit.
+  - script-runner retires a kept process that spends more than 200 ms of CPU while idle. It checks every 5 s and before any reuse.
+  - The harness refuses host calls and drops log lines between a done line and the next start.
 
 
 

@@ -32,7 +32,8 @@ public sealed class FunctionSession : IDisposable
         _o = options.Value;
         this.logger = logger;
         _gate = new SemaphoreSlim(_o.MaxSessions);
-        _sweeper = new Timer(_ => RetireIdle(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        // Often: a kept process found busy while idle is retired by this (#607).
+        _sweeper = new Timer(_ => RetireIdle(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
 
     /// <summary>Kept processes go with the service.</summary>
@@ -213,7 +214,29 @@ public sealed class FunctionSession : IDisposable
         public Task<string> Stderr { get; } = stderr;
         public int Runs { get; set; }
         public long IdleSince { get; set; }
+        public TimeSpan IdleCpu { get; set; }
+
+        /// <summary>
+        /// A kept process must be quiet between runs: its done line is the end of what it may do.
+        /// Work it left running (a timer, a background task) would escape the run's wall-time
+        /// limit, so CPU spent while idle retires it.
+        /// </summary>
+        public bool BusyWhileIdle(TimeSpan allowance)
+        {
+            try
+            {
+                Process.Refresh();
+                return Process.HasExited || Process.TotalProcessorTime - IdleCpu > allowance;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+        }
     }
+
+    /// <summary>What a kept process may spend while idle: V8's own housekeeping, nothing more.</summary>
+    private static readonly TimeSpan IdleAllowance = TimeSpan.FromMilliseconds(200);
 
     private readonly Dictionary<string, Stack<Worker>> _idle = new(StringComparer.Ordinal);
 
@@ -269,7 +292,8 @@ public sealed class FunctionSession : IDisposable
             while (_idle.TryGetValue(key, out var stack) && stack.TryPop(out var worker))
             {
                 if (stack.Count == 0) _idle.Remove(key);
-                if (!worker.Process.HasExited) return worker;
+                if (!worker.BusyWhileIdle(IdleAllowance)) return worker;
+                logger.LogWarning("A kept function process was busy while idle; retired.");
                 Retire(worker);
             }
             return null;
@@ -279,6 +303,16 @@ public sealed class FunctionSession : IDisposable
     private void ReturnIdle(string key, Worker worker)
     {
         worker.IdleSince = Environment.TickCount64;
+        try
+        {
+            worker.Process.Refresh();
+            worker.IdleCpu = worker.Process.TotalProcessorTime;
+        }
+        catch (InvalidOperationException)
+        {
+            Retire(worker);
+            return;
+        }
         lock (_idle)
         {
             if (!_idle.TryGetValue(key, out var stack)) _idle[key] = stack = new Stack<Worker>();
@@ -310,14 +344,14 @@ public sealed class FunctionSession : IDisposable
         return true;
     }
 
-    /// <summary>Kept processes idle past <see cref="ScriptRunnerOptions.WarmIdleSeconds"/> are retired; called on a timer.</summary>
+    /// <summary>Kept processes idle past <see cref="ScriptRunnerOptions.WarmIdleSeconds"/>, or busy while idle, are retired; called on a timer.</summary>
     public void RetireIdle()
     {
         var limit = Environment.TickCount64 - _o.WarmIdleSeconds * 1000L;
         List<Worker> stale;
         lock (_idle)
         {
-            stale = [.. _idle.Values.SelectMany(s => s).Where(w => w.IdleSince < limit || w.Process.HasExited)];
+            stale = [.. _idle.Values.SelectMany(s => s).Where(w => w.IdleSince < limit || w.BusyWhileIdle(IdleAllowance))];
             foreach (var (key, stack) in _idle.ToList())
             {
                 var kept = new Stack<Worker>(stack.Where(w => !stale.Contains(w)).Reverse());

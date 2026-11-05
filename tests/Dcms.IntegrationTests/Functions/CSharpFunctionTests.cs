@@ -334,4 +334,27 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         (await Run(hog, session: session, warm: "t:d")).Done["status"]!.GetValue<string>().Should().Be("limit");
         (await Run(hog, session: session, warm: "t:d")).Done["status"]!.GetValue<string>().Should().Be("limit", "a fresh process starts over");
     }
+
+    [DockerFact]
+    public async Task A_kept_process_busy_after_its_run_is_not_reused()
+    {
+        // Work left running after the answer would escape the run's time limit: it costs the process.
+        const string spinner = """
+            namespace Tests;
+            [Function("spin")]
+            public sealed class F : Function<JsonNode, int>
+            {
+                static int s_runs;
+                public override Task<int> Run(JsonNode input, Context ctx)
+                {
+                    if (++s_runs == 1) _ = Task.Run(() => { while (true) { } });
+                    return Task.FromResult(s_runs);
+                }
+            }
+            """;
+        using var session = new FunctionSession(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionSession>.Instance);
+        (await Run(spinner, session: session, warm: "t:spin")).Done["result"]!.GetValue<int>().Should().Be(1);
+        await Task.Delay(1_000, TestContext.Current.CancellationToken);
+        (await Run(spinner, session: session, warm: "t:spin")).Done["result"]!.GetValue<int>().Should().Be(1, "the busy process was retired, not reused");
+    }
 }
