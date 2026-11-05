@@ -22,7 +22,8 @@ public sealed record RunSummary(
     Guid Id, string Function, int Deployment, string Trigger, string Status, int Attempts, string? Error,
     long DurationMs, DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt);
 
-public sealed record RunDetail(RunSummary Run, JsonElement? Input, JsonElement? Trigger, JsonElement? Result, string? Logs, int Calls, Guid CorrelationId, int Depth);
+public sealed record RunDetail(RunSummary Run, JsonElement? Input, JsonElement? Trigger, JsonElement? Result, string? Logs, int Calls, Guid CorrelationId, int Depth,
+    JsonElement? Trace = null);
 
 public sealed record RunPage(IReadOnlyList<RunSummary> Items, int Page, bool More);
 
@@ -219,7 +220,7 @@ public sealed class DeploymentService(
     {
         using var rls = Scope();
         var r = await db.Runs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.InstanceId == InstanceId, ct);
-        return r is null ? null : new RunDetail(RunSummaryOf(r), Json(r.Input), Json(r.TriggerDetail), Json(r.Result), r.Logs, r.Calls, r.CorrelationId, r.Depth);
+        return r is null ? null : new RunDetail(RunSummaryOf(r), Json(r.Input), Json(r.TriggerDetail), Json(r.Result), r.Logs, r.Calls, r.CorrelationId, r.Depth, Json(r.Trace));
     }
 
     private static RunSummary RunSummaryOf(FunctionRun r) => new(

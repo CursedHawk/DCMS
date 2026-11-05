@@ -264,6 +264,9 @@ namespace Dcms.Shared.Data.Migrations.Functions
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Trace")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("TriggerDetail")
                         .HasColumnType("jsonb");
 

@@ -48,6 +48,11 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk)
                 byName.TryGetValue(p.Function, out var f) ? f.File : null)).ToList(), [], new Dictionary<string, string>());
         }
         var bundles = built.Functions.ToDictionary(f => f.Name, f => f.Runtime == FunctionManifest.Dotnet ? f.Class ?? "" : f.Bundle);
+        // A TypeScript function's source map, beside it: function names have no '.' (ADR 0029).
+        foreach (var f in built.Functions.Where(f => f.SourceMap is not null))
+        {
+            bundles[f.Name + ".map"] = f.SourceMap!;
+        }
         if (built.Assembly is not null)
         {
             bundles[BuildOutput.DotnetAssembly] = built.Assembly;
@@ -57,7 +62,7 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk)
     }
 
     private sealed record Built(string Name, string Bundle, JsonNode? Definition, string Runtime = FunctionManifest.Runtime,
-        string? File = null, string? Class = null);
+        string? File = null, string? Class = null, string? SourceMap = null);
 
     private sealed record Response(bool Ok, List<BuildJob.Diagnostic> Diagnostics, List<Built> Functions, string? Assembly, string? Pdb);
 }

@@ -127,7 +127,7 @@ internal static class AdminEndpoints
                 Run(async () =>
                 {
                     var outcome = await deployments.TestAsync(body.Files, body.Function, body.Input, ct, body.Simulate);
-                    return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs });
+                    return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs, outcome.Trace });
                 }))
             .RequirePluginPermission("deploy")
             .AuditAs("function.tested");
@@ -138,7 +138,7 @@ internal static class AdminEndpoints
                 Run(async () =>
                 {
                     var outcome = await deployments.RunAsync(body.Function, body.Input, body.Deployment, ct, body.Simulate);
-                    return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs });
+                    return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs, outcome.Trace });
                 }))
             .RequirePluginPermission("deploy")
             .AuditAs("function.ran");

@@ -146,6 +146,13 @@ public sealed class FunctionRun : EnvironmentEntity
     /// <summary>What the function logged, capped. Tenant data: shown to holders of the logs permission only.</summary>
     [AuditIgnore]
     public string? Logs { get; set; }
+
+    /// <summary>
+    /// Its host calls in order (JSON): op, summarised arguments, ok or error, milliseconds. No
+    /// results, and credentials redacted when recorded. Tenant data, like the log.
+    /// </summary>
+    [AuditIgnore]
+    public string? Trace { get; set; }
     public int Calls { get; set; }
     public long DurationMs { get; set; }
 
@@ -244,6 +251,7 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
             e.Property(r => r.Input).HasColumnType("jsonb");
             e.Property(r => r.TriggerDetail).HasColumnType("jsonb");
             e.Property(r => r.Result).HasColumnType("jsonb");
+            e.Property(r => r.Trace).HasColumnType("jsonb");
             e.Property(r => r.Error).HasMaxLength(4000);
             e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.TriggerEventId, r.Function }).IsUnique();
             e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.CreatedAt });

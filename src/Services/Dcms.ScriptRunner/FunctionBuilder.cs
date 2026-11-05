@@ -21,8 +21,9 @@ public sealed record BuildDiagnostic(string Message, string? File = null, int? L
 /// <param name="Runtime"><c>deno-ts</c> or <c>dotnet</c>.</param>
 /// <param name="File">Where it is defined, for problems found in its definition.</param>
 /// <param name="Class">dotnet: the class to run, by its full name.</param>
+/// <param name="SourceMap">deno-ts: the bundle's source map (no sources), to map a stack frame back to the repository.</param>
 public sealed record BuiltFunction(string Name, string Bundle, JsonNode? Definition,
-    string Runtime = FunctionBuilder.TypeScript, string? File = null, string? Class = null);
+    string Runtime = FunctionBuilder.TypeScript, string? File = null, string? Class = null, string? SourceMap = null);
 
 /// <param name="Assembly">The repository's C# compiled, base64: one assembly every C# function of the build runs from.</param>
 /// <param name="Pdb">Its portable PDB, base64: a function's errors name their file and line with it.</param>
@@ -272,7 +273,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 var functions = new List<BuiltFunction>();
                 foreach (var (name, entry) in entries)
                 {
-                    var (bundle, problems) = await BundleAsync(root.FullName, name, entry, deadline.Token);
+                    var (bundle, map, problems) = await BundleAsync(root.FullName, name, entry, deadline.Token);
                     if (bundle is null)
                     {
                         diagnostics.AddRange(problems);
@@ -284,7 +285,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                         diagnostics.Add(new BuildDiagnostic(error, entry));
                         continue;
                     }
-                    functions.Add(new BuiltFunction(name, bundle, definition, TypeScript, entry));
+                    functions.Add(new BuiltFunction(name, bundle, definition, TypeScript, entry, SourceMap: map));
                 }
                 return diagnostics.Count > 0 ? new BuildResult(false, diagnostics, []) : new BuildResult(true, [], functions);
             }
@@ -470,13 +471,14 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         }
     }
 
-    private async Task<(string? Bundle, List<BuildDiagnostic> Problems)> BundleAsync(string root, string name, string entry, CancellationToken ct)
+    private async Task<(string? Bundle, string? Map, List<BuildDiagnostic> Problems)> BundleAsync(string root, string name, string entry, CancellationToken ct)
     {
         var outFile = $".out/{name}.js";
         var metaFile = $".out/{name}.meta.json";
         var (exit, output, _) = await RunAsync(_o.EsbuildPath,
             [entry, "--bundle", "--format=esm", "--platform=neutral", "--target=es2022", "--charset=utf8",
              "--legal-comments=none", "--log-level=error", $"--alias:{SdkModule}=./.dcms/runtime.js",
+             "--sourcemap=external", "--sources-content=false",
              $"--outfile={outFile}", $"--metafile={metaFile}"],
             1_024, root, null, ct);
         if (exit != 0)
@@ -485,7 +487,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 m.Groups["msg"].Value.Trim(), m.Groups["file"].Value,
                 int.Parse(m.Groups["line"].Value), int.Parse(m.Groups["col"].Value))).ToList();
             found.RemoveAll(d => !InRepository(d.File));
-            return (null, found.Count > 0 ? found : [new BuildDiagnostic($"Bundling failed (exit {exit}).", entry)]);
+            return (null, null, found.Count > 0 ? found : [new BuildDiagnostic($"Bundling failed (exit {exit}).", entry)]);
         }
 
         using var meta = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, metaFile), ct));
@@ -495,12 +497,13 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             .ToList();
         if (outside.Count > 0)
         {
-            return (null, [new BuildDiagnostic("The function reaches a file outside the repository.", entry)]);
+            return (null, null, [new BuildDiagnostic("The function reaches a file outside the repository.", entry)]);
         }
         var bundle = await File.ReadAllTextAsync(Path.Combine(root, outFile), ct);
-        return bundle.Length > _o.MaxBundleChars
-            ? (null, [new BuildDiagnostic($"Bundled, the function is {bundle.Length:N0} characters; at most {_o.MaxBundleChars:N0}.", entry)])
-            : (bundle, []);
+        var map = await File.ReadAllTextAsync(Path.Combine(root, outFile + ".map"), ct);
+        return bundle.Length + map.Length > _o.MaxBundleChars
+            ? (null, null, [new BuildDiagnostic($"Bundled, the function is {bundle.Length + map.Length:N0} characters; at most {_o.MaxBundleChars:N0}.", entry)])
+            : (bundle, map, []);
     }
 
     /// <summary>Imports the bundle in the sandbox, as a run would, and reads what <c>defineFunction</c> was given.</summary>

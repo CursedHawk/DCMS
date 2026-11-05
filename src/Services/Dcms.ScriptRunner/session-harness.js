@@ -73,9 +73,17 @@ globalThis.__dcms = {
 };
 
 const RUN = Symbol.for("dcms.run");
-const scrub = (e) =>
-  // A compile error names the module by its data: URL — the whole bundle, base64-encoded.
-  String(e instanceof Error ? e.message : e).replace(/data:application\/javascript;base64,[A-Za-z0-9+/=]+/g, "function");
+// The error and the function's own frames: "function:12:5" is a line and column of its bundle,
+// which the caller maps back to the repository's file (workbench W3). A frame anywhere else
+// (this file, Deno's internals) says nothing about the function and is left out.
+const scrub = (e) => {
+  // A compile error names the module by its data: URL — the whole bundle, base64-encoded. A
+  // stack frame names it too, shortened by Deno with "......" in the middle.
+  const text = String(e instanceof Error ? (e.stack ?? e.message) : e)
+    .replace(/data:application\/javascript;base64,[A-Za-z0-9+/=.]+/g, "function");
+  const [first, ...rest] = text.split("\n");
+  return [first, ...rest.filter((line) => line.includes("function:")).slice(0, 10)].join("\n");
+};
 
 try {
   const bytes = encoder.encode(start.bundle);

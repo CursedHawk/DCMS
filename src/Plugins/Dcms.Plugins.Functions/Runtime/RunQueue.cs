@@ -97,6 +97,7 @@ public sealed class RunQueue(FunctionsDbContext db)
         run.Result = outcome.Succeeded ? Cap(outcome.Result?.ToJsonString() ?? "null") : null;
         run.Error = outcome.Error is { Length: > 4000 } e ? e[..4000] : outcome.Error;
         run.Logs = outcome.Logs;
+        run.Trace = outcome.Trace?.ToJsonString();
         run.Calls = outcome.Calls;
         run.DurationMs = outcome.DurationMs;
         run.LeaseUntil = null;

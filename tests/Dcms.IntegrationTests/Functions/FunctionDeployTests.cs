@@ -165,6 +165,25 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
                   },
                 });
                 """,
+            ["functions/thrower.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                import { fail } from "../lib/fail.ts";
+                export default defineFunction({ handler: () => fail("kaput") });
+                """,
+            ["lib/fail.ts"] = """
+                export function fail(why: string): never {
+                  throw new Error(why);
+                }
+                """,
+            ["functions/WhoCalls.cs"] = """
+                namespace Shop;
+                [Function("who-calls")]
+                public sealed class WhoCalls : Function<JsonNode, object>
+                {
+                    public override Task<object> Run(JsonNode input, Context ctx) =>
+                        Task.FromResult<object>(new { method = ctx.Request?.Method, user = ctx.User?.Email, trigger = ctx.Trigger?.Kind });
+                }
+                """,
             ["functions/OrderTotal.cs"] = """
                 namespace Shop;
                 public record Order(decimal[] Lines);
@@ -178,16 +197,41 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         };
         var check = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files }), ct), ct);
         check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());
-        check.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["caller", "order-total"]);
+        check.GetProperty("functions").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["caller", "order-total", "thrower", "who-calls"]);
         // What the editor's Functions panel lists: each function's runtime and file.
         check.GetProperty("specs").EnumerateArray()
             .Select(f => (f.GetProperty("name").GetString(), f.GetProperty("runtime").GetString(), f.GetProperty("file").GetString()))
-            .Should().BeEquivalentTo([("caller", "deno-ts", "functions/caller.ts"), ("order-total", "dotnet", "functions/OrderTotal.cs")]);
+            .Should().Contain([("caller", "deno-ts", "functions/caller.ts"), ("order-total", "dotnet", "functions/OrderTotal.cs")]);
 
         var run = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
             new { files, function = "caller", input = new { lines = new[] { 1.5, 2.5, 6 } } }), ct), ct);
         run.GetProperty("status").GetString().Should().Be("ok", run.ToString());
         run.GetProperty("result").GetProperty("total").GetDecimal().Should().Be(10m);
+        // The trace: the TypeScript function's one host call, the C# one it invoked (workbench W3).
+        run.GetProperty("trace").EnumerateArray().Select(e => e.GetProperty("op").GetString()).Should().Equal("functions.invoke");
+        run.GetProperty("trace")[0].GetProperty("ok").GetBoolean().Should().BeTrue();
+
+        // A TypeScript error names the repository's file and line, not the bundle's (W3).
+        var thrown = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner, new { files, function = "thrower" }), ct), ct);
+        thrown.GetProperty("status").GetString().Should().Be("error");
+        thrown.GetProperty("error").GetString().Should().Contain("kaput").And.Contain("lib/fail.ts:2:");
+
+        // A simulated HTTP call reaches the function's context (W2); the run is still a manual one.
+        var simulated = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner, new
+        {
+            files,
+            function = "who-calls",
+            simulate = new
+            {
+                trigger = new { kind = "http", detail = new { method = "POST", path = "/fn/who-calls" } },
+                request = new { method = "POST", path = "/fn/who-calls", query = new { }, headers = new { }, body = (object?)null },
+                user = new { id = Guid.NewGuid(), email = "ada@example.com" },
+            },
+        }), ct), ct);
+        simulated.GetProperty("status").GetString().Should().Be("ok", simulated.ToString());
+        simulated.GetProperty("result").ToString().Should().Contain("\"method\":\"POST\"").And.Contain("ada@example.com").And.Contain("\"trigger\":\"http\"");
+        (await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner, new { files, function = "who-calls", simulate = new { trigger = new { kind = "admin" } } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [DockerFact]
