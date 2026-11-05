@@ -23,10 +23,18 @@ public sealed class RunTraceTests
               "body": "amount=1&secret=sk_live_b" }
             """), new JsonObject { ["ok"] = false, ["error"] = "Not declared." }, TimeSpan.FromMilliseconds(40));
 
+        // A secret passed on anywhere, a webhook URL's token, userinfo, an unusual header.
+        trace.Add("http.fetch", JsonNode.Parse("""
+            { "url": "https://ops:hunter2@hooks.slack.com/services/T0/B0/xoxb-path-token", "headers": { "X-Auth": "plain-credential" } }
+            """), Ok, TimeSpan.Zero);
+        trace.Add("db", JsonNode.Parse("""{ "path": ["crm", "notes", "create"], "args": [{ "text": "key is sk_live_secret_value" }] }"""), Ok, TimeSpan.Zero);
+
         var text = trace.Entries.ToJsonString();
-        text.Should().NotContain("sk_live");
-        trace.Entries.Select(e => e!["op"]!.GetValue<string>()).Should().Equal("secrets.get", "http.fetch");
-        trace.Entries[1]!["args"]!.GetValue<string>().Should().Contain("application/json").And.Contain("?…").And.Contain("characters");
+        text.Should().NotContain("sk_live").And.NotContain("hunter2").And.NotContain("xoxb").And.NotContain("plain-credential").And.NotContain("T0/B0");
+        trace.Entries.Select(e => e!["op"]!.GetValue<string>()).Should().Equal("secrets.get", "http.fetch", "http.fetch", "db");
+        trace.Entries[1]!["args"]!.GetValue<string>().Should().Contain("application/json").And.Contain("https://api.stripe.com/…").And.Contain("characters");
+        trace.Entries[2]!["args"]!.GetValue<string>().Should().Contain("https://hooks.slack.com/…");
+        trace.Entries[3]!["args"]!.GetValue<string>().Should().Contain("key is •••");
         trace.Entries[1]!["ok"]!.GetValue<bool>().Should().BeFalse();
         trace.Entries[1]!["error"]!.GetValue<string>().Should().Be("Not declared.");
     }

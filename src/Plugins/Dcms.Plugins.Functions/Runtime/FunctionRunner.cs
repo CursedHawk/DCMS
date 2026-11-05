@@ -184,18 +184,27 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
 /// <summary>
 /// A run's host calls, as the editor shows them (workbench W3): op, arguments, ok or the error,
 /// milliseconds. Recorded here, where every call passes, not in the sandbox. Never the results:
-/// a secret's value or a record's contents are the reply, and stay out. What could carry a
-/// credential in the arguments — an HTTP call's sensitive headers, its body, its query — is
-/// redacted before it is kept. Bounded: 200 calls, each at most 300 characters.
+/// a secret's value or a record's contents are the reply, and stay out. Arguments are kept only
+/// after what could carry a credential is gone: every value this run got from secrets.get,
+/// wherever the function passed it on; an HTTP call's URL beyond its host (paths and queries
+/// hold tokens: webhook URLs, bot APIs), its userinfo, its body, and every header but a few
+/// harmless ones. Bounded: 200 calls, each at most 300 characters.
 /// </summary>
 public sealed class RunTrace
 {
     public const int MaxEntries = 200;
     private const int MaxArgsChars = 300;
-    private int _omitted;
-
+    private const string Hidden = "•••";
+    private static readonly HashSet<string> HarmlessHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "accept", "accept-language", "accept-encoding", "content-type", "content-language", "user-agent",
+        "cache-control", "if-none-match", "if-modified-since",
+    };
     private static readonly System.Text.Json.JsonSerializerOptions Readable =
         new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    private readonly List<string> _secrets = [];
+    private int _omitted;
 
     public JsonArray Entries { get; } = [];
 
@@ -206,18 +215,35 @@ public sealed class RunTrace
             // The marker takes the last entry's place, so that call is among the omitted too.
             _omitted += _omitted == 0 ? 2 : 1;
             Entries[^1] = new JsonObject { ["op"] = "…", ["args"] = $"{_omitted} more calls", ["ok"] = true, ["ms"] = 0 };
-            return;
         }
-        // Shown as text, never as markup: no need to escape what is not ASCII.
-        var text = Redact(op, args?.DeepClone())?.ToJsonString(Readable) ?? "null";
-        Entries.Add(new JsonObject
+        else
         {
-            ["op"] = op,
-            ["args"] = text.Length > MaxArgsChars ? text[..MaxArgsChars] + "…" : text,
-            ["ok"] = reply["ok"]?.GetValue<bool>() == true,
-            ["error"] = reply["error"]?.DeepClone(),
-            ["ms"] = (long)elapsed.TotalMilliseconds,
-        });
+            // Shown as text, never as markup: no need to escape what is not ASCII.
+            var text = Scrub(Redact(op, args?.DeepClone())?.ToJsonString(Readable) ?? "null");
+            Entries.Add(new JsonObject
+            {
+                ["op"] = op,
+                ["args"] = text.Length > MaxArgsChars ? text[..MaxArgsChars] + "…" : text,
+                ["ok"] = reply["ok"]?.GetValue<bool>() == true,
+                ["error"] = reply["error"]?.DeepClone(),
+                ["ms"] = (long)elapsed.TotalMilliseconds,
+            });
+        }
+        // Remembered after this call's own entry: a later call that passes the value on is scrubbed.
+        if (op == "secrets.get" && reply["result"] is JsonValue value && value.TryGetValue<string>(out var secret) && secret.Length >= 4)
+        {
+            _secrets.Add(secret);
+            _secrets.Add(System.Text.Json.JsonEncodedText.Encode(secret, System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping).ToString());
+        }
+    }
+
+    private string Scrub(string text)
+    {
+        foreach (var secret in _secrets.Where(s => s.Length >= 4))
+        {
+            text = text.Replace(secret, Hidden, StringComparison.Ordinal);
+        }
+        return text;
     }
 
     private static JsonNode? Redact(string op, JsonNode? args)
@@ -227,22 +253,18 @@ public sealed class RunTrace
         {
             foreach (var name in headers.Select(h => h.Key).ToList())
             {
-                var lower = name.ToLowerInvariant();
-                if (lower is "authorization" or "proxy-authorization" or "cookie"
-                    || lower.Contains("token", StringComparison.Ordinal) || lower.Contains("secret", StringComparison.Ordinal)
-                    || lower.Contains("key", StringComparison.Ordinal) || lower.Contains("signature", StringComparison.Ordinal))
-                {
-                    headers[name] = "•••";
-                }
+                if (!HarmlessHeaders.Contains(name)) headers[name] = Hidden;
             }
         }
-        if (call["url"]?.GetValue<string>() is { } url && url.IndexOf('?') is var q and >= 0)
+        if (call["url"] is JsonValue url && url.TryGetValue<string>(out var text))
         {
-            call["url"] = url[..q] + "?…";
+            call["url"] = Uri.TryCreate(text, UriKind.Absolute, out var parsed)
+                ? $"{parsed.Scheme}://{parsed.Host}{(parsed.IsDefaultPort ? "" : $":{parsed.Port}")}{(parsed.PathAndQuery.Length > 1 ? "/…" : "")}"
+                : Hidden;
         }
-        if (call["body"]?.GetValue<string>() is { } body)
+        if (call["body"] is JsonValue body && body.TryGetValue<string>(out var content))
         {
-            call["body"] = $"({body.Length} characters)";
+            call["body"] = $"({content.Length} characters)";
         }
         return call;
     }
