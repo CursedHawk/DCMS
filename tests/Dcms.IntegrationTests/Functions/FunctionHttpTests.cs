@@ -14,6 +14,7 @@ using Dcms.Shared.Data.Rls;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Dcms.IntegrationTests.Functions;
 
@@ -136,6 +137,45 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
         var boom = await Call(HttpMethod.Get, "/api/fn/fn/boom");
         boom.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         (await boom.Content.ReadAsStringAsync(ct)).Should().NotContain("secret detail");
+
+        // Every HTTP run is in the history, succeeded or failed. The sweep keeps a function's newest
+        // successful HTTP runs only, so a busy public endpoint cannot fill it.
+        async Task<List<(string Function, string Status)>> HttpRuns()
+        {
+            await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """SELECT "Function", "Status" FROM functions.runs WHERE "InstanceId" = @instance AND "TriggerKind" = 'http'""";
+            cmd.Parameters.AddWithValue("instance", instanceId);
+            var found = new List<(string, string)>();
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) found.Add((reader.GetString(0), reader.GetString(1)));
+            return found;
+        }
+        var recorded = await HttpRuns();
+        recorded.Where(r => r.Function == "hello").Should().HaveCount(2).And.OnlyContain(r => r.Status == "Succeeded");
+        recorded.Should().ContainSingle(r => r.Function == "made").Which.Status.Should().Be("Succeeded");
+        recorded.Should().ContainSingle(r => r.Function == "boom").Which.Status.Should().Be("Failed");
+        await using (var conn = new NpgsqlConnection(fixture.PostgresConnectionString))
+        {
+            // Older copies of a real successful run of "hello", past the number kept.
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO functions.runs ("Id", "TenantId", "EnvironmentId", "InstanceId", "Function", "DeploymentId", "DeploymentNumber",
+                    "TriggerKind", "TriggerEventId", "Status", "Attempts", "CorrelationId", "Depth", "Calls", "DurationMs", "CreatedAt", "NextAttemptAt", "FinishedAt")
+                SELECT gen_random_uuid(), "TenantId", "EnvironmentId", "InstanceId", "Function", "DeploymentId", "DeploymentNumber",
+                    "TriggerKind", gen_random_uuid(), "Status", 1, gen_random_uuid(), 1, 0, 1, "CreatedAt" - make_interval(mins => n), "NextAttemptAt", "FinishedAt"
+                FROM (SELECT * FROM functions.runs WHERE "InstanceId" = @instance AND "Function" = 'hello' LIMIT 1) one, generate_series(1, @extra) n
+                """;
+            cmd.Parameters.AddWithValue("instance", instanceId);
+            cmd.Parameters.AddWithValue("extra", RunWorker.KeptHttpRuns);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await ActivatorUtilities.CreateInstance<RunWorker>(admin.Services).CleanupAsync(ct);
+        recorded = await HttpRuns();
+        recorded.Count(r => r.Function == "hello").Should().Be(RunWorker.KeptHttpRuns);
+        recorded.Should().Contain(r => r.Function == "boom").And.Contain(r => r.Function == "made");
 
         // The site's OpenAPI document (and so its generated client) has what is callable over HTTP, and only that.
         var paths = (await (await Call(HttpMethod.Get, "/api/openapi.json")).Content.ReadFromJsonAsync<JsonObject>(ct))!["paths"]!.AsObject();

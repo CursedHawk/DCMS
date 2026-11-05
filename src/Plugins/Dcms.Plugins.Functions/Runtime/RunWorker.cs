@@ -242,8 +242,11 @@ public sealed partial class RunWorker(
 
     // ------------------------------------------------------------------ retention
 
-    /// <summary>Finished runs after thirty days.</summary>
-    private async Task CleanupAsync(CancellationToken ct)
+    /// <summary>Successful HTTP runs kept per function: a public endpoint is called far more often than anything else runs.</summary>
+    public const int KeptHttpRuns = 1_000;
+
+    /// <summary>Finished runs after thirty days, and a function's successful HTTP runs past the newest <see cref="KeptHttpRuns"/>.</summary>
+    public async Task CleanupAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
         using var rls = RlsScope.Platform();
@@ -251,6 +254,20 @@ public sealed partial class RunWorker(
         var before = DateTimeOffset.UtcNow.AddDays(-30);
         // rls: RlsScope.Platform, every tenant's finished runs.
         var deleted = await db.Runs.IgnoreTenantFilter().Where(r => r.FinishedAt < before).ExecuteDeleteAsync(ct);
+
+        var http = db.Runs.IgnoreTenantFilter().Where(r => r.TriggerKind == "http" && r.Status == FunctionRunStatus.Succeeded);
+        var crowded = await http
+            .GroupBy(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.Function })
+            .Where(g => g.Count() > KeptHttpRuns)
+            .Select(g => g.Key)
+            .ToListAsync(ct);
+        foreach (var k in crowded)
+        {
+            var of = http.Where(r => r.TenantId == k.TenantId && r.EnvironmentId == k.EnvironmentId && r.InstanceId == k.InstanceId && r.Function == k.Function);
+            // Runs as old as the last one kept stay too: a tie keeps a few more, never fewer.
+            var oldest = await of.OrderByDescending(r => r.CreatedAt).Skip(KeptHttpRuns - 1).Select(r => r.CreatedAt).FirstAsync(ct);
+            deleted += await of.Where(r => r.CreatedAt < oldest).ExecuteDeleteAsync(ct);
+        }
         if (deleted > 0)
         {
             var audit = scope.ServiceProvider.GetRequiredService<IAuditRecorder>();

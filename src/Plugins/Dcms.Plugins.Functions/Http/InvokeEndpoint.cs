@@ -61,7 +61,7 @@ public static class InvokeEndpoint
                 "content-api serves a tenant's HTTP functions and holds no secrets; the broker that runs them is here.")
             // The caller is content-api, not a member: access is the function's own declaration, decided below.
             .PermissionExempt("A service route: the function's declared access is checked against the caller content-api vouches for.")
-            .SkipAudit("A failed run is in the run history and a run's writes are audited by their owners; "
+            .SkipAudit("Every run is in the run history and a run's writes are audited by their owners; "
                        + "a record per public call would bury the trail under traffic.");
     }
 
@@ -136,13 +136,11 @@ public static class InvokeEndpoint
             gate.Release();
         }
 
-        if (!outcome.Succeeded)
-        {
-            // ponytail: only failed HTTP runs are recorded; recording every call of a public endpoint would fill the history.
-            await sp.GetRequiredService<RunQueue>().RecordAsync(target, "http", input, outcome, ct);
-            return Results.Json(new { error = "The function failed." }, statusCode: StatusCodes.Status500InternalServerError);
-        }
-        return Results.Ok(Answer(outcome.Result));
+        // Every call is in the history; RunWorker keeps a function's newest successful HTTP runs only.
+        await sp.GetRequiredService<RunQueue>().RecordAsync(target, "http", input, outcome, ct);
+        return outcome.Succeeded
+            ? Results.Ok(Answer(outcome.Result))
+            : Results.Json(new { error = "The function failed." }, statusCode: StatusCodes.Status500InternalServerError);
     }
 
     /// <summary>The function's <c>respond(…)</c>, or its value as JSON with 200.</summary>
