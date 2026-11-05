@@ -17,6 +17,8 @@ return;
 /// </summary>
 public static partial class Entry
 {
+    private static (Assembly Assembly, byte[] Pdb)? s_loaded;
+
     [JSImport("call", "dcms")]
     private static partial Task<string> Call(string op, string args);
 
@@ -30,7 +32,13 @@ public static partial class Entry
         Assembly? tenant = null;
         try
         {
-            tenant = Assembly.Load(dll, pdb.Length == 0 ? null : pdb);
+            // A served process (#607) gets the assembly with its first run only: the rest reuse it,
+            // statics and all, which is the point of keeping it warm.
+            if (dll.Length > 0)
+            {
+                s_loaded = (Assembly.Load(dll, pdb.Length == 0 ? null : pdb), pdb);
+            }
+            (tenant, pdb) = s_loaded ?? throw new InvalidOperationException("No assembly was loaded.");
             var runnable = Activator.CreateInstance(tenant.GetType(type, throwOnError: true)!) as IRunnable
                 ?? throw new InvalidOperationException($"{type} is not a Function<TIn, TOut>.");
             var ctx = new Context(CallAsync, Log, JsonNode.Parse(context) as JsonObject);

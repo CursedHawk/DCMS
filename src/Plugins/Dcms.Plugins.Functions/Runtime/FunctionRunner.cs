@@ -91,6 +91,12 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
                 start["assembly"] = target.Assembly;
                 start["pdb"] = target.Pdb;
                 start["class"] = target.Bundle;
+                // A deployed build may run in a process kept for it (#607): only ever its own runs.
+                // A draft (number 0) is built for one test and never kept.
+                if (target.Deployment.Number > 0)
+                {
+                    start["warm"] = $"{target.Deployment.TenantId:N}:{target.Deployment.Id:N}";
+                }
             }
             else
             {

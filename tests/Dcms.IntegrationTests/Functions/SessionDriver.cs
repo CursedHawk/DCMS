@@ -18,11 +18,15 @@ internal sealed record SessionRun(JsonObject Done, List<string> Logs);
 /// </summary>
 internal static class SessionDriver
 {
-    public static async Task<SessionRun> RunAsync(ScriptRunnerOptions options, JsonObject start,
+    public static Task<SessionRun> RunAsync(ScriptRunnerOptions options, JsonObject start,
+        Func<string, JsonNode?, (bool Ok, JsonNode? Result, string? Error)>? broker = null) =>
+        RunAsync(new FunctionSession(Microsoft.Extensions.Options.Options.Create(options), NullLogger<FunctionSession>.Instance), start, broker);
+
+    /// <summary>One run on a given session: runs that share it may share a kept process.</summary>
+    public static async Task<SessionRun> RunAsync(FunctionSession session, JsonObject start,
         Func<string, JsonNode?, (bool Ok, JsonNode? Result, string? Error)>? broker = null)
     {
         var ct = TestContext.Current.CancellationToken;
-        var session = new FunctionSession(Microsoft.Extensions.Options.Options.Create(options), NullLogger<FunctionSession>.Instance);
         var (server, client) = await PairAsync();
         using (server)
         using (client)

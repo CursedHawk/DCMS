@@ -35,6 +35,15 @@ public sealed class ScriptRunnerOptions
 
     /// <summary>Functions running at once. Callers cap each tenant below this.</summary>
     public int MaxSessions { get; set; } = 4;
+
+    /// <summary>
+    /// How many runs one kept C# process serves before it is replaced (#607); 0 keeps none. A
+    /// kept process holds a session slot while idle, and only ever runs one deployment's assembly.
+    /// </summary>
+    public int MaxWarmRuns { get; set; } = 500;
+
+    /// <summary>How long a kept process may sit idle before it is retired.</summary>
+    public int WarmIdleSeconds { get; set; } = 300;
     public int MaxSessionTimeoutMs { get; set; } = 300_000;
     public int DefaultSessionHeapMegabytes { get; set; } = 128;
     public int MaxSessionHeapMegabytes { get; set; } = 256;

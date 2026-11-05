@@ -20,10 +20,33 @@ namespace Dcms.ScriptRunner;
 /// through them, log and result size. Past any of them the process is killed and the run ends as
 /// <c>limit</c>.</para>
 /// </summary>
-public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogger<FunctionSession> logger)
+public sealed class FunctionSession : IDisposable
 {
-    private readonly ScriptRunnerOptions _o = options.Value;
-    private readonly SemaphoreSlim _gate = new(options.Value.MaxSessions);
+    private readonly ScriptRunnerOptions _o;
+    private readonly ILogger<FunctionSession> logger;
+    private readonly SemaphoreSlim _gate;
+    private readonly Timer _sweeper;
+
+    public FunctionSession(IOptions<ScriptRunnerOptions> options, ILogger<FunctionSession> logger)
+    {
+        _o = options.Value;
+        this.logger = logger;
+        _gate = new SemaphoreSlim(_o.MaxSessions);
+        _sweeper = new Timer(_ => RetireIdle(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>Kept processes go with the service.</summary>
+    public void Dispose()
+    {
+        _sweeper.Dispose();
+        List<Worker> all;
+        lock (_idle)
+        {
+            all = [.. _idle.Values.SelectMany(s => s)];
+            _idle.Clear();
+        }
+        foreach (var worker in all) Retire(worker);
+    }
 
     public async Task RunAsync(WebSocket socket, CancellationToken ct)
     {
@@ -72,29 +95,27 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
         var timeout = TimeSpan.FromMilliseconds(Clamp(limits?["timeoutMs"], 100, _o.MaxSessionTimeoutMs, 30_000));
         var heap = Clamp(limits?["heapMb"], 32, _o.MaxSessionHeapMegabytes, _o.DefaultSessionHeapMegabytes);
 
-        await _gate.WaitAsync(ct);
-        var cache = Directory.CreateTempSubdirectory("fn-");
-        Process? process = null;
+        // A deployed C# function's process is kept for its next run (#607): booting .NET is most of
+        // a run's cost. The caller names the deployment; the key also holds the code itself, so a
+        // process only ever runs the one assembly it loaded.
+        var warmKey = dotnet && _o.MaxWarmRuns > 0 && Text(start["warm"]) is { Length: > 0 and <= 200 } owner
+            ? $"{owner}:{Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(code)))[..32]}:{heap}"
+            : null;
+        var worker = warmKey is null ? null : TakeIdle(warmKey);
+        var reused = worker is not null;
+        if (worker is null)
+        {
+            await AcquireSlotAsync(ct);
+            worker = Spawn(dotnet, heap);
+        }
+        var process = worker.Process;
+        var keep = false;
         try
         {
-            // Deno's own start-up reserves most of the data limit (see DataLimitMegabytes); the
-            // function's heap, and as much again off it for buffers, come on top.
-            // .NET's runtime is one large Wasm module: V8's optimizing tier needs ~900 MB of data
-            // limit to compile it, its baseline tier fits a TypeScript run's (ADR 0030). The bytes
-            // imports are how its files load without a read permission (dotnet-harness.js).
-            process = Confined.Start(_o.DenoPath,
-                dotnet
-                    ? ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock", "--unstable-raw-imports",
-                       $"--v8-flags=--max-old-space-size={heap},--liftoff-only", _o.DotnetHarnessPath]
-                    : ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
-                       $"--v8-flags=--max-old-space-size={heap}", _o.SessionHarnessPath],
-                (_o.DataLimitMegabytes + 2L * heap) * 1024 * 1024,
-                new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName });
-
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(timeout);
-            var stderr = Confined.ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null);
             var run = new Budget(process);
+            worker.Runs++;
 
             try
             {
@@ -103,11 +124,13 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
                     {
                         ["type"] = "start",
                         ["mode"] = "run",
-                        ["assembly"] = code,
-                        ["pdb"] = Text(start["pdb"]),
+                        // A process kept for this deployment has its assembly loaded already.
+                        ["assembly"] = reused ? null : code,
+                        ["pdb"] = reused ? null : Text(start["pdb"]),
                         ["class"] = Text(start["class"]),
                         ["input"] = start["input"]?.DeepClone(),
                         ["context"] = start["context"]?.DeepClone(),
+                        ["serve"] = warmKey is not null,
                     }
                     : new JsonObject
                     {
@@ -127,7 +150,7 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
             JsonObject? done;
             try
             {
-                done = await RelayCallsAsync(socket, process, run, deadline.Token);
+                done = await RelayCallsAsync(socket, worker.Output, run, deadline.Token);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -141,6 +164,9 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
             }
             if (done is not null)
             {
+                run.Finished = true;
+                // Kept only while healthy: a limit hit, a run budget spent or a crash retires it.
+                keep = warmKey is not null && Text(done["status"]) != "limit" && !process.HasExited && worker.Runs < _o.MaxWarmRuns;
                 return done;
             }
             try
@@ -153,9 +179,9 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
                 Confined.Kill(process);
                 return Done("limit", error: $"The function ran longer than {timeout.TotalSeconds:0.#} s.");
             }
-            var errors = await stderr;
+            var errors = await worker.Stderr;
             // 133: V8 aborted (SIGTRAP) at its heap limit; 134: V8's fatal out-of-memory abort (SIGABRT), seen
-                // when the box itself is short of memory; 137: the kernel's OOM killer.
+            // when the box itself is short of memory; 137: the kernel's OOM killer.
             if (process.ExitCode is 133 or 134 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
                 || errors.Contains("out of memory", StringComparison.OrdinalIgnoreCase))
             {
@@ -167,27 +193,162 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
         }
         finally
         {
-            if (process is { HasExited: false })
+            if (keep)
             {
-                Confined.Kill(process);
+                ReturnIdle(warmKey!, worker);
             }
-            process?.Dispose();
-            try
+            else
             {
-                cache.Delete(recursive: true);
+                Retire(worker);
             }
-            catch (IOException e)
-            {
-                logger.LogWarning(e, "Could not delete {Cache}", cache.FullName);
-            }
-            _gate.Release();
         }
     }
 
-    /// <summary>Deno to the caller: host calls and log lines, until the function's done line or the end of its output.</summary>
-    private async Task<JsonObject?> RelayCallsAsync(WebSocket socket, Process process, Budget run, CancellationToken ct)
+    /// <summary>One Deno process and what reads it: for one run, or kept for a deployment's runs (#607).</summary>
+    private sealed class Worker(Process process, DirectoryInfo cache, LineReader output, Task<string> stderr)
     {
-        var lines = new LineReader(process.StandardOutput, _o.MaxMessageBytes);
+        public Process Process { get; } = process;
+        public DirectoryInfo Cache { get; } = cache;
+        public LineReader Output { get; } = output;
+        public Task<string> Stderr { get; } = stderr;
+        public int Runs { get; set; }
+        public long IdleSince { get; set; }
+    }
+
+    private readonly Dictionary<string, Stack<Worker>> _idle = new(StringComparer.Ordinal);
+
+    private Worker Spawn(bool dotnet, int heap)
+    {
+        var cache = Directory.CreateTempSubdirectory("fn-");
+        try
+        {
+            // Deno's own start-up reserves most of the data limit (see DataLimitMegabytes); the
+            // function's heap, and as much again off it for buffers, come on top.
+            // .NET's runtime is one large Wasm module: V8's optimizing tier needs ~900 MB of data
+            // limit to compile it, its baseline tier fits a TypeScript run's (ADR 0030). The bytes
+            // imports are how its files load without a read permission (dotnet-harness.js).
+            var process = Confined.Start(_o.DenoPath,
+                dotnet
+                    ? ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock", "--unstable-raw-imports",
+                       $"--v8-flags=--max-old-space-size={heap},--liftoff-only", _o.DotnetHarnessPath]
+                    : ["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
+                       $"--v8-flags=--max-old-space-size={heap}", _o.SessionHarnessPath],
+                (_o.DataLimitMegabytes + 2L * heap) * 1024 * 1024,
+                new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName });
+            return new Worker(process, cache, new LineReader(process.StandardOutput, _o.MaxMessageBytes),
+                Confined.ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null));
+        }
+        catch
+        {
+            cache.Delete(recursive: true);
+            _gate.Release();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A slot for a new process. Kept processes hold theirs, so the box never runs more than
+    /// MaxSessions Denos: when every slot is taken and some are only idle, the longest idle goes.
+    /// </summary>
+    private async Task AcquireSlotAsync(CancellationToken ct)
+    {
+        while (!await _gate.WaitAsync(0, ct))
+        {
+            if (!RetireOldestIdle())
+            {
+                await _gate.WaitAsync(ct);
+                return;
+            }
+        }
+    }
+
+    private Worker? TakeIdle(string key)
+    {
+        lock (_idle)
+        {
+            while (_idle.TryGetValue(key, out var stack) && stack.TryPop(out var worker))
+            {
+                if (stack.Count == 0) _idle.Remove(key);
+                if (!worker.Process.HasExited) return worker;
+                Retire(worker);
+            }
+            return null;
+        }
+    }
+
+    private void ReturnIdle(string key, Worker worker)
+    {
+        worker.IdleSince = Environment.TickCount64;
+        lock (_idle)
+        {
+            if (!_idle.TryGetValue(key, out var stack)) _idle[key] = stack = new Stack<Worker>();
+            stack.Push(worker);
+        }
+    }
+
+    private bool RetireOldestIdle()
+    {
+        Worker? oldest = null;
+        lock (_idle)
+        {
+            foreach (var (key, stack) in _idle)
+            {
+                foreach (var worker in stack)
+                {
+                    if (oldest is null || worker.IdleSince < oldest.IdleSince) oldest = worker;
+                }
+            }
+            if (oldest is null) return false;
+            foreach (var (key, stack) in _idle.ToList())
+            {
+                var kept = new Stack<Worker>(stack.Where(w => w != oldest).Reverse());
+                if (kept.Count == 0) _idle.Remove(key);
+                else _idle[key] = kept;
+            }
+        }
+        Retire(oldest);
+        return true;
+    }
+
+    /// <summary>Kept processes idle past <see cref="ScriptRunnerOptions.WarmIdleSeconds"/> are retired; called on a timer.</summary>
+    public void RetireIdle()
+    {
+        var limit = Environment.TickCount64 - _o.WarmIdleSeconds * 1000L;
+        List<Worker> stale;
+        lock (_idle)
+        {
+            stale = [.. _idle.Values.SelectMany(s => s).Where(w => w.IdleSince < limit || w.Process.HasExited)];
+            foreach (var (key, stack) in _idle.ToList())
+            {
+                var kept = new Stack<Worker>(stack.Where(w => !stale.Contains(w)).Reverse());
+                if (kept.Count == 0) _idle.Remove(key);
+                else _idle[key] = kept;
+            }
+        }
+        foreach (var worker in stale) Retire(worker);
+    }
+
+    private void Retire(Worker worker)
+    {
+        if (!worker.Process.HasExited)
+        {
+            Confined.Kill(worker.Process);
+        }
+        worker.Process.Dispose();
+        try
+        {
+            worker.Cache.Delete(recursive: true);
+        }
+        catch (IOException e)
+        {
+            logger.LogWarning(e, "Could not delete {Cache}", worker.Cache.FullName);
+        }
+        _gate.Release();
+    }
+
+    /// <summary>Deno to the caller: host calls and log lines, until the function's done line or the end of its output.</summary>
+    private async Task<JsonObject?> RelayCallsAsync(WebSocket socket, LineReader lines, Budget run, CancellationToken ct)
+    {
         while (await lines.ReadAsync(ct) is { } line)
         {
             if (line.Length > _o.MaxMessageBytes)
@@ -270,7 +431,9 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
                 }
                 if (received.Message is not { } reply)
                 {
-                    Confined.Kill(process);
+                    // A caller gone mid-run ends the run; one that closes after the answer leaves a
+                    // kept process to its next run.
+                    if (!run.Finished) Confined.Kill(process);
                     return;
                 }
                 if (Text(reply["type"]) != "reply")
@@ -361,6 +524,7 @@ public sealed class FunctionSession(IOptions<ScriptRunnerOptions> options, ILogg
     {
         public int Calls;
         public long IoBytes;
+        public volatile bool Finished;
         public int LogChars;
         public bool LogCut;
         public JsonObject? Failure { get; private set; }

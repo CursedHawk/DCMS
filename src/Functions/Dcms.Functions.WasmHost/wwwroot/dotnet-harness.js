@@ -1,7 +1,7 @@
 // The harness a C# function's Deno process runs (ADR 0030), as session-harness.js is for
 // TypeScript (ADR 0029): the same stdin/stdout JSON lines, the same permission-less process.
 //
-// stdin:  {"type":"start","mode":"run","assembly":"<base64>","pdb":"<base64>","class":"Ns.Class","input":...,"context":{...}}
+// stdin:  {"type":"start","mode":"run","assembly":"<base64>","pdb":"<base64>","class":"Ns.Class","input":...,"context":{...},"serve":bool}
 //         then {"type":"reply","id":n,"ok":true,"result":...} | {"type":"reply","id":n,"ok":false,"error":"..."}
 // stdout: {"type":"call","id":n,"op":"...","args":...} | {"type":"log","level":"...","message":"..."}
 //         and last {"type":"done","ok":true,"result":...} | {"type":"done","ok":false,"error":"...","limit":bool}
@@ -29,23 +29,12 @@ async function* lines(readable) {
   }
 }
 
-const incoming = lines(Deno.stdin.readable);
-const first = await incoming.next();
-const start = JSON.parse(first.value);
-
+// Serving (#607): a start message with "serve": true leaves the process up after its done line,
+// for the next start of the same deployment's code, which script-runner sends only to a process
+// it keeps for that deployment. A later start may leave out the assembly: the loaded one runs.
 const pending = new Map();
 let nextId = 0;
-(async () => {
-  for await (const line of incoming) {
-    const reply = JSON.parse(line);
-    const waiting = pending.get(reply.id);
-    if (reply.type !== "reply" || !waiting) continue;
-    pending.delete(reply.id);
-    if (reply.ok) waiting.resolve(JSON.stringify(reply.result === undefined ? null : reply.result));
-    else waiting.reject(new Error(reply.error ?? "The host refused the call."));
-  }
-})();
-
+let entry;
 const bytes = (base64) => Uint8Array.from(atob(base64 ?? ""), (c) => c.charCodeAt(0));
 
 // The reason rarely says why (Mono logs its own allocator's failure as a separate line); in
@@ -60,8 +49,7 @@ const end = (reason) => {
   Deno.exit(0);
 };
 
-try {
-  if (start.mode !== "run") throw new Error("A C# function is described by its build, not by running it.");
+async function boot() {
   const { getAssemblyExports, getConfig, setModuleImports } = await dotnet
     .withResourceLoader((_type, name) => {
       const file = files[name.split("/").pop()];
@@ -84,16 +72,39 @@ try {
       }),
     log: (level, message) => write({ type: "log", level, message }),
   });
-  const { Entry } = await getAssemblyExports(getConfig().mainAssemblyName);
-  const outcome = JSON.parse(await Entry.Run(
-    bytes(start.assembly), bytes(start.pdb), String(start.class ?? ""),
-    JSON.stringify(start.input ?? null), JSON.stringify(start.context ?? {})));
-  write(outcome.ok
-    ? { type: "done", ok: true, result: outcome.result ?? null }
-    : { type: "done", ok: false, error: outcome.error, limit: outcome.limit === true });
-} catch (e) {
-  // A .NET-side stack overflow surfaces here as V8's RangeError: a limit, like running out of memory.
-  write({ type: "done", ok: false, error: String(e instanceof Error ? e.message : e), limit: e instanceof RangeError });
+  return (await getAssemblyExports(getConfig().mainAssemblyName)).Entry;
 }
-// Pending host calls and timers must not keep a finished function alive.
+
+async function run(start) {
+  try {
+    if (start.mode !== "run") throw new Error("A C# function is described by its build, not by running it.");
+    entry ??= await boot();
+    const outcome = JSON.parse(await entry.Run(
+      bytes(start.assembly), bytes(start.pdb), String(start.class ?? ""),
+      JSON.stringify(start.input ?? null), JSON.stringify(start.context ?? {})));
+    write(outcome.ok
+      ? { type: "done", ok: true, result: outcome.result ?? null }
+      : { type: "done", ok: false, error: outcome.error, limit: outcome.limit === true });
+  } catch (e) {
+    // A .NET-side stack overflow surfaces here as V8's RangeError: a limit, like running out of memory.
+    write({ type: "done", ok: false, error: String(e instanceof Error ? e.message : e), limit: e instanceof RangeError });
+  }
+  // Pending host calls and timers must not keep a finished function alive.
+  if (!start.serve) Deno.exit(0);
+}
+
+for await (const line of lines(Deno.stdin.readable)) {
+  const message = JSON.parse(line);
+  if (message.type === "start") {
+    // Not awaited: its host calls' replies arrive on this same stream.
+    void run(message);
+    continue;
+  }
+  const waiting = pending.get(message.id);
+  if (message.type !== "reply" || !waiting) continue;
+  pending.delete(message.id);
+  if (message.ok) waiting.resolve(JSON.stringify(message.result === undefined ? null : message.result));
+  else waiting.reject(new Error(message.error ?? "The host refused the call."));
+}
+// The caller closed stdin: nothing more will come.
 Deno.exit(0);

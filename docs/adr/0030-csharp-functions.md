@@ -82,7 +82,25 @@ A function is a public class deriving from `Function<TIn, TOut>` and marked `[Fu
 - It is served under `/csharp/` by the admin image (about 17 MB gzipped, revalidated by ETag) and loaded with the first `.cs` model.
 - No server language server: per-session Roslyn would have cost 300–500 MB per open editor.
 
-## Consequences and traps
+### A warm runtime per live deployment (#607, user, 2026-11-05)
+
+Booting .NET is most of a C# run: on vps1 a call's floor was ~0.9 s against 71 ms for TypeScript, so the per-tenant cap made ~4 req/s the ceiling (`loadtest/findings/2026-11-04-vps1-csharp-functions.md`).
+
+How it works:
+- A deployed C# function's process is now **kept** after its run, to serve that deployment's next one.
+  - `FunctionRunner` sends `warm: <tenant>:<deployment>` (never for a draft).
+  - script-runner keys the process by that **and the assembly's hash**.
+- `dotnet-harness.js` serves start after start. The host keeps the loaded assembly, so a warm run is one call.
+- Statics and memory survive between runs of the same deployment's own code, as on any serverless warm instance. **They are never shared across deployments or tenants.**
+
+Limits:
+- A kept process holds a session slot while idle. A cold start that finds every slot taken retires the longest-idle one, so the box still runs at most `MaxSessions` Denos.
+- A process is retired:
+  - after `MaxWarmRuns` (500) runs;
+  - after `WarmIdleSeconds` (300) idle;
+  - on any limit, crash or caller gone mid-run.
+
+
 
 - **A Web Worker must set `self.dotnetSidecar = true`** before importing dotnet.js. Otherwise .NET takes the worker for one of its pthreads and boot hangs after `onRuntimeInitialized`.
 - **Roslyn's `SymbolFinder.FindReferencesAsync` fails in WebAssembly**: its persistent storage asks for the current process. The worker finds references by a semantic walk. The same static initializer logs one harmless unhandled exception in the background.

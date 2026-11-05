@@ -55,13 +55,15 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         """;
 
     private async Task<SessionRun> Run(string code, string input = "null", string context = "{}",
-        Func<string, JsonNode?, (bool Ok, JsonNode? Result, string? Error)>? broker = null, string limits = "{}", string sdk = "")
+        Func<string, JsonNode?, (bool Ok, JsonNode? Result, string? Error)>? broker = null, string limits = "{}", string sdk = "",
+        FunctionSession? session = null, string? warm = null)
     {
         var built = await Build(new() { ["functions/F.cs"] = code }, sdk);
         built.Diagnostics.Should().BeEmpty();
         var function = built.Functions.Single();
-        return await SessionDriver.RunAsync(Options(), new JsonObject
+        return await SessionDriver.RunAsync(session ?? new FunctionSession(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionSession>.Instance), new JsonObject
         {
+            ["warm"] = warm,
             ["type"] = "start",
             ["runtime"] = "dotnet",
             ["assembly"] = built.Assembly,
@@ -279,5 +281,57 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
             """{"path":["forms","forms.submissions","list"],"args":[{"page":2}]}""");
         JsonNode.DeepEquals(run.Done["result"], JsonNode.Parse("""{"id":"c1","name":"Acme","employees":12,"version":1,"owner":"u1","card":"X-1"}"""))
             .Should().BeTrue(run.Done["result"]!.ToJsonString());
+    }
+
+    [DockerFact]
+    public async Task A_deployment_keeps_its_process_warm_and_only_for_itself()
+    {
+        // Statics survive between runs of one kept process: the counter says which process ran.
+        const string counter = """
+            namespace Tests;
+            [Function("count")]
+            public sealed class F : Function<JsonNode, int>
+            {
+                static int s_runs;
+                public override Task<int> Run(JsonNode input, Context ctx) => Task.FromResult(++s_runs);
+            }
+            """;
+        using var session = new FunctionSession(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionSession>.Instance);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var first = await Run(counter, session: session, warm: "tenant-a:deployment-1");
+        var cold = clock.Elapsed;
+        clock.Restart();
+        var second = await Run(counter, session: session, warm: "tenant-a:deployment-1");
+        var warm = clock.Elapsed;
+        var other = await Run(counter, session: session, warm: "tenant-b:deployment-9");
+        var unkept = await Run(counter, session: session);
+
+        first.Done["result"]!.GetValue<int>().Should().Be(1);
+        second.Done["result"]!.GetValue<int>().Should().Be(2, "the deployment's kept process ran it");
+        other.Done["result"]!.GetValue<int>().Should().Be(1, "another deployment never gets that process");
+        unkept.Done["result"]!.GetValue<int>().Should().Be(1, "a run without a key is never kept");
+        // The build in Run() is most of the wall time; the session part of a warm run drops below the cold one.
+        TestContext.Current.SendDiagnosticMessage($"cold {cold.TotalMilliseconds:0} ms, warm {warm.TotalMilliseconds:0} ms");
+    }
+
+    [DockerFact]
+    public async Task A_kept_process_that_hits_a_limit_is_not_kept()
+    {
+        const string hog = """
+            namespace Tests;
+            [Function("hog")]
+            public sealed class F : Function<JsonNode, int>
+            {
+                static int s_runs;
+                public override Task<int> Run(JsonNode input, Context ctx)
+                {
+                    if (++s_runs == 1) { var keep = new List<byte[]>(); while (true) keep.Add(new byte[16 * 1024 * 1024]); }
+                    return Task.FromResult(s_runs);
+                }
+            }
+            """;
+        using var session = new FunctionSession(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionSession>.Instance);
+        (await Run(hog, session: session, warm: "t:d")).Done["status"]!.GetValue<string>().Should().Be("limit");
+        (await Run(hog, session: session, warm: "t:d")).Done["status"]!.GetValue<string>().Should().Be("limit", "a fresh process starts over");
     }
 }
