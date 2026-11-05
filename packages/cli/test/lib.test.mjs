@@ -109,9 +109,14 @@ test('a clone cannot point a read or a write outside itself, or a command at ano
   writeFileSync(join(root, '.dcms', 'link.json'), '{"app":"other"}');
   assert.throws(() => readLink(root, env), /not linked/);
   const link = { tenant: 'acme', environment: 'production', app: 'fn', repoId: '0b0e7c2e-1111-4222-8333-944445555666' };
-  writeLink(root, link, env);
+  execFileSync('git', ['remote', 'add', 'origin', 'https://git.example.test/tenant-acme/functions-1.git'], { cwd: root });
+  const origin = { name: 'origin', url: 'https://git.example.test/tenant-acme/functions-1.git' };
+  writeLink(root, link, origin, env);
   assert.equal(readLink(root, env).app, 'fn');
-  assert.throws(() => writeLink(root, { ...link, repoId: '../x' }, env), /does not understand/);
+  assert.throws(() => writeLink(root, { ...link, repoId: '../x' }, origin, env), /does not understand/);
+  // Another repository cloned into the same folder later is not linked by it.
+  execFileSync('git', ['remote', 'set-url', 'origin', 'https://git.example.test/tenant-evil/functions-2.git'], { cwd: root });
+  assert.throws(() => readLink(root, env), /different clone/);
 
   symlinkSync(join(outside, 'id_rsa'), join(root, '.gitignore'));
   assert.throws(() => ignoreDcms(root), /symbolic link/);

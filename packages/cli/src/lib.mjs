@@ -71,14 +71,16 @@ const linksPath = (env) => join(configDir(env), 'links.json');
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
-export function writeLink(root, link, env = process.env) {
+export function writeLink(root, link, remote, env = process.env) {
   const { tenant, environment, app, repoId } = link;
   if (![tenant, environment, app].every((v) => typeof v === 'string' && NAME.test(v)) || !GUID.test(String(repoId))) {
     throw new Error('The server answered with a link this command line does not understand.');
   }
   const path = linksPath(env);
   const links = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
-  links[realpathSync(root)] = { tenant, environment, app, repoId, plugin: link.plugin, repo: link.repo };
+  // The remote it was made from: a different repository cloned to the same folder later is
+  // not this link's (readLink).
+  links[realpathSync(root)] = { tenant, environment, app, repoId, plugin: link.plugin, repo: link.repo, remote };
   writePrivate(path, links);
 }
 
@@ -86,6 +88,13 @@ export function readLink(root, env = process.env) {
   const path = linksPath(env);
   const link = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8'))[realpathSync(root)] : undefined;
   if (!link) throw new Error('This clone is not linked. Run `dcms link` in it.');
+  let now = null;
+  try {
+    now = git(root, 'remote', 'get-url', link.remote.name);
+  } catch {
+    // no such remote any more
+  }
+  if (now !== link.remote.url) throw new Error('This folder holds a different clone than the one linked. Run `dcms link` again.');
   return link;
 }
 

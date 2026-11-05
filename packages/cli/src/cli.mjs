@@ -87,7 +87,7 @@ const COMMANDS = {
     const root = repoRoot();
     const remote = git(root, 'remote', 'get-url', values.remote);
     const found = await api(`/api/admin/me/repos?remote=${encodeURIComponent(remote)}`);
-    writeLink(root, found);
+    writeLink(root, found, { name: values.remote, url: remote });
     console.log(`Linked to ${found.app} in ${found.tenant} (${found.environment}). Next: dcms sdk`);
   },
 
