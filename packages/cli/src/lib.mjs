@@ -215,6 +215,8 @@ export function csharpFiles(version, nupkg, exists) {
   <Import Project=".dcms/version.props" Condition="Exists('.dcms/version.props')" />
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- The server installs exactly what packages.lock.json locks: dotnet restore writes it. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Dcms.Functions.Sdk" Version="$(DcmsFunctionsSdkVersion)" />

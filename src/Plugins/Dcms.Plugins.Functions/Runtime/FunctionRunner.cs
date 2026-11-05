@@ -28,8 +28,9 @@ public sealed record RunTrigger(string Kind, JsonNode? Detail = null, int Genera
 
 /// <summary>One function of one deployment, with the permissions it runs under (definer's rights).</summary>
 /// <param name="Bundle">deno-ts: its bundle. dotnet: its class, run from <paramref name="Assembly"/> (ADR 0030).</param>
+/// <param name="Packages">C#: the deployment's NuGet assemblies (ADR 0031), base64, loaded before <paramref name="Assembly"/>.</param>
 public sealed record RunTarget(FunctionDeployment Deployment, FunctionSpec Function, IReadOnlyCollection<string> Vouched, string Bundle,
-    string? Assembly = null, string? Pdb = null, string? SourceMap = null);
+    string? Assembly = null, string? Pdb = null, string? SourceMap = null, IReadOnlyList<string>? Packages = null);
 
 /// <param name="Status"><c>ok</c>, <c>error</c> (the function threw or a call was refused) or <c>limit</c>.</param>
 /// <param name="Trace">Its host calls in order (<see cref="RunTrace"/>): what the editor's Runs and Run tabs show.</param>
@@ -91,6 +92,10 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
                 start["assembly"] = target.Assembly;
                 start["pdb"] = target.Pdb;
                 start["class"] = target.Bundle;
+                if (target.Packages is { Count: > 0 } packages)
+                {
+                    start["packages"] = new JsonArray(packages.Select(p => (JsonNode)p).ToArray());
+                }
                 // A deployed build may run in a process kept for it (#607): only ever its own runs.
                 // A draft (number 0) is built for one test and never kept.
                 if (target.Deployment.Number > 0)
@@ -293,7 +298,10 @@ public static class RunTargets
         return spec is not null && bundles.TryGetValue(function, out var bundle)
             ? new RunTarget(deployment, spec, vouched, bundle,
                 bundles.GetValueOrDefault(BuildOutput.DotnetAssembly), bundles.GetValueOrDefault(BuildOutput.DotnetPdb),
-                bundles.GetValueOrDefault(function + ".map"))
+                bundles.GetValueOrDefault(function + ".map"),
+                spec.Runtime == FunctionManifest.Dotnet
+                    ? bundles.Where(b => b.Key.StartsWith(BuildOutput.NuGetPrefix, StringComparison.Ordinal)).OrderBy(b => b.Key, StringComparer.Ordinal).Select(b => b.Value).ToList()
+                    : null)
             : null;
     }
 

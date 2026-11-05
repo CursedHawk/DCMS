@@ -51,7 +51,7 @@ public sealed class FunctionSession : IDisposable
 
     public async Task RunAsync(WebSocket socket, CancellationToken ct)
     {
-        var start = await ReceiveAsync(socket, ct);
+        var start = await ReceiveAsync(socket, ct, _o.MaxStartBytes);
         var relay = new Relay();
         var done = start.Message is { } message
             ? await RunAsync(socket, message, relay, ct)
@@ -128,6 +128,8 @@ public sealed class FunctionSession : IDisposable
                         // A process kept for this deployment has its assembly loaded already.
                         ["assembly"] = reused ? null : code,
                         ["pdb"] = reused ? null : Text(start["pdb"]),
+                        // Its NuGet packages' assemblies (ADR 0031), loaded before it.
+                        ["packages"] = reused ? null : start["packages"]?.DeepClone(),
                         ["class"] = Text(start["class"]),
                         ["input"] = start["input"]?.DeepClone(),
                         ["context"] = start["context"]?.DeepClone(),
@@ -512,7 +514,7 @@ public sealed class FunctionSession : IDisposable
 
     private readonly record struct Received(JsonObject? Message, bool Oversized = false);
 
-    private async Task<Received> ReceiveAsync(WebSocket socket, CancellationToken ct)
+    private async Task<Received> ReceiveAsync(WebSocket socket, CancellationToken ct, long? max = null)
     {
         using var buffer = new MemoryStream();
         var chunk = new byte[16 * 1024];
@@ -523,7 +525,7 @@ public sealed class FunctionSession : IDisposable
             {
                 return new Received(null);
             }
-            if (buffer.Length + read.Count > _o.MaxMessageBytes)
+            if (buffer.Length + read.Count > (max ?? _o.MaxMessageBytes))
             {
                 return new Received(null, Oversized: true);
             }

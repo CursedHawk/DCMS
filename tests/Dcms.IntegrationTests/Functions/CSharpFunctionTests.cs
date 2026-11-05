@@ -38,9 +38,82 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         return options;
     }
 
-    private Task<BuildResult> Build(Dictionary<string, string> files, string sdk = "") =>
+    private Task<BuildResult> Build(Dictionary<string, string> files, string sdk = "", List<PackageArchive>? packages = null) =>
         new FunctionBuilder(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionBuilder>.Instance)
-            .BuildAsync(new BuildRequest(files, SdkTypes, SdkCSharp: sdk), TestContext.Current.CancellationToken);
+            .BuildAsync(new BuildRequest(files, SdkTypes, SdkCSharp: sdk, Packages: packages), TestContext.Current.CancellationToken);
+
+    /// <summary>A .nupkg holding one assembly compiled from <paramref name="source"/>, under lib/{framework}/.</summary>
+    public static string Nupkg(string id, string source, string framework = "netstandard2.0", string? extra = null)
+    {
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(source);
+        // Reference assemblies, as a real package is built against: the targeting pack beside the runtime.
+        var dotnetRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(typeof(object).Assembly.Location)!, "..", "..", ".."));
+        var refPack = Directory.GetDirectories(Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref"))
+            .Select(v => Path.Combine(v, "ref", "net10.0")).Last(Directory.Exists);
+        var refs = new[] { "System.Runtime.dll", "System.Net.Sockets.dll", "System.Net.Primitives.dll", "System.Runtime.InteropServices.dll" }
+            .Select(f => Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(Path.Combine(refPack, f)));
+        var compilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(id, [tree], refs,
+            new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+        using var dll = new MemoryStream();
+        var emitted = compilation.Emit(dll);
+        emitted.Success.Should().BeTrue(string.Join("; ", emitted.Diagnostics));
+        using var buffer = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(buffer, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using (var entry = zip.CreateEntry($"lib/{framework}/{id}.dll").Open()) entry.Write(dll.ToArray());
+            using (var nuspec = new StreamWriter(zip.CreateEntry($"{id}.nuspec").Open())) nuspec.Write($"<package><metadata><id>{id}</id><version>1.0.0</version></metadata></package>");
+            if (extra is not null) using (var e = zip.CreateEntry(extra).Open()) e.Write([0]);
+        }
+        return Convert.ToBase64String(buffer.ToArray());
+    }
+
+    /// <summary>
+    /// NuGet packages (ADR 0031): a package's assembly is compiled against and loaded before the
+    /// function's; one that needs what the sandbox lacks, or calls native code, is refused at build.
+    /// </summary>
+    [DockerFact]
+    public async Task A_function_uses_a_nuget_package_and_one_the_sandbox_cannot_run_is_refused()
+    {
+        var tiny = Nupkg("Tiny.Money", """
+            namespace Tiny.Money;
+            public static class Calc { public static decimal Total(decimal[] lines) { decimal t = 0; foreach (var l in lines) t += l; return t * 2; } }
+            """);
+        var built = await Build(new()
+        {
+            ["functions/F.cs"] = Function("uses", "return Tiny.Money.Calc.Total([1m, 2m]);"),
+        }, packages: [new("nuget/tiny.money/1.0.0", tiny)]);
+        built.Diagnostics.Should().BeEmpty(string.Join("; ", built.Diagnostics.Select(d => d.Message)));
+        built.Packages.Should().ContainKey("Tiny.Money.dll");
+
+        var run = await SessionDriver.RunAsync(new FunctionSession(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionSession>.Instance), new JsonObject
+        {
+            ["type"] = "start",
+            ["runtime"] = "dotnet",
+            ["assembly"] = built.Assembly,
+            ["pdb"] = built.Pdb,
+            ["packages"] = new JsonArray(built.Packages!.Values.Select(v => (JsonNode)v).ToArray()),
+            ["class"] = built.Functions.Single().Class,
+            ["input"] = null,
+            ["context"] = new JsonObject(),
+            ["limits"] = new JsonObject(),
+        }, null);
+        run.Done["status"]!.GetValue<string>().Should().Be("ok", run.Done.ToJsonString());
+        run.Done["result"]!.GetValue<decimal>().Should().Be(6m);
+
+        var sockets = Nupkg("Tiny.Net", "namespace Tiny.Net; public static class N { public static object C() => new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp); }");
+        var native = Nupkg("Tiny.Native", "namespace Tiny.Native; public static class P { [System.Runtime.InteropServices.DllImport(\"libc\")] public static extern int getpid(); }");
+        var frameworkOnly = Nupkg("Tiny.Old", "namespace Tiny.Old; public static class O { }", framework: "net48");
+        var refused = await Build(new() { ["functions/F.cs"] = Function("uses", "return 1;") },
+            packages: [new("nuget/tiny.net/1.0.0", sockets), new("nuget/tiny.native/1.0.0", native), new("nuget/tiny.old/1.0.0", frameworkOnly)]);
+        refused.Ok.Should().BeFalse();
+        refused.Diagnostics.Select(d => d.Message).Should().Contain(m => m.Contains("tiny.old 1.0.0 has no build for .NET (net48)"));
+
+        var unsafeOnes = await Build(new() { ["functions/F.cs"] = Function("uses", "return 1;") },
+            packages: [new("nuget/tiny.net/1.0.0", sockets), new("nuget/tiny.native/1.0.0", native)]);
+        unsafeOnes.Diagnostics.Select(d => d.Message).Should()
+            .Contain(m => m.Contains("Tiny.Net.dll needs System.Net.Sockets"))
+            .And.Contain(m => m.Contains("Tiny.Native.dll calls native code"));
+    }
 
     private static string Function(string name, string body, string attributes = "", string input = "JsonNode", string output = "object") => $$"""
         namespace Tests;

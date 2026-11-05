@@ -70,6 +70,13 @@ what the function declared in `uses`. This page is the list. ADRs 0029 and 0030 
     `Microsoft.Win32.Primitives`
   - `System`, `netstandard`: facades, so packages built for .NET Standard load
   - `Dcms.Functions`: the SDK
+- **NuGet packages**: the `PackageReference`s in `Functions.csproj`, locked by
+  `packages.lock.json` (`<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>`,
+  then `dotnet restore`).
+  - The build fetches each locked version from nuget.org, checks its content hash, and uses its
+    best build for .NET (newest .NET first, then .NET Standard).
+  - A package that references an assembly outside the list above, or declares native code, fails
+    the build and is named. Its assemblies go with the deployment, at most 16 MB in all.
 - **Not there**: files, threads of your own (`async`/`await` works; `Thread` and the thread pool
   are present for what packages expect, but the sandbox runs one thread), native code
   (`DllImport` is refused), JavaScript interop. A package that needs what .NET in the browser

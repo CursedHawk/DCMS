@@ -90,6 +90,8 @@ async function run(start) {
   try {
     if (start.mode !== "run") throw new Error("A C# function is described by its build, not by running it.");
     entry ??= await boot();
+    // NuGet packages' assemblies (ADR 0031), before the function's, which references them.
+    for (const p of start.packages ?? []) entry.Load(bytes(p));
     const outcome = JSON.parse(await entry.Run(
       bytes(start.assembly), bytes(start.pdb), String(start.class ?? ""),
       JSON.stringify(start.input ?? null), JSON.stringify(start.context ?? {})));

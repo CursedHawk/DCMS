@@ -106,6 +106,54 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
     }
 
     /// <summary>
+    /// NuGet packages (ADR 0031): Functions.csproj's reference, locked by packages.lock.json, fetched
+    /// from nuget.org and checked by content hash; its assembly travels with the deployment and is
+    /// loaded before the function's.
+    /// </summary>
+    [DockerFact]
+    public async Task A_csharp_function_uses_a_locked_nuget_package()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        var nupkg = Convert.FromBase64String(CSharpFunctionTests.Nupkg("Tiny.Money",
+            "namespace Tiny.Money; public static class Calc { public static decimal Double(decimal x) => x * 2; }"));
+        _egress.Packages["/v3-flatcontainer/tiny.money/1.0.0/tiny.money.1.0.0.nupkg"] = nupkg;
+        var files = new Dictionary<string, string>
+        {
+            ["Functions.csproj"] = """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup><PackageReference Include="Tiny.Money" Version="1.0.0" /></ItemGroup>
+                </Project>
+                """,
+            ["packages.lock.json"] = $$"""
+                { "version": 1, "dependencies": { "net10.0": {
+                  "Tiny.Money": { "type": "Direct", "requested": "[1.0.0, )", "resolved": "1.0.0", "contentHash": "{{Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(nupkg))}}" }
+                } } }
+                """,
+            ["functions/Doubles.cs"] = """
+                namespace Functions;
+                [Function("doubles")]
+                public sealed class Doubles : Function<decimal, decimal>
+                {
+                    public override Task<decimal> Run(decimal input, Context ctx) => Task.FromResult(Tiny.Money.Calc.Double(input));
+                }
+                """,
+        };
+
+        var tried = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
+            new { files, function = "doubles", input = 21 }), ct), ct);
+        tried.GetProperty("status").GetString().Should().Be("ok", tried.ToString());
+        tried.GetProperty("result").GetDecimal().Should().Be(42m);
+        _egress.Requests.Should().Contain("https://api.nuget.org/v3-flatcontainer/tiny.money/1.0.0/tiny.money.1.0.0.nupkg");
+    }
+
+    /// <summary>
     /// `dcms sdk` (ADR 0031): a desktop C# build references the server's own Dcms.Functions.Sdk,
     /// with the environment's Sdk.g.cs, and compiles against the curated BCL only, as the server does.
     /// </summary>
@@ -551,7 +599,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         {
             Requests.Add(request.RequestUri!.ToString());
             var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(ct);
-            if (request.RequestUri.Host == "registry.npmjs.org")
+            if (request.RequestUri.Host is "registry.npmjs.org" or "api.nuget.org")
             {
                 return Packages.TryGetValue(request.RequestUri.AbsolutePath, out var tgz)
                     ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(tgz) }

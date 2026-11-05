@@ -4,8 +4,14 @@ using System.Text.RegularExpressions;
 
 namespace Dcms.ScriptRunner;
 
-/// <summary>One package's archive in a build request: where it goes, and the npm tarball, base64.</summary>
-public sealed record PackageArchive(string Path, string Tgz);
+/// <summary>
+/// One package's archive in a build request (ADR 0031), base64: an npm tarball for
+/// <c>node_modules/…</c>, a .nupkg for <c>nuget/{id}/{version}</c>.
+/// </summary>
+public sealed record PackageArchive(string Path, string Data)
+{
+    public bool IsNuGet => Path.StartsWith("nuget/", StringComparison.Ordinal);
+}
 
 /// <summary>
 /// Unpacks a build's packages (ADR 0031) into its directory, offline. admin-api fetched them and
@@ -33,7 +39,7 @@ public static partial class PackageArchives
             byte[] tgz;
             try
             {
-                tgz = Convert.FromBase64String(archive.Tgz);
+                tgz = Convert.FromBase64String(archive.Data);
             }
             catch (FormatException)
             {
@@ -89,6 +95,69 @@ public static partial class PackageArchives
             }
         }
         return null;
+    }
+
+    // The best build for the sandbox's .NET 10, newest first; .NET Framework's never.
+    private static readonly string[] Frameworks =
+        ["net10.0", "net9.0", "net8.0", "net7.0", "net6.0", "net5.0", "netcoreapp3.1", "netstandard2.1", "netstandard2.0",
+         "netstandard1.6", "netstandard1.5", "netstandard1.4", "netstandard1.3", "netstandard1.2", "netstandard1.1", "netstandard1.0"];
+
+    /// <summary>
+    /// The assemblies each NuGet package gives a .NET 10 build: its best <c>lib/{framework}/</c>
+    /// folder's DLLs. A package with only native code or only a .NET Framework build is refused;
+    /// one with no library at all (analyzers, a meta-package) gives nothing.
+    /// </summary>
+    public static (List<(string Package, string Name, byte[] Bytes)> Assemblies, List<string> Problems) Libraries(
+        IEnumerable<PackageArchive> archives, long maxBytes)
+    {
+        var assemblies = new List<(string, string, byte[])>();
+        var problems = new List<string>();
+        long total = 0;
+        foreach (var archive in archives.Where(a => a.IsNuGet))
+        {
+            var package = archive.Path["nuget/".Length..].Replace('/', ' ');
+            try
+            {
+                using var zip = new ZipArchive(new MemoryStream(Convert.FromBase64String(archive.Data), writable: false), ZipArchiveMode.Read);
+                var libs = zip.Entries
+                    .Select(e => e.FullName.Replace('\\', '/'))
+                    .Where(n => n.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) && n.Count(c => c == '/') == 2 && n.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    .GroupBy(n => n.Split('/')[1].ToLowerInvariant())
+                    .ToDictionary(g => g.Key, g => g.ToList());
+                var best = Frameworks.FirstOrDefault(libs.ContainsKey);
+                if (best is null)
+                {
+                    if (libs.Count > 0) problems.Add($"{package} has no build for .NET ({string.Join(", ", libs.Keys.Order())}).");
+                    else if (zip.Entries.Any(e => e.FullName.StartsWith("runtimes/", StringComparison.OrdinalIgnoreCase)))
+                        problems.Add($"{package} is native code, which a function cannot run.");
+                    continue;
+                }
+                foreach (var name in libs[best])
+                {
+                    var entry = zip.GetEntry(name) ?? zip.Entries.First(e => e.FullName.Replace('\\', '/') == name);
+                    total += entry.Length;
+                    if (total > maxBytes)
+                    {
+                        return ([], [$"The packages' assemblies are more than {maxBytes / (1024 * 1024)} MB."]);
+                    }
+                    using var stream = entry.Open();
+                    using var copy = new MemoryStream();
+                    stream.CopyTo(copy);
+                    var file = name.Split('/')[2];
+                    if (assemblies.Any(a => string.Equals(a.Item2, file, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        problems.Add($"{package} brings {file}, which another package brings too.");
+                        continue;
+                    }
+                    assemblies.Add((package, file, copy.ToArray()));
+                }
+            }
+            catch (Exception e) when (e is InvalidDataException or FormatException)
+            {
+                problems.Add($"{package}: the package is not a .nupkg.");
+            }
+        }
+        return (assemblies, problems);
     }
 
     /// <summary>The package a bare specifier names: <c>zod</c>, <c>@scope/name</c>; null for anything else.</summary>

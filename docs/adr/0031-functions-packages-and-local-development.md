@@ -68,6 +68,17 @@ These were decided by the user on 2026-11-05.
   - `deno.json` gets `"nodeModulesDir": "manual"`, and `deno check`/`deno info` run without `--no-npm`.
   - A package's `node:` imports are left for esbuild to judge. esbuild bundles the package's `worker`/`browser`/ES-module build, and a package that still reaches Node.js is reported once, naming the package and the modules it needs.
 
+#### NuGet, as built (P4)
+
+- **Declaring:** `Functions.csproj`'s `PackageReference`s, locked by `packages.lock.json`. The direct entries must match the project, or the build fails and names them. `Dcms.Functions.Sdk` is the server's own and is never fetched.
+- **Fetching:** each locked package comes from nuget.org's flat container by id and version, through the same `PackageStore`, checked by its `contentHash` (sha512).
+- **Building:**
+  - script-runner takes each package's best `lib/` folder: net10.0 down to netstandard1.0, never .NET Framework.
+  - dcms-csc compiles against those DLLs and reads their metadata without loading them. Any assembly reference outside the curated set, the SDK and the packages is refused, and so is any P/Invoke.
+  - The assemblies go with the deployment as `@nuget/{name}.dll` bundles, at most 16 MB: the run's start message carries them, and the function's V8 heap parses it. The start message may be 80 MB.
+- **Running:** the harness loads them (`Entry.Load`, plus an `AssemblyResolve` hook) before the function's assembly, and a kept process loads them once.
+- **Not yet:** the IDE's C# language service does not see package types, so the editor marks their use until P5.
+
 #### Spike P0 (2026-11-05): go for both languages
 
 Measured with the runner's own Deno 2.5.4 and esbuild 0.28.2, under the production limits for a C# run (64 MB V8 heap, 768 MB `RLIMIT_DATA`, `--liftoff-only`).

@@ -26,6 +26,24 @@ public static partial class Entry
     private static partial void Log(string level, string message);
 
     /// <returns><c>{"ok":true,"result":…}</c>, or <c>{"ok":false,"error":"…","limit":bool}</c>.</returns>
+    private static readonly Dictionary<string, Assembly> s_packages = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A NuGet package's assembly (ADR 0031), loaded before the function's: found by name when
+    /// the function, or another package, needs it.
+    /// </summary>
+    [JSExport]
+    public static void Load(byte[] dll)
+    {
+        if (s_packages.Count == 0)
+        {
+            AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
+                s_packages.TryGetValue(new AssemblyName(args.Name).Name ?? "", out var found) ? found : null;
+        }
+        var assembly = Assembly.Load(dll);
+        s_packages[assembly.GetName().Name!] = assembly;
+    }
+
     [JSExport]
     public static async Task<string> Run(byte[] dll, byte[] pdb, string type, string input, string context)
     {

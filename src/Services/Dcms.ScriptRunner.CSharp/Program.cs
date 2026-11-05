@@ -10,7 +10,8 @@ using Microsoft.CodeAnalysis.Emit;
 // through Confined (prlimit, no environment) because Roslyn on hostile input is a memory and CPU
 // risk better kept out of the runner itself.
 //
-// stdin:  {"files":{"path":"text",...},"sdk":"<the generated Sdk.g.cs>"}
+// stdin:  {"files":{"path":"text",...},"sdk":"<the generated Sdk.g.cs>",
+//          "packages":[{"package":"Id version","name":"X.dll","data":"<base64>"}]}  (NuGet, ADR 0031)
 // stdout: {"ok":bool,"diagnostics":[{message,file,line,column,code}],"assembly":"<base64>","pdb":"<base64>",
 //          "functions":[{"name","class","file","definition"}]}
 //
@@ -41,6 +42,13 @@ var references = Directory.GetFiles(refs, "*.dll")
     .Where(file => curated.Contains(Path.GetFileNameWithoutExtension(file)))
     .Select(file => MetadataReference.CreateFromFile(file))
     .ToList();
+// NuGet packages' assemblies (ADR 0031): compiled against, and checked to run in the sandbox.
+var packages = (request["packages"] as JsonArray ?? [])
+    .Select(p => (Package: p?["package"]?.GetValue<string>() ?? "", Name: p?["name"]?.GetValue<string>() ?? "",
+        Bytes: Convert.FromBase64String(p?["data"]?.GetValue<string>() ?? "")))
+    .ToList();
+var packageProblems = PackageCheck.Problems(packages, curated);
+references.AddRange(packages.Select(p => MetadataReference.CreateFromImage(p.Bytes, filePath: p.Name)));
 var compilation = FunctionCompilation.Create(trees, references);
 
 void Report(string message, Location? location = null, string? code = null)
@@ -55,6 +63,11 @@ void Report(string message, Location? location = null, string? code = null)
         ["column"] = file is null ? null : span!.Value.StartLinePosition.Character + 1,
         ["code"] = code,
     });
+}
+
+foreach (var problem in packageProblems)
+{
+    Report(problem);
 }
 
 foreach (var d in compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Take(200))

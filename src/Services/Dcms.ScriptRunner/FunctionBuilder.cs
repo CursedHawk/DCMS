@@ -31,8 +31,9 @@ public sealed record BuiltFunction(string Name, string Bundle, JsonNode? Definit
 
 /// <param name="Assembly">The repository's C# compiled, base64: one assembly every C# function of the build runs from.</param>
 /// <param name="Pdb">Its portable PDB, base64: a function's errors name their file and line with it.</param>
+/// <param name="Packages">C#: the NuGet packages' assemblies the function's assembly references, by file name, base64 (ADR 0031).</param>
 public sealed record BuildResult(bool Ok, IReadOnlyList<BuildDiagnostic> Diagnostics, IReadOnlyList<BuiltFunction> Functions,
-    string? Assembly = null, string? Pdb = null)
+    string? Assembly = null, string? Pdb = null, Dictionary<string, string>? Packages = null)
 {
     public static BuildResult Failed(params BuildDiagnostic[] diagnostics) => new(false, diagnostics, []);
 }
@@ -121,7 +122,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
             }
             return diagnostics.Count > 0
                 ? new BuildResult(false, diagnostics, [])
-                : new BuildResult(true, [], functions, cs?.Assembly, cs?.Pdb);
+                : new BuildResult(true, [], functions, cs?.Assembly, cs?.Pdb, cs?.Packages);
         }
         finally
         {
@@ -138,6 +139,11 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
     /// </summary>
     private async Task<BuildResult> BuildCSharpAsync(BuildRequest request, CancellationToken ct)
     {
+        var (libraries, unusable) = PackageArchives.Libraries(request.Packages ?? [], _o.MaxPackageAssemblyBytes);
+        if (unusable.Count > 0)
+        {
+            return BuildResult.Failed(unusable.Select(p => new BuildDiagnostic(p, "packages.lock.json")).ToArray());
+        }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(_o.BuildTimeoutMs);
         using var process = Confined.Start(_o.DotnetPath, [_o.CSharpCompilerPath],
@@ -163,6 +169,10 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 ["files"] = new JsonObject(request.Files.Where(f => IsCSharp(f.Key))
                     .Select(f => KeyValuePair.Create<string, JsonNode?>(f.Key, f.Value))),
                 ["sdk"] = request.SdkCSharp ?? "",
+                ["packages"] = new JsonArray(libraries.Select(l => (JsonNode)new JsonObject
+                {
+                    ["package"] = l.Package, ["name"] = l.Name, ["data"] = Convert.ToBase64String(l.Bytes),
+                }).ToArray()),
             }.ToJsonString().AsMemory(), deadline.Token);
             process.StandardInput.Close();
             await process.WaitForExitAsync(deadline.Token);
@@ -211,7 +221,8 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
                 f["file"]?.GetValue<string>(), f["class"]?.GetValue<string>(),
                 Input: f["input"]?.DeepClone(), Output: f["output"]?.DeepClone()))
             .ToList();
-        return new BuildResult(true, [], functions, assembly, pdb);
+        return new BuildResult(true, [], functions, assembly, pdb,
+            libraries.Count > 0 ? libraries.ToDictionary(l => l.Name, l => Convert.ToBase64String(l.Bytes), StringComparer.OrdinalIgnoreCase) : null);
     }
 
     /// <summary>The repository's TypeScript; nothing at all when it has no <c>functions/*.ts</c>.</summary>
@@ -222,7 +233,7 @@ public sealed partial class FunctionBuilder(IOptions<ScriptRunnerOptions> option
         {
             var entries = new SortedDictionary<string, string>(StringComparer.Ordinal);
             var diagnostics = new List<BuildDiagnostic>();
-            var packages = request.Packages ?? [];
+            var packages = (request.Packages ?? []).Where(p => !p.IsNuGet).ToList();
             var dependencies = packages.Count > 0 ? Dependencies(request.Files) : [];
             if (packages.Count > 0 && request.Files.Keys.Any(p => p.EndsWith(".ts", StringComparison.Ordinal))
                 && await PackageArchives.UnpackAsync(root.FullName, packages, _o.MaxPackageUnpackedBytes, _o.MaxPackageFiles, ct) is { } unpacked)

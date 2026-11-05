@@ -61,6 +61,13 @@ public sealed class ScriptRunnerOptions
     public long MaxPackageUnpackedBytes { get; set; } = 300L * 1024 * 1024;
 
     public int MaxPackageFiles { get; set; } = 30_000;
+
+    /// <summary>
+    /// What a C# build's NuGet packages may add to the deployment, in assembly bytes. They travel in
+    /// the run's start message, one JSON line the harness parses in the function's V8 heap (128 MB
+    /// unless it says): 16 MB of assemblies is about 21 MB of base64.
+    /// </summary>
+    public long MaxPackageAssemblyBytes { get; set; } = 16L * 1024 * 1024;
     public int MaxCalls { get; set; } = 1_000;
 
     /// <summary>Host-call arguments and replies together, per run.</summary>
@@ -70,6 +77,9 @@ public sealed class ScriptRunnerOptions
 
     /// <summary>One line from Deno, or one message from the caller.</summary>
     public int MaxMessageBytes { get; set; } = 8 * 1024 * 1024;
+
+    /// <summary>A run's start message: the bundle, or a C# assembly and its NuGet packages' (ADR 0031).</summary>
+    public long MaxStartBytes { get; set; } = 80L * 1024 * 1024;
 
     public int MaxBuildFiles { get; set; } = 500;
     public int MaxBuildBytes { get; set; } = 5 * 1024 * 1024;
