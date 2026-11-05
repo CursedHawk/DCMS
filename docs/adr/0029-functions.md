@@ -181,6 +181,29 @@ A function imports only:
 
 All I/O goes through the SDK. The `runtime` field (`deno-ts`) leaves room for other languages: C# (`dotnet`) came next, in [0030](0030-csharp-functions.md).
 
+### The workbench (epic #601, 2026-11-05)
+
+A Functions app's repository in the IDE is where its functions are written, run and debugged.
+- **Functions view:** every function of the draft as the server's build reads it (runtime, file, triggers, access, uses) and what is live, with deploy.
+- **Run tab:** runs one function now, from the draft (`/_functions/test`) or as deployed (`/_functions/run`).
+  - It may be told it was started by an HTTP call (with a signed-in user), a row event, a message or a schedule (`RunSimulation`).
+  - Only the function's context changes: the run is still a manual one, under the caller's permissions, and the broker trusts none of it.
+  - Inputs are kept as `test-inputs/<function>/*.json` in the repository. Not under `.dcms/`: builds refuse hidden paths.
+- **Runs tab:** the history, one run in full, and **replay against the draft**. The app's Runs screen opens it (`/repos/{id}/code?runs=<function>`).
+- **Traces:** `FunctionRunner` records every host call of a run (op, arguments, ok or error, ms) into `functions.runs.trace` and the test/run answers.
+  - Never results.
+  - Arguments are kept only after redaction:
+    - every value the run got from `secrets.get`, wherever it was passed on;
+    - an HTTP call's URL beyond scheme and host;
+    - its body;
+    - every header but a few harmless ones.
+  - At most 200 calls of 300 characters each.
+  - Shown, like logs, only to holders of `plugin:functions:logs`.
+- **Errors name the repository's lines:**
+  - C# maps IL offsets through the PDB (ADR 0030).
+  - TypeScript: the harness passes the function's own frames. Deno shortens a `data:` URL with `......`, so the scrub matches dots too. `FunctionRunner` maps `function:L:C` through esbuild's source map, kept as `bundles["<fn>.map"]`.
+- **Breakpoint debugging is out of scope** by decision. Traces and replay are the debugger.
+
 ## Alternatives rejected
 
 - **Keep flows and add a `function.run` step.** This leaves two places to define automation. The user chose one.

@@ -112,6 +112,7 @@ test('a secret is written by name and never shown back', async ({ page, api }) =
 test('a run opens with its input, result and log', async ({ page, api }) => {
   api
     .on('GET', '/api/admin/plugins/fn/_functions/runs', { items: [RUN], page: 1, more: false })
+    .on('GET', '/api/admin/plugins/fn/_functions/repo', { id: '55555555-5555-5555-5555-555555555555', repoFullName: 'acme/fn', httpCloneUrl: null })
     .on('GET', `/api/admin/plugins/fn/_functions/runs/${RUN.id}`, {
       run: RUN, input: { name: 'Ada' }, trigger: { method: 'GET' }, result: { message: 'Hello, Ada!' },
       logs: '[info] hello Ada', calls: 0, correlationId: 'ffffffff-0000-0000-0000-000000000001', depth: 0,
@@ -121,4 +122,8 @@ test('a run opens with its input, result and log', async ({ page, api }) => {
   await page.getByText('hello', { exact: true }).first().click();
   await expect(page.getByText('Hello, Ada!')).toBeVisible();
   await expect(page.getByText('[info] hello Ada')).toBeVisible();
+
+  // The editor's Runs tab, beside the code (workbench W4).
+  await page.getByRole('button', { name: 'Open in the editor' }).click();
+  await expect(page).toHaveURL(/\/repos\/55555555-5555-5555-5555-555555555555\/code\?.*runs=hello/);
 });
