@@ -1,6 +1,7 @@
 // dcms: develop DCMS functions from a clone on your own machine (ADR 0031).
 // What the server says is authoritative: `check` and `run` send the working tree to the same
 // build the web IDE uses, and `deploy` merges main into release on the server, as the console does.
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -208,8 +209,11 @@ async function api(path, link, body, method, bytes) {
   if (link?.tenant) headers['X-Dcms-Tenant'] = link.tenant;
   if (link?.environment) headers['X-Dcms-Environment'] = link.environment;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const verb = method ?? (body !== undefined ? 'POST' : 'GET');
+  // Every write carries one, as the console's do (ADR 0024): a retried request is then one action.
+  if (verb !== 'GET' && verb !== 'HEAD') headers['Idempotency-Key'] = randomUUID();
   const res = await fetch(`${creds.server}${path}`, {
-    method: method ?? (body !== undefined ? 'POST' : 'GET'),
+    method: verb,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
