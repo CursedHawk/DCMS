@@ -56,6 +56,31 @@ public static class MyAccountEndpoints
             });
         }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
 
+        // `dcms link` (ADR 0031): which tenant, environment and app a clone's git remote is, for
+        // a member of that tenant. What they may do there is each later call's business.
+        app.MapGet("/api/admin/me/repos", async (
+            string remote, CurrentUser me, TenancyDbContext db, SitesDbContext sites, Dcms.Shared.Data.Cms.CmsDbContext cms,
+            CancellationToken ct) =>
+        {
+            using var rls = RlsScope.Platform();
+            var userId = me.RequireUserId();
+            if (RepoNameOf(remote) is not { } name) return Results.BadRequest(new { error = "That is not a git remote." });
+            var binding = await sites.RepoBindings.IgnoreTenantFilter().AsNoTracking()
+                .FirstOrDefaultAsync(b => b.RepoFullName == name, ct);
+            if (binding is null
+                || !await db.Memberships.IgnoreTenantFilter().AnyAsync(m => m.UserId == userId && m.TenantId == binding.TenantId, ct))
+            {
+                return Results.NotFound(new { error = "No repository of yours has that remote." });
+            }
+            var tenantId = binding.TenantId.ToString();
+            var tenant = await db.Tenants.AsNoTracking().Where(t => t.Id == tenantId).Select(t => t.Identifier).FirstAsync(ct);
+            var environment = await db.Environments.IgnoreTenantFilter().AsNoTracking()
+                .Where(e => e.Id == binding.EnvironmentId).Select(e => e.Name).FirstAsync(ct);
+            var app = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                .Where(i => i.Id == binding.InstanceId).Select(i => i.Slug).FirstAsync(ct);
+            return Results.Ok(new { tenant, environment, app, plugin = binding.PluginId, repo = binding.RepoFullName, repoId = binding.Id });
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+
         // Detach the account from the platform: leave every workspace and drop the
         // per-user rows that only exist because this user was working here. The login
         // itself is deleted afterwards by identity, which refuses until this has run.
@@ -152,6 +177,22 @@ public static class MyAccountEndpoints
     /// "Sole owner" is computed per tenant rather than trusted from a flag, because it
     /// is the single condition that can leave a workspace unreachable.
     /// </summary>
+    /// <summary>
+    /// <c>org/repo</c> out of a remote as git prints it: https (with or without credentials),
+    /// ssh://, or scp-like <c>git@host:org/repo.git</c>.
+    /// </summary>
+    public static string? RepoNameOf(string? remote)
+    {
+        if (string.IsNullOrWhiteSpace(remote)) return null;
+        var path = remote.Trim();
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "ssh") path = uri.AbsolutePath;
+        else if (path.IndexOf(':') is var colon and > 0) path = path[(colon + 1)..];
+        var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return null;
+        var repo = parts[^1].EndsWith(".git", StringComparison.Ordinal) ? parts[^1][..^4] : parts[^1];
+        return repo.Length == 0 ? null : $"{parts[^2]}/{repo}";
+    }
+
     private static async Task<List<MembershipView>> LoadMembershipsAsync(
         TenancyDbContext db, Guid userId, CancellationToken ct)
     {

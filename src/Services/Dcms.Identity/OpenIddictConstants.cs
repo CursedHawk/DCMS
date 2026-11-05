@@ -44,6 +44,13 @@ public static class DcmsOAuth
         /// disable or re-provider a tenant's users.
         /// </summary>
         public const string RealmAdminService = "dcms-realm-admin";
+
+        /// <summary>
+        /// The <c>dcms</c> command line (ADR 0031): public, device authorization grant only. A
+        /// person approves it in a browser where they are signed in; it gets <c>dcms.admin</c>
+        /// tokens for that person, which the edge lets through for this client and no other.
+        /// </summary>
+        public const string Cli = "dcms-cli";
     }
 
     /// <summary>

@@ -189,6 +189,30 @@ public class BffGuardTests
         BffGuard.ShouldAuthenticate(bffEnabled, bffRoute, sessionId).Should().BeFalse();
     }
 
+    [Theory]
+    // The command line, with no browser session: kept.
+    [InlineData(null, "dcms-cli", true)]
+    // Any other client's token, or a session alongside: stripped, as before.
+    [InlineData(null, "dcms-admin-spa", false)]
+    [InlineData("sid-1", "dcms-cli", false)]
+    public void Keeps_only_the_command_lines_bearer_and_only_without_a_session(string? sessionId, string client, bool kept)
+    {
+        var payload = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(
+            System.Text.Encoding.UTF8.GetBytes($$"""{"client_id":"{{client}}","sub":"u1"}"""));
+        BffGuard.KeepsBearer(sessionId, $"Bearer e30.{payload}.sig").Should().Be(kept);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Basic dXNlcjpwYXNz")]
+    [InlineData("Bearer not-a-jwt")]
+    [InlineData("Bearer a.!!!.c")]
+    [InlineData("Bearer a.W10.c")]
+    public void Strips_a_bearer_it_cannot_read(string? authorization)
+    {
+        BffGuard.KeepsBearer(null, authorization).Should().BeFalse();
+    }
+
     /// <summary>A fresh ephemeral key ring per call, so the cross-ring case is a real one.</summary>
     private static IDataProtectionProvider Protection() => new EphemeralDataProtectionProvider();
 }

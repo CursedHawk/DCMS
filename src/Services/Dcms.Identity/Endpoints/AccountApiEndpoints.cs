@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Dcms.Identity.Endpoints;
 
@@ -224,6 +225,55 @@ public static class AccountApiEndpoints
             }
 
             await revocations.RevokeAsync(id, ct);
+            return Results.NoContent();
+        }).WithAudit(AuditActions.SessionRevoked, category: AuditCategory.Auth);
+
+        // The command lines signed in as this user (ADR 0031): one per device-flow approval.
+        // Found by their refresh tokens, which carry the subject; the authorization OpenIddict
+        // made for the device request does not (it is made before anyone approves it).
+        group.MapGet("/devices", async (
+            ClaimsPrincipal principal, UserManager<DcmsUser> users, IOpenIddictApplicationManager apps,
+            IOpenIddictAuthorizationManager authorizations, IOpenIddictTokenManager tokens, CancellationToken ct) =>
+        {
+            var user = await FindUserAsync(principal, users);
+            if (user is null) return Results.Unauthorized();
+            if (await apps.FindByClientIdAsync(DcmsOAuth.Clients.Cli, ct) is not { } cli) return Results.Ok(Array.Empty<object>());
+            var cliId = await apps.GetIdAsync(cli, ct);
+
+            var devices = new Dictionary<string, (DateTimeOffset? CreatedAt, DateTimeOffset? LastUsedAt)>();
+            await foreach (var token in tokens.FindAsync(user.Id.ToString(), cliId!, Statuses.Valid, TokenTypeIdentifiers.RefreshToken, ct))
+            {
+                if (await tokens.GetAuthorizationIdAsync(token, ct) is not { } id) continue;
+                var at = await tokens.GetCreationDateAsync(token, ct);
+                devices[id] = devices.TryGetValue(id, out var seen)
+                    ? (seen.CreatedAt, at > seen.LastUsedAt ? at : seen.LastUsedAt)
+                    : (await authorizations.FindByIdAsync(id, ct) is { } a ? await authorizations.GetCreationDateAsync(a, ct) : at, at);
+            }
+            return Results.Ok(devices
+                .OrderByDescending(d => d.Value.LastUsedAt)
+                .Select(d => new { id = d.Key, createdAt = d.Value.CreatedAt, lastUsedAt = d.Value.LastUsedAt }));
+        });
+
+        // Signs one command line out: every token of its authorization, and the authorization.
+        // Its last access token still works until it expires, ten minutes at most.
+        group.MapDelete("/devices/{id}", async (
+            string id, ClaimsPrincipal principal, UserManager<DcmsUser> users,
+            IOpenIddictAuthorizationManager authorizations, IOpenIddictTokenManager tokens, CancellationToken ct) =>
+        {
+            var user = await FindUserAsync(principal, users);
+            if (user is null) return Results.Unauthorized();
+            var owned = false;
+            await foreach (var token in tokens.FindByAuthorizationIdAsync(id, ct))
+            {
+                owned |= string.Equals(await tokens.GetSubjectAsync(token, ct), user.Id.ToString(), StringComparison.OrdinalIgnoreCase);
+            }
+            // Someone else's, or gone: the same answer, so an id says nothing about anyone else.
+            if (!owned) return Results.NoContent();
+            await tokens.RevokeByAuthorizationIdAsync(id, ct);
+            if (await authorizations.FindByIdAsync(id, ct) is { } authorization)
+            {
+                await authorizations.TryRevokeAsync(authorization, ct);
+            }
             return Results.NoContent();
         }).WithAudit(AuditActions.SessionRevoked, category: AuditCategory.Auth);
 

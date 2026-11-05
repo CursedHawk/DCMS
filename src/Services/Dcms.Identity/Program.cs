@@ -202,11 +202,15 @@ builder.Services
         options.SetAuthorizationEndpointUris("connect/authorize")
             .SetTokenEndpointUris("connect/token")
             .SetUserInfoEndpointUris("connect/userinfo")
-            .SetEndSessionEndpointUris("connect/logout");
+            .SetEndSessionEndpointUris("connect/logout")
+            // The dcms CLI (ADR 0031): it shows a code, the person approves it at /connect/verify.
+            .SetDeviceAuthorizationEndpointUris("connect/device")
+            .SetEndUserVerificationEndpointUris("connect/verify");
 
         options.AllowAuthorizationCodeFlow()
             .AllowRefreshTokenFlow()
-            .AllowClientCredentialsFlow();
+            .AllowClientCredentialsFlow()
+            .AllowDeviceAuthorizationFlow();
 
         // MUST list every scope in DcmsOAuth.Scopes. This is a second place the same fact is
         // written -- IdentitySeeder creates the scope ROW, this permits it to be REQUESTED --
@@ -271,7 +275,8 @@ builder.Services
             .EnableAuthorizationEndpointPassthrough()
             .EnableTokenEndpointPassthrough()
             .EnableUserInfoEndpointPassthrough()
-            .EnableEndSessionEndpointPassthrough();
+            .EnableEndSessionEndpointPassthrough()
+            .EnableEndUserVerificationEndpointPassthrough();
 
         // Dev/compose run over plain HTTP. Production terminates TLS at the edge
         // and keeps the transport-security requirement.

@@ -296,9 +296,13 @@ public static class EnvironmentEndpoints
                         .ToDictionaryAsync(p => p.Id, p => p.Slug, ct);
                     repos.AddRange(bindings.Where(b => slugs.ContainsKey(b.InstanceId))
                         .Select(b => (Repo: b.RepoFullName, Kind: b.PluginId, Key: slugs[b.InstanceId])));
+                    var pluginRepos = bindings.Select(b => b.RepoFullName).ToHashSet();
                     foreach (var (repo, kind, key) in repos)
                     {
-                        var locked = EnvironmentPolicies.Ownership(wanted, kind, key) == EnvironmentOwnership.Managed;
+                        // A plugin's release takes pushes from the platform only, managed or not:
+                        // its editors may push their own git, and merging into release is a publish.
+                        var locked = pluginRepos.Contains(repo)
+                                     || EnvironmentPolicies.Ownership(wanted, kind, key) == EnvironmentOwnership.Managed;
                         try
                         {
                             await git.LockReleaseAsync(repo, locked, ct);

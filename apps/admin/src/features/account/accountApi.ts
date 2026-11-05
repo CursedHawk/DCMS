@@ -23,6 +23,13 @@ export interface SshKey {
   createdAt: string;
 }
 
+/** A `dcms` command line signed in as this user (device sign-in). */
+export interface CliDevice {
+  id: string;
+  createdAt: string | null;
+  lastUsedAt: string | null;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/account/api${path}`, {
     ...init,
@@ -54,6 +61,8 @@ export const accountApi = {
   addKey: (body: { title: string; key: string }) =>
     req<SshKey>('/ssh-keys', { method: 'POST', body: JSON.stringify(body) }),
   deleteKey: (id: number) => req<void>(`/ssh-keys/${id}`, { method: 'DELETE' }),
+  listDevices: () => req<CliDevice[]>('/devices'),
+  revokeDevice: (id: string) => req<void>(`/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /**
    * Destroys the login and the mirrored git account. Identity refuses while the
    * user still belongs to any workspace, so this can never run before admin-api's

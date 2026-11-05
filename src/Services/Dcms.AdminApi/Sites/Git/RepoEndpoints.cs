@@ -30,11 +30,19 @@ public static class RepoEndpoints
             // it: which one depends on the row, so the endpoint table cannot carry it.
             .PermissionExempt("Gated by the permission the repository's binding names (RepoEndpoints.WithAsync).");
 
-        repo.MapGet("/git", (Guid id, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (binding, _) =>
+        repo.MapGet("/git", (Guid id, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, IAuthorizationService authz,
+                CurrentUser user, RepoAccessReconciler repoAccess, CancellationToken ct) =>
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, async (binding, _) =>
             {
+                // Self-heal, as a site's git panel does: the caller's own git access follows the
+                // binding's permissions (write for editors, read for readers; release is the platform's).
+                if (user.UserId is Guid uid && !string.IsNullOrWhiteSpace(user.Email))
+                {
+                    await repoAccess.ReconcileUserBindingAsync(binding.TenantId, uid, user.Email!, binding, ct, user.IsSuperAdmin);
+                }
+                var write = (await authz.AuthorizeAsync(http.User, null, new PermissionRequirement(binding.EditPermission))).Succeeded;
                 var (httpUrl, ssh) = git.CloneUrls(binding.RepoFullName);
-                return Task.FromResult(Results.Ok(new
+                return Results.Ok(new
                 {
                     enabled = git.Enabled,
                     provisioned = true,
@@ -43,7 +51,9 @@ public static class RepoEndpoints
                     httpUrl,
                     sshUrl = ssh,
                     provisionedAt = binding.CreatedAt,
-                }));
+                    // What the caller's own git may do: clone and pull, and push unless "read".
+                    access = write ? "write" : "read",
+                });
             }));
 
         repo.MapGet("/ide", (Guid id, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,

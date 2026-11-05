@@ -16,6 +16,7 @@ import {
 } from '@dcms/ui';
 import { accountApi } from './accountApi';
 import { DeleteAccountCard } from './DeleteAccountCard';
+import { DevicesCard } from './DevicesCard';
 import { SessionsCard } from './SessionsCard';
 
 export function AccountPage() {
@@ -100,6 +101,7 @@ export function AccountPage() {
 
         {/* Live sessions */}
         <SessionsCard />
+        <DevicesCard />
 
         {/* Git password */}
         <Card>

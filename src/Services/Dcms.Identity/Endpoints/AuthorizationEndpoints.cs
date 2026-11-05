@@ -35,6 +35,13 @@ public static class AuthorizationEndpoints
 
         app.MapMethods("/connect/logout", ["GET", "POST"], LogoutAsync)
             .WithAudit(AuditActions.Logout, category: AuditCategory.Auth);
+
+        // The dcms CLI's device code (ADR 0031): the person signed in here approves the code their
+        // terminal shows, and the terminal gets their token. Never without that click.
+        app.MapGet("/connect/verify", VerifyPageAsync)
+            .AuditExempt("Shows the code to approve; the approval itself is recorded.");
+        app.MapPost("/connect/verify", VerifyAsync)
+            .WithAudit(AuditActions.TokenIssued, category: AuditCategory.Auth);
         return app;
     }
 
@@ -183,7 +190,7 @@ public static class AuthorizationEndpoints
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
-        if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType())
+        if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType() || request.IsDeviceCodeGrantType())
         {
             var result = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
@@ -277,6 +284,100 @@ public static class AuthorizationEndpoints
 
         return Results.BadRequest(new { error = Errors.UnsupportedGrantType });
     }
+
+    /// <summary>The signed-in person, or where to sign in first and come back.</summary>
+    /// <summary>
+    /// Whether OpenIddict found a live device request behind the user_code. An unknown or
+    /// expired code still authenticates, with an empty principal: the client id is what says.
+    /// </summary>
+    private static bool IsLiveUserCode(AuthenticateResult result)
+        => result.Succeeded && !string.IsNullOrEmpty(result.Principal?.GetClaim(OpenIddictConstants.Claims.ClientId));
+
+    private static async Task<(DcmsUser? User, IResult? Elsewhere)> VerifierAsync(
+        HttpContext context, UserManager<DcmsUser> userManager, SignInManager<DcmsUser> signInManager)
+    {
+        var here = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
+        var cookie = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+        if (!cookie.Succeeded || cookie.Principal?.Identity?.IsAuthenticated != true)
+        {
+            return (null, Results.Redirect("/account/login?returnUrl=" + Uri.EscapeDataString(here)));
+        }
+        var user = await userManager.GetUserAsync(cookie.Principal);
+        if (user is null || !await signInManager.CanSignInAsync(user) || await userManager.IsLockedOutAsync(user))
+        {
+            await signInManager.SignOutAsync();
+            return (null, Results.Redirect("/account/login?error=1&returnUrl=" + Uri.EscapeDataString(here)));
+        }
+        return (user, null);
+    }
+
+    private static async Task<IResult> VerifyPageAsync(
+        HttpContext context, UserManager<DcmsUser> userManager, SignInManager<DcmsUser> signInManager,
+        Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery)
+    {
+        if (context.Request.Query["done"] == "1") return Page("Signed in", "<h1>Done</h1><p class=\"lead\">The command line is signed in. You can close this window.</p>");
+        if (context.Request.Query["denied"] == "1") return Page("Not signed in", "<h1>Not signed in</h1><p class=\"lead\">The command line was not signed in. You can close this window.</p>");
+        var (user, elsewhere) = await VerifierAsync(context, userManager, signInManager);
+        if (elsewhere is not null) return elsewhere;
+
+        // OpenIddict reads the user_code from the query and says whether it is a live one.
+        var result = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        var code = context.Request.Query["user_code"].ToString();
+        var csrf = AccountEndpoints.CsrfField(context, antiforgery);
+        if (!IsLiveUserCode(result))
+        {
+            var error = string.IsNullOrEmpty(code) ? "" : "<p class=\"error\">That code is not valid, or it has expired. Run <code>dcms login</code> again.</p>";
+            return Page("Sign in the command line", $"""
+                <form method="get" action="/connect/verify">
+                  <h1>Sign in the command line</h1>
+                  <p class="lead">Enter the code <code>dcms login</code> showed in your terminal.</p>
+                  {error}
+                  <label>Code<input name="user_code" autocomplete="off" autofocus required /></label>
+                  <button type="submit">Continue</button>
+                </form>
+                """);
+        }
+        var who = AccountEndpoints.Enc(user!.Email);
+        var shown = AccountEndpoints.Enc(code);
+        return Page("Sign in the command line", $$"""
+            <form method="post" action="/connect/verify">
+              <h1>Sign in the command line?</h1>
+              <p class="lead">A <code>dcms</code> command line on a computer asks to act as <b>{{who}}</b>: to read and change what you may in the console.</p>
+              <p>Approve only if <code>dcms login</code> in your own terminal shows <b>{{shown}}</b>.</p>
+              <input type="hidden" name="user_code" value="{{shown}}" />
+              {{csrf}}
+              <button type="submit" name="decision" value="approve">Approve</button>
+              <button type="submit" name="decision" value="deny" class="secondary">Deny</button>
+            </form>
+            """);
+    }
+
+    private static async Task<IResult> VerifyAsync(
+        HttpContext context, [FromForm(Name = "decision")] string? decision, [FromForm(Name = "user_code")] string? userCode,
+        UserManager<DcmsUser> userManager, SignInManager<DcmsUser> signInManager, IOpenIddictScopeManager scopeManager)
+    {
+        var (user, elsewhere) = await VerifierAsync(context, userManager, signInManager);
+        if (elsewhere is not null) return elsewhere;
+        var result = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        if (!IsLiveUserCode(result))
+        {
+            return Results.Redirect("/connect/verify?user_code=" + Uri.EscapeDataString(userCode ?? ""));
+        }
+        if (decision != "approve")
+        {
+            return Results.Forbid(
+                authenticationSchemes: [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                properties: new AuthenticationProperties { RedirectUri = "/connect/verify?denied=1" });
+        }
+        // The person's own principal, as a console's, but tied to no browser login: signing out
+        // of a browser does not sign out a terminal. The account page's devices list does.
+        var principal = await BuildUserPrincipalAsync(user!, userManager, scopeManager, result.Principal!.GetScopes(), loginSessionId: null);
+        return Results.SignIn(principal, new AuthenticationProperties { RedirectUri = "/connect/verify?done=1" },
+            OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    private static IResult Page(string title, string body) =>
+        Results.Content(AccountEndpoints.Layout("DCMS — " + title, body), "text/html");
 
     private static async Task<IResult> UserInfoAsync(HttpContext context, UserManager<DcmsUser> userManager)
     {

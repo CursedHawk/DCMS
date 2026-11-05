@@ -55,6 +55,17 @@ public sealed class AdminPluginRepos(
                 RepoFullName = repo.RepoFullName,
                 DefaultBranch = repo.DefaultBranch,
             };
+            // Its editors get write on it in their own git (RepoAccessReconciler); release, which
+            // builds, takes pushes from the platform only, for who may publish. Best-effort here:
+            // the reconciler locks it again before it grants anyone write.
+            try
+            {
+                await git.LockReleaseAsync(repo.RepoFullName, locked: true, ct);
+            }
+            catch (Exception e) when (e is HttpRequestException or InvalidOperationException)
+            {
+                services.GetRequiredService<ILogger<AdminPluginRepos>>().LogWarning(e, "Could not protect release on {Repo}.", repo.RepoFullName);
+            }
             sites.RepoBindings.Add(binding);
         }
         // The plugin owns what its permissions mean, and may change its mind across versions.

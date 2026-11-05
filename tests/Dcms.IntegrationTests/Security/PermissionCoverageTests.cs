@@ -243,6 +243,8 @@ public sealed class IdentityPermissionCoverageTests : PermissionCoverageTestsBas
     [
         "ANY /health",
         "ANY /health/live",
+        // Self-scoped: the handler acts only on an authorization whose subject is the caller.
+        "DELETE /account/api/devices/{id}",
         "DELETE /account/api/me",
         // Self-scoped by construction: a login id carries its owner's subject, and the handler
         // refuses one that is not the caller's. Identity does not reference the permission
@@ -270,6 +272,8 @@ public sealed class IdentityPermissionCoverageTests : PermissionCoverageTestsBas
         "POST /connect/logout",
         "POST /connect/token",
         "POST /connect/userinfo",
+        // The device flow's approval: the signed-in person approves a code for themselves.
+        "POST /connect/verify",
     ];
 }
 

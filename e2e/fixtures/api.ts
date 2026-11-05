@@ -329,6 +329,7 @@ export function adminApi(
     // The account page talks to identity, not admin-api, and carries no tenant.
     .on('GET', '/account/api/me', { email: 'ada@example.test', displayName: 'Ada Lovelace', forgejoUsername: null, hasGitPassword: false })
     .on('GET', '/account/api/ssh-keys', [])
+    .on('GET', '/account/api/devices', [])
     .on('GET', '/api/admin/me/account', { workspaces: [], canDelete: true })
     .on('GET', '/api/admin/ai/conversations', [])
     .on('GET', '/api/admin/sites/:id', {

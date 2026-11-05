@@ -276,9 +276,56 @@ public sealed class IdentitySeeder(
 
         // The edge, which is now the only thing between an operator and Grafana or Forgejo.
         await SeedEdgeClientAsync(manager, ct);
+        await SeedCliClientAsync(manager, ct);
 
         // And the client it replaced. Deleted rather than left alone -- see the method.
         await RetireGrafanaClientAsync(manager, ct);
+    }
+
+    /// <summary>
+    /// The dcms command line (ADR 0031). Public, and the device authorization grant is all it may
+    /// use: it shows a code, a person approves it at /connect/verify in a browser where they are
+    /// signed in, and it gets that person's dcms.admin token, renewed by its refresh token until
+    /// they sign the device out. Converged on every start, as the other clients are.
+    /// </summary>
+    private async Task SeedCliClientAsync(IOpenIddictApplicationManager manager, CancellationToken ct)
+    {
+        var descriptor = new OpenIddictApplicationDescriptor
+        {
+            ClientId = DcmsOAuth.Clients.Cli,
+            ClientType = ClientTypes.Public,
+            ConsentType = ConsentTypes.Explicit,
+            DisplayName = "DCMS command line",
+            Permissions =
+            {
+                Permissions.Endpoints.DeviceAuthorization,
+                Permissions.Endpoints.Token,
+                Permissions.GrantTypes.DeviceCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Scopes.Roles,
+                Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Admin,
+            },
+        };
+        var existing = await manager.FindByClientIdAsync(DcmsOAuth.Clients.Cli, ct);
+        if (existing is null)
+        {
+            await manager.CreateAsync(descriptor, ct);
+            logger.LogInformation("Seeded the dcms CLI client.");
+            return;
+        }
+        var current = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(current, existing, ct);
+        if (!current.Permissions.SetEquals(descriptor.Permissions) || current.ClientType != descriptor.ClientType)
+        {
+            current.Permissions.Clear();
+            current.Permissions.UnionWith(descriptor.Permissions);
+            current.ClientType = descriptor.ClientType;
+            await manager.PopulateAsync(existing, current, ct);
+            await manager.UpdateAsync(existing, ct);
+            logger.LogInformation("Converged the dcms CLI client's permissions.");
+        }
     }
 
     /// <summary>

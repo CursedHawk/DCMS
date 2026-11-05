@@ -43,6 +43,20 @@ internal sealed class TestForgejo : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _container.DisposeAsync();
 
+    /// <summary>A person's Forgejo account, as identity's credential sync would make it.</summary>
+    public Task CreateUserAsync(string username, string email) =>
+        ExecAsync("forgejo", "admin", "user", "create", "--username", username, "--password", "User-passw0rd-1",
+            "--email", email, "--must-change-password=false");
+
+    /// <summary>Forgejo's REST API as the bot sees it.</summary>
+    public async Task<System.Text.Json.JsonElement> GetJsonAsync(string path)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("token", Token);
+        var text = await http.GetStringAsync(path);
+        return System.Text.Json.JsonDocument.Parse(text).RootElement.Clone();
+    }
+
     private async Task<string> ExecAsync(params string[] command)
     {
         // The Forgejo CLI refuses to run as root; the image's git user owns its data.

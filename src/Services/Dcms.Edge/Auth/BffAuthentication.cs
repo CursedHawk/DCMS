@@ -58,7 +58,11 @@ public static class BffAuthentication
             // hole rather than the exception. HeaderScrubbing deliberately leaves Authorization
             // alone globally because Forgejo's git-over-HTTP needs it; this is the narrow
             // opposite, scoped to the three routes that opted in.
-            if (auth.BffEnabled && bffRoute)
+            //
+            // The one exception is the dcms command line's own token, with no session alongside
+            // (BffGuard.KeepsBearer): it has no browser and no cookie to send.
+            if (auth.BffEnabled && bffRoute
+                && !BffGuard.KeepsBearer(sessionId, context.Request.Headers.Authorization.ToString()))
             {
                 context.Request.Headers.Remove("Authorization");
             }

@@ -94,6 +94,41 @@ public static class BffGuard
            && !string.IsNullOrEmpty(sessionId);
 
     /// <summary>
+    /// Whether a bearer on a BFF route is the <c>dcms</c> command line's, and so kept.
+    ///
+    /// <para>Only with no session: a browser's session is then its only credential, as before.
+    /// The command line signs in with the device flow (client <c>dcms-cli</c>) and has no
+    /// cookie to send. The claim is read, not verified: admin-api verifies the signature, and a
+    /// forged claim only gets a token admin-api refuses as far as admin-api.</para>
+    /// </summary>
+    public static bool KeepsBearer(string? sessionId, string? authorization)
+    {
+        if (!string.IsNullOrEmpty(sessionId) || authorization is null
+            || !authorization.StartsWith("Bearer ", StringComparison.Ordinal))
+        {
+            return false;
+        }
+        var parts = authorization["Bearer ".Length..].Trim().Split('.');
+        if (parts.Length != 3) return false;
+        try
+        {
+            using var payload = System.Text.Json.JsonDocument.Parse(
+                Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlDecode(parts[1]));
+            return payload.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && payload.RootElement.TryGetProperty("client_id", out var client)
+                && client.ValueKind == System.Text.Json.JsonValueKind.String
+                && client.GetString() == CliClientId;
+        }
+        catch (Exception e) when (e is FormatException or System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Identity's public client for the <c>dcms</c> command line.</summary>
+    public const string CliClientId = "dcms-cli";
+
+    /// <summary>
     /// Whether this request may carry the session's authority, judged on where it came from.
     ///
     /// <para><c>Sec-Fetch-Site</c> is checked first and is decisive when present: it is set by

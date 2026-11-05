@@ -44,6 +44,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { accountApi } from '../account/accountApi';
 import type { GitChange, GitCommit } from './git';
 import { gitApi } from './git';
+import { isRepoWorkspace } from './workspace';
 import { MergeDialog } from './MergeDialog';
 import { RELEASE_BRANCH } from './constants';
 import { discardPlan } from './discard';
@@ -95,15 +96,15 @@ export function SourceControlView({
   const [showClone, setShowClone] = useState(false);
 
   const { data: me } = useMyPermissions(true);
+  const status = useQuery({ queryKey: ['git-status', siteId], queryFn: () => gitApi.status(siteId) });
   // Whether the caller may clone/pull this site's repo with their own credentials.
   // Mirrors the server's RepoAccessReconciler: site editors (site:edit / site:publish,
   // held by Owner/admin roles and SuperAdmins) get repo access, plus anyone with an
-  // explicit per-site repo:{siteId}:read|write grant.
-  const canClone =
-    can(me, Perm.SiteEdit) ||
-    can(me, Perm.SitePublish) ||
-    can(me, repoRead(siteId)) ||
-    can(me, repoWrite(siteId));
+  // explicit per-site repo:{siteId}:read|write grant. A plugin's repository (Functions) is
+  // the binding's own permissions, which the server answers for, having just reconciled them.
+  const canClone = isRepoWorkspace(siteId)
+    ? !!status.data?.access
+    : can(me, Perm.SiteEdit) || can(me, Perm.SitePublish) || can(me, repoRead(siteId)) || can(me, repoWrite(siteId));
   const navigate = useNavigate();
   // Only fetch git-credential status once the clone panel is opened by a user who
   // actually has repo access — used to nudge Google/no-password accounts.
@@ -114,7 +115,6 @@ export function SourceControlView({
   });
   const needsGitCreds = account.data && !account.data.hasGitPassword;
 
-  const status = useQuery({ queryKey: ['git-status', siteId], queryFn: () => gitApi.status(siteId) });
   const provisioned = !!status.data?.provisioned;
   const branches = useQuery({
     queryKey: ['git-branches', siteId],

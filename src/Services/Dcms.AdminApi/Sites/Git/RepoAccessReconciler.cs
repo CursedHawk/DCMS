@@ -1,5 +1,7 @@
 using Dcms.Shared.Audit;
 using Dcms.AdminApi.Tenancy;
+using Dcms.Shared.Data;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
@@ -41,7 +43,11 @@ public sealed class RepoAccessReconciler(
                 .Where(s => s.GitRepoFullName != null)
                 .Select(s => new { s.Id, s.GitRepoFullName })
                 .ToListAsync(ct);
-            if (repos.Count == 0) return;
+            // A plugin's repositories (ADR 0029: Functions), one per environment, each by the
+            // permissions its binding names, as the user holds them in that environment.
+            var bindings = await sites.RepoBindings.IgnoreTenantFilter().AsNoTracking()
+                .Where(b => b.TenantId == tenantId).ToListAsync(ct);
+            if (repos.Count == 0 && bindings.Count == 0) return;
 
             var username = await forgejo.FindUsernameByEmailAsync(email, ct);
             if (username is null) return; // not provisioned yet; reconcile later
@@ -49,6 +55,18 @@ public sealed class RepoAccessReconciler(
             foreach (var repo in repos)
             {
                 await ApplyAsync(repo.GitRepoFullName!, repo.Id, username, perms, isSuperAdmin, ct);
+            }
+            foreach (var group in bindings.GroupBy(b => b.EnvironmentId))
+            {
+                IReadOnlySet<string> held;
+                using (RlsScope.Environment(tenantId, group.Key))
+                {
+                    held = await permissions.GetPermissionsAsync(tenantId, userId, ct);
+                }
+                foreach (var binding in group)
+                {
+                    await ApplyBindingAsync(binding, username, held, isSuperAdmin, ct);
+                }
             }
         }
         catch (Exception ex)
@@ -84,6 +102,51 @@ public sealed class RepoAccessReconciler(
         {
             logger.LogWarning(ex, "Repo-access reconcile failed for user {UserId} on site {SiteId}.", userId, site.Id);
         }
+    }
+
+    /// <summary>Reconcile the user's access to one plugin repository (self-heal when its git panel opens).</summary>
+    public async Task ReconcileUserBindingAsync(
+        Guid tenantId, Guid userId, string email, RepoBinding binding, CancellationToken ct, bool isSuperAdmin = false)
+    {
+        if (!git.Enabled) return;
+        try
+        {
+            IReadOnlySet<string> held;
+            using (RlsScope.Environment(tenantId, binding.EnvironmentId))
+            {
+                held = await permissions.GetPermissionsAsync(tenantId, userId, ct);
+            }
+            var username = await forgejo.FindUsernameByEmailAsync(email, ct);
+            if (username is null) return;
+            await ApplyBindingAsync(binding, username, held, isSuperAdmin, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Repo-access reconcile failed for user {UserId} on repository {Repo}.", userId, binding.RepoFullName);
+        }
+    }
+
+    /// <summary>What a user may do with a plugin repository from their own git: what its binding's permissions give them.</summary>
+    public static string? AccessFor(RepoBinding binding, IReadOnlySet<string> held, bool isSuperAdmin) =>
+        isSuperAdmin || held.Contains(binding.EditPermission) ? "write"
+        : held.Contains(binding.ReadPermission) ? "read"
+        : null;
+
+    /// <summary>
+    /// A plugin repository: write for who may edit it, read for who may read it, nothing else.
+    /// Its release branch takes pushes from the platform only (<see cref="AdminPluginRepos"/>), so
+    /// write never ships: releasing is a merge the platform makes for who may publish.
+    /// </summary>
+    private async Task ApplyBindingAsync(RepoBinding binding, string username, IReadOnlySet<string> held, bool isSuperAdmin, CancellationToken ct)
+    {
+        var (org, repo) = SplitRepo(binding.RepoFullName);
+        var desired = AccessFor(binding, held, isSuperAdmin);
+        // No one's write without the lock: a push to release builds, which only publish may cause.
+        if (desired == "write") await git.LockReleaseAsync(binding.RepoFullName, locked: true, ct);
+        if (desired is not null)
+            await forgejo.AddCollaboratorAsync(org, repo, username, desired, ct);
+        else
+            await forgejo.RemoveCollaboratorAsync(org, repo, username, ct);
     }
 
     /// <summary>

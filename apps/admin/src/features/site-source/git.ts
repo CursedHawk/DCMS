@@ -12,6 +12,8 @@ export interface GitStatus {
   httpUrl?: string;
   sshUrl?: string;
   provisionedAt?: string | null;
+  /** A plugin's repository: what the caller's own git may do (the server reconciled it just now). */
+  access?: 'read' | 'write';
 }
 
 export interface GitBranch {

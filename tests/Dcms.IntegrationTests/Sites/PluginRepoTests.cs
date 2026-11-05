@@ -79,7 +79,29 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
         var ide = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{at}/ide", slug, owner), ct), ct);
         ide.GetProperty("branch").GetString().Should().Be("main");
         ide.GetProperty("files").GetProperty("functions/hello.ts").GetString().Should().Be("export const v = 1;\n");
+
+        // Their own git: opening the repository's git panel gives its editor write on it, and its
+        // release takes pushes from the platform only (merging into it is a publish).
+        var ownerEmail = $"owner-{owner:N}@dcms.test";
+        await _forgejo!.CreateUserAsync("owner-git", ownerEmail);
+        var panel = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{at}/git", slug, owner, email: ownerEmail), ct), ct);
+        panel.GetProperty("access").GetString().Should().Be("write");
+        panel.GetProperty("httpUrl").GetString().Should().EndWith($"{repo.RepoFullName}.git");
+        (await _forgejo.GetJsonAsync($"/api/v1/repos/{repo.RepoFullName}/collaborators/owner-git/permission"))
+            .GetProperty("permission").GetString().Should().Be("write");
+        (await _forgejo.GetJsonAsync($"/api/v1/repos/{repo.RepoFullName}/branch_protections/release"))
+            .GetProperty("push_whitelist_usernames").EnumerateArray().Select(u => u.GetString()).Should().Equal("bot");
         var hash = ide.GetProperty("hashes").GetProperty("functions/hello.ts").GetString();
+        // `dcms link`: a clone's remote names its tenant, environment and app, for a member only.
+        var remote = Uri.EscapeDataString(panel.GetProperty("httpUrl").GetString()!);
+        var link = await Json(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/me/repos?remote={remote}", slug, owner), ct), ct);
+        link.GetProperty("tenant").GetString().Should().Be(slug);
+        link.GetProperty("environment").GetString().Should().Be("production");
+        link.GetProperty("plugin").GetString().Should().Be("functions");
+        link.GetProperty("app").GetString().Should().NotBeNullOrEmpty();
+        (await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/me/repos?remote={remote}", slug, Guid.Empty), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+
 
         (await client.SendAsync(Req(HttpMethod.Patch, $"{at}/ide/files", slug, owner, new
         {
@@ -168,10 +190,11 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
         builder.UseSetting("Forgejo:WebhookUrl", "http://127.0.0.1:9/hook");
     });
 
-    private static HttpRequestMessage Req(HttpMethod method, string url, string slug, Guid user, object? body = null, bool superAdmin = false)
+    private static HttpRequestMessage Req(HttpMethod method, string url, string slug, Guid user, object? body = null, bool superAdmin = false, string? email = null)
     {
         var req = new HttpRequestMessage(method, url);
         req.Headers.Add("X-Test-Sub", (user == Guid.Empty ? Guid.NewGuid() : user).ToString());
+        if (email is not null) req.Headers.Add("X-Test-Email", email);
         if (superAdmin) req.Headers.Add("X-Test-Roles", "SuperAdmin");
         req.Headers.Add("X-Dcms-Tenant", slug);
         if (body is not null) req.Content = JsonContent.Create(body);
