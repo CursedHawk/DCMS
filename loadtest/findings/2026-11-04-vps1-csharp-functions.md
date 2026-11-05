@@ -35,3 +35,19 @@ The cost is the boot, not the code. In order of payoff:
    is a decision to make, not a default (kanban).
 2. Trim the curated BCL and the host's own start-up (fewer assemblies to load per boot).
 3. More slots or admin-api replicas: these scale linearly, at the cost of the box's CPU.
+
+## After the warm runtime (#607, 3e3c994, 2026-11-05)
+
+The same setup, with a deployed C# function's process kept for that deployment's runs:
+
+| Function | VUs | req/s run | median | p95 | 503 | 429 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `cs-ping` | 10 | ≈59 (21,365 answered in 85 s) | 14 ms | 113 ms | 0 | 16,358 |
+| `cs-work` (~50 ms CPU) | 30 | 48.7 | 550 ms | 776 ms | 0 | 0 |
+
+- **`cs-ping` now meets the per-app cap (3,000 calls a minute, 429), not the runtime.** Of the
+  calls that ran, the median is 14 ms, faster than TypeScript's 294 ms (TypeScript still starts a Deno per call).
+- **`cs-work`** went from 11 req/s with 709 × 503 to 48.7 req/s with none. It is CPU-bound now: load
+  average 12 on 4 cores, with k6 on the same box.
+- Next, if TypeScript HTTP functions need the same: the identical keep-warm path, keyed by the
+  bundle's hash, would apply to `session-harness.js`.
