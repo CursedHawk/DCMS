@@ -264,8 +264,9 @@ internal sealed class Commands(Config config, Api api, HttpClient http, TextWrit
     /// </summary>
     private async Task<int> UpdateAsync(string? serverOption, CancellationToken ct)
     {
-        var server = serverOption is not null ? Api.Origin(serverOption)
-            : config.ReadCredentials()?.Server ?? throw new CliException("From which console? dcms update --server https://admin.example.com");
+        // Through Origin either way: a sign-in file is plain JSON on disk, and an update is code this machine runs.
+        var server = Api.Origin(serverOption ?? config.ReadCredentials()?.Server
+            ?? throw new CliException("From which console? dcms update --server https://admin.example.com"));
         var name = BuildName();
         var sums = await http.GetStringAsync($"{server}/downloads/SHA256SUMS", ct);
         var expected = sums.Split('\n').Select(l => l.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))

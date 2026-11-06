@@ -43,6 +43,18 @@ public sealed class CloneTests : IDisposable
     }
 
     [Fact]
+    public void A_console_is_https_or_this_machine()
+    {
+        Api.Origin("https://admin.example.com/x").Should().Be("https://admin.example.com");
+        Api.Origin("http://localhost:8080").Should().Be("http://localhost:8080");
+        Api.Origin("http://127.0.0.1:5000").Should().Be("http://127.0.0.1:5000");
+        var plain = () => Api.Origin("http://admin.example.com");
+        plain.Should().Throw<CliException>().WithMessage("*https*");
+        var other = () => Api.Origin("ftp://admin.example.com");
+        other.Should().Throw<CliException>();
+    }
+
+    [Fact]
     public void Credentials_are_private_to_the_user_and_a_reply_without_a_refresh_token_keeps_the_old_one()
     {
         var config = new Config(Path.Combine(Temp(), "dcms"));

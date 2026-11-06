@@ -26,10 +26,19 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
 
     public static string Origin(Uri uri) => uri.GetLeftPart(UriPartial.Authority);
 
-    public static string Origin(string url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http"
-            ? Origin(uri)
-            : throw new CliException($"{url} is not a web address.");
+    /// <summary>
+    /// A console or identity address: https, or plain http to this machine only (local development).
+    /// The sign-in, every call and <c>dcms update</c>'s download go here; over plain http anyone on
+    /// the way could read the token or swap the binary and its SHA256SUMS together.
+    /// </summary>
+    public static string Origin(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+            throw new CliException($"{url} is not a web address.");
+        if (uri.Scheme == "http" && !uri.IsLoopback)
+            throw new CliException($"{url} is not https: dcms talks to a console over https only (plain http just to this machine).");
+        return Origin(uri);
+    }
 
     /// <summary>The tokens a token endpoint answered, as kept: a reply without a refresh token keeps the one we have.</summary>
     public static Credentials Kept(Credentials? before, string server, string tokenEndpoint, JsonNode tokens, long now)
@@ -46,8 +55,8 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         var server = Origin(serverOption ?? config.ReadCredentials()?.Server ?? DefaultServer);
         var auth = authOption is null ? AuthOrigin(server) : Origin(authOption);
         var discovery = await JsonAsync(await http.GetAsync($"{auth}/.well-known/openid-configuration", ct), ct);
-        var tokenEndpoint = (string)discovery!["token_endpoint"]!;
-        var device = await JsonAsync(await http.PostAsync((string)discovery["device_authorization_endpoint"]!,
+        var tokenEndpoint = Https((string)discovery!["token_endpoint"]!);
+        var device = await JsonAsync(await http.PostAsync(Https((string)discovery["device_authorization_endpoint"]!),
             Form(("client_id", ClientId), ("scope", Scopes)), ct), ct);
 
         output.WriteLine($"Open {(string?)device!["verification_uri_complete"] ?? (string?)device["verification_uri"]} and approve the code {(string?)device["user_code"]}.");
@@ -77,6 +86,8 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
     public async Task<Credentials> FreshAsync(CancellationToken ct)
     {
         var creds = config.ReadCredentials() ?? throw new CliException("Not signed in. Run `dcms login`.");
+        Origin(creds.Server);
+        Origin(creds.TokenEndpoint);
         if (creds.ExpiresAt - 60_000 > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return creds;
         using (await config.LockAsync(ct))
         {
@@ -161,6 +172,13 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
             throw new CliException(said ?? $"{(int)res.StatusCode} {res.ReasonPhrase}");
         }
         return body;
+    }
+
+    /// <summary>An endpoint identity's discovery named, held to <see cref="Origin(string)"/>'s rule; the path kept.</summary>
+    private static string Https(string url)
+    {
+        Origin(url);
+        return url;
     }
 
     /// <summary>A JSON string's value, or null for anything else (an object where a message was expected, say).</summary>

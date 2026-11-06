@@ -53,15 +53,16 @@ export function EditorTabs() {
           <div
             key={path}
             className={cn(
-              'group flex items-center gap-2 border-r pr-3 text-xs',
+              'group flex items-stretch border-r text-xs',
               active ? 'bg-background text-foreground' : 'text-muted-foreground hover:bg-background/50',
             )}
           >
-            {/* The whole tab's height and its left edge are the button: a click on the tab's padding
-                used to land on nothing, and took a second click. A middle click closes it. */}
+            {/* Every pixel of the tab belongs to a button: the name (full height, left edge), then the
+                pin and close buttons, each padded to fill its own slice. There is no gap or padding on
+                the tab itself — a click there used to land on nothing. A middle click closes it. */}
             <button
               type="button"
-              className="flex h-full items-center pl-3"
+              className="flex items-center pl-3 pr-1.5"
               onClick={() => setActive(path)}
               onMouseDown={middle}
               onAuxClick={(e) => e.button === 1 && closeTab(path)}
@@ -75,7 +76,7 @@ export function EditorTabs() {
               aria-pressed={pinned}
               title={pinned ? t('ide.tabs.unpin') : t('ide.tabs.pin')}
               className={cn(
-                'transition-opacity hover:text-foreground',
+                'flex items-center px-1 transition-opacity hover:text-foreground',
                 // A pinned tab shows its pin always — that is the state it is advertising.
                 // An unpinned one only offers the action on hover or keyboard focus.
                 pinned ? 'text-primary' : 'can-hover:opacity-0 focus-visible:opacity-100 group-hover:opacity-100',
@@ -86,7 +87,7 @@ export function EditorTabs() {
             <button
               type="button"
               onClick={() => closeTab(path)}
-              className="can-hover:opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-foreground"
+              className="can-hover:opacity-0 flex items-center pl-1 pr-3 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-foreground"
               title={t('ide.tabs.close')}
             >
               <X className="h-3 w-3" />
@@ -100,7 +101,7 @@ export function EditorTabs() {
           <div
             key={`diff:${d.path}`}
             className={cn(
-              'group flex items-center gap-2 border-r pr-3 text-xs',
+              'group flex items-stretch border-r text-xs',
               active ? 'bg-background text-foreground' : 'text-muted-foreground hover:bg-background/50',
             )}
           >
@@ -110,7 +111,7 @@ export function EditorTabs() {
               onMouseDown={middle}
               onAuxClick={(e) => e.button === 1 && closeDiff(d.path)}
               title={`${d.path} (diff)`}
-              className="flex h-full items-center gap-1.5 pl-3"
+              className="flex items-center gap-1.5 pl-3 pr-1.5"
             >
               <GitCompare className="h-3 w-3 shrink-0" />
               {baseName(d.path)}
@@ -118,7 +119,7 @@ export function EditorTabs() {
             <button
               type="button"
               onClick={() => closeDiff(d.path)}
-              className="can-hover:opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+              className="can-hover:opacity-0 flex items-center pl-1 pr-3 transition-opacity group-hover:opacity-100 hover:text-foreground"
               title="Close"
             >
               <X className="h-3 w-3" />
