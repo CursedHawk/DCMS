@@ -1012,6 +1012,13 @@
         "search": "Hledat balíčky…",
         "add": "Přidat",
         "noResults": "Nic nenalezeno.",
+        "installed": "Nainstalované ({{count}})",
+        "addTitle": "Přidat balíček",
+        "added": "přidán",
+        "update": "Aktualizovat {{name}} na nejnovější verzi",
+        "version": "Verze {{name}}",
+        "apply": "Použít",
+        "openManifest": "Otevřít {{file}}",
         "hint": "Přidání nebo odebrání balíčku změní ve vašem konceptu package.json a package-lock.json (npm) nebo Functions.csproj a packages.lock.json (NuGet): commitněte je jako každou změnu. Build nainstaluje přesně to, co říká zámek."
       },
       "title": "Funkce",

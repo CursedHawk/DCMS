@@ -984,6 +984,13 @@
         "search": "Search packages…",
         "add": "Add",
         "noResults": "Nothing found.",
+        "installed": "Installed ({{count}})",
+        "addTitle": "Add a package",
+        "added": "added",
+        "update": "Update {{name}} to the latest version",
+        "version": "Version of {{name}}",
+        "apply": "Apply",
+        "openManifest": "Open {{file}}",
         "hint": "Adding or removing a package changes package.json and package-lock.json (npm) or Functions.csproj and packages.lock.json (NuGet) in your draft: commit them like any change. The build installs exactly what the lock says."
       },
       "title": "Functions",

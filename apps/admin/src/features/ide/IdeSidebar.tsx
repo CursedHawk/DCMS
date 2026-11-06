@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch, History, Rocket, Search, Sparkles, Zap } from 'lucide-react';
+import { Files, GitBranch, History, Package, Rocket, Search, Sparkles, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { checkDraft, functionsTools } from './agent/functionsTools';
 import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 import { FunctionsView } from './functions/FunctionsView';
+import { PackagesView } from './functions/PackagesView';
 import { RunsView, type Replay } from './functions/RunsView';
 import { NewFunctionDialog } from './functions/NewFunctionDialog';
 
-export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'functions' | 'runs';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'functions' | 'packages' | 'runs';
 
 /**
  * The left sidebar: a slim activity rail plus the active view.
@@ -124,6 +125,15 @@ export function IdeSidebar({
         )}
         {functionsApi && (
           <RailButton
+            active={view === 'packages'}
+            label={t('ide.fn.packages.title')}
+            onClick={() => onViewChange('packages')}
+          >
+            <Package className="h-5 w-5" />
+          </RailButton>
+        )}
+        {functionsApi && (
+          <RailButton
             active={view === 'runs'}
             label={t('ide.runs.title')}
             onClick={() => onViewChange('runs')}
@@ -161,6 +171,7 @@ export function IdeSidebar({
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
         {view === 'functions' && functionsApi && <FunctionsView functionsApi={functionsApi} onNew={onNewFunction} />}
+        {view === 'packages' && functionsApi && <PackagesView functionsApi={functionsApi} />}
         {view === 'runs' && functionsApi && (
           <RunsView functionsApi={functionsApi} initialFunction={runsFunction} onReplay={(r) => onReplay?.(r)} />
         )}
