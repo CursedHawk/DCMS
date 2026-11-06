@@ -66,13 +66,21 @@ public static partial class Entry
         catch (Exception e)
         {
             var error = e is TargetInvocationException { InnerException: { } inner } ? inner : e;
-            return new JsonObject
+            // Out of the sandbox's memory: a limit the run hit, not a bug to retry.
+            var limit = error is OutOfMemoryException or InsufficientExecutionStackException;
+            string described;
+            try
             {
-                ["ok"] = false,
-                ["error"] = Describe(error, tenant, pdb),
-                // Out of the sandbox's memory: a limit the run hit, not a bug to retry.
-                ["limit"] = error is OutOfMemoryException or InsufficientExecutionStackException,
-            }.ToJsonString();
+                described = Describe(error, tenant, pdb);
+            }
+            catch (OutOfMemoryException)
+            {
+                // Describing allocates (the PDB, the stack trace), and the heap can still be full: the
+                // function's garbage is only collectable once nothing on the stack points at it, which
+                // the conservative scan on wasm decides run by run. The report must not fail with it.
+                described = limit ? "OutOfMemoryException" : error.GetType().Name;
+            }
+            return new JsonObject { ["ok"] = false, ["error"] = described, ["limit"] = limit }.ToJsonString();
         }
     }
 

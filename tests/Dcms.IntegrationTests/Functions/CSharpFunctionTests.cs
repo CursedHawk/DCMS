@@ -611,8 +611,10 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
             }
             """;
         using var session = new FunctionSession(Microsoft.Extensions.Options.Options.Create(Options()), NullLogger<FunctionSession>.Instance);
-        (await Run(hog, session: session, warm: "t:d")).Done["status"]!.GetValue<string>().Should().Be("limit");
-        (await Run(hog, session: session, warm: "t:d")).Done["status"]!.GetValue<string>().Should().Be("limit", "a fresh process starts over");
+        var first = (await Run(hog, session: session, warm: "t:d")).Done;
+        first["status"]!.GetValue<string>().Should().Be("limit", "{0}", first["error"]);
+        var second = (await Run(hog, session: session, warm: "t:d")).Done;
+        second["status"]!.GetValue<string>().Should().Be("limit", "a fresh process starts over ({0})", second["error"]);
     }
 
     [DockerFact]

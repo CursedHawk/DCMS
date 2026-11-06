@@ -100,7 +100,9 @@ async function run(start) {
       : { type: "done", ok: false, error: outcome.error, limit: outcome.limit === true });
   } catch (e) {
     // A .NET-side stack overflow surfaces here as V8's RangeError: a limit, like running out of memory.
-    write({ type: "done", ok: false, error: String(e instanceof Error ? e.message : e), limit: e instanceof RangeError });
+    // So does .NET's own OutOfMemoryException when it escapes Entry.Run (thrown again while reporting).
+    const error = String(e instanceof Error ? e.message : e);
+    write({ type: "done", ok: false, error, limit: e instanceof RangeError || /OutOfMemoryException/.test(error) });
   }
   running = false;
   quiet.now = true;
