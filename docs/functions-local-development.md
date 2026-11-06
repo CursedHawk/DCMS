@@ -85,6 +85,10 @@ dcms deploy
 
 If `main` does not merge cleanly into `release`, resolve the conflict in the web IDE and run it again.
 
+The web IDE hears of your pushes as they land: anyone with the app's code open sees "main moved"
+and can reload. Their uncommitted edits stay theirs. A file you both changed is resolved file by
+file when they commit.
+
 ## What a function can use
 
 The Functions view's **Runtime** page lists what a function can use, and so does `src/Plugins/Dcms.Plugins.Functions/Docs/functions-runtime.md`:

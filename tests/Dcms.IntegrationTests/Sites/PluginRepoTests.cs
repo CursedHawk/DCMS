@@ -9,6 +9,7 @@ using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.PluginSdk.Runtime.Hosting;
 using Dcms.Shared.Contracts.Events;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.Core;
@@ -175,6 +176,9 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
             HMACSHA256.HashData(Encoding.UTF8.GetBytes(Secret), Encoding.UTF8.GetBytes(body))).ToLowerInvariant());
         var res = await client.SendAsync(push, ct);
         (await res.Content.ReadAsStringAsync(ct)).Should().Contain("functions");
+        // Open IDEs are told too (ADR 0031): a push from a desktop clone is otherwise invisible to them.
+        _hub.Sent.Should().Contain(m => m.Group == $"site:{tenantId}:{repo.Id}" && m.Method == "CommitPushed"
+                                        && JsonSerializer.Serialize(m.Payload, (JsonSerializerOptions?)null).Contains("abc123"));
 
         var next = await consumer.NextAsync<PluginEventPublished>(opts: new NatsJSNextOpts { Expires = TimeSpan.FromSeconds(10) }, cancellationToken: ct);
         next.Should().NotBeNull();
@@ -183,8 +187,97 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
         next.Data!.TenantId.Should().Be(tenantId);
     }
 
+    /// <summary>
+    /// A commit onto a branch that moved (ADR 0031, D5): a file both sides changed is resolved on
+    /// its own, with the content the person chose; resolutions that do not cover exactly the
+    /// conflicts there are now are refused, and everything else merges as before.
+    /// </summary>
+    [DockerFact]
+    public async Task A_commit_conflict_is_resolved_per_file()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var instanceId = await InstallAsync(client, slug, ct);
+        RepoInfo? repo = null;
+        await host.Services.GetRequiredService<PluginHandlerRunner>().RunAsync(tenantId, "functions", instanceId, async (ctx, _) =>
+            repo = await ctx.Contracts.Get<IPluginRepos>().EnsureAsync(
+                new RepoSetup("read", "edit", "deploy", new Dictionary<string, string> { ["functions/hello.ts"] = "v1\n" }), ct), ct);
+        var at = $"/api/admin/repos/{repo!.Id}";
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var editor = await SeedEditorAsync(tenantId, ct);
+
+        async Task EditAsync(Guid who, Dictionary<string, string> files)
+        {
+            var hashes = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{at}/ide", slug, who), ct), ct)).GetProperty("hashes");
+            (await client.SendAsync(Req(HttpMethod.Patch, $"{at}/ide/files", slug, who, new
+            {
+                put = files.ToDictionary(f => f.Key, f => (object)new
+                {
+                    content = f.Value,
+                    baseHash = hashes.TryGetProperty(f.Key, out var h) ? h.GetString() : null,
+                }),
+            }), ct)).EnsureSuccessStatusCode();
+        }
+        await EditAsync(owner, new() { ["functions/hello.ts"] = "owner\n", ["lib/a.ts"] = "a\n" });
+        await EditAsync(editor, new() { ["functions/hello.ts"] = "editor\n" });
+        (await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/commit", slug, editor, new { message = "Editor's" }), ct)).EnsureSuccessStatusCode();
+
+        var moved = await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/commit", slug, owner, new { message = "Owner's" }), ct);
+        moved.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var file = (await moved.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("files").EnumerateArray().Single();
+        file.GetProperty("path").GetString().Should().Be("functions/hello.ts");
+        file.GetProperty("draftContent").GetString().Should().Be("owner\n");
+        file.GetProperty("branchContent").GetString().Should().Be("editor\n");
+
+        (await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/commit", slug, owner,
+            new { message = "Owner's", resolutions = new Dictionary<string, string?> { ["lib/a.ts"] = "sneaked\n" } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "a resolution must answer the conflicts there are, and only them");
+        (await client.SendAsync(Req(HttpMethod.Post, $"{at}/git/commit", slug, owner,
+            new { message = "Owner's", resolutions = new Dictionary<string, string?> { ["functions/hello.ts"] = "owner and editor\n" } }), ct))
+            .EnsureSuccessStatusCode();
+
+        var files = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{at}/ide", slug, editor), ct), ct)).GetProperty("files");
+        files.GetProperty("functions/hello.ts").GetString().Should().Be("owner and editor\n");
+        files.GetProperty("lib/a.ts").GetString().Should().Be("a\n", "what only one side changed merges as before");
+        _hub.Sent.Should().Contain(m => m.Group == $"site:{tenantId}:{repo.Id}" && m.Method == "CommitPushed",
+            "the repository's open IDEs hear of each commit");
+    }
+
+    private readonly RecordingHub _hub = new();
+
+    /// <summary>What admin-api sent to the IDEs' live channel, instead of sending it.</summary>
+    private sealed class RecordingHub : IHubContext<AdminApiApp::Dcms.AdminApi.Sites.SiteHub>
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<(string Group, string Method, object? Payload)> Sent { get; } = new();
+
+        public IHubClients Clients => new To(this, "");
+        public IGroupManager Groups => throw new NotSupportedException();
+
+        private sealed class To(RecordingHub hub, string group) : IHubClients, IClientProxy
+        {
+            public IClientProxy All => this;
+            public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => this;
+            public IClientProxy Client(string connectionId) => this;
+            public IClientProxy Clients(IReadOnlyList<string> connectionIds) => this;
+            public IClientProxy Group(string groupName) => new To(hub, groupName);
+            public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => new To(hub, groupName);
+            public IClientProxy Groups(IReadOnlyList<string> groupNames) => this;
+            public IClientProxy User(string userId) => this;
+            public IClientProxy Users(IReadOnlyList<string> userIds) => this;
+
+            public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
+            {
+                hub.Sent.Enqueue((group, method, args.FirstOrDefault()));
+                return Task.CompletedTask;
+            }
+        }
+    }
+
     private WebApplicationFactory<AdminApiApp::Program> Host() => fixture.Factory.WithWebHostBuilder(builder =>
     {
+        builder.ConfigureServices(services => services.AddSingleton<IHubContext<AdminApiApp::Dcms.AdminApi.Sites.SiteHub>>(_hub));
         builder.UseSetting("Forgejo:BaseUrl", _forgejo!.BaseUrl);
         builder.UseSetting("Forgejo:Token", _forgejo.Token);
         builder.UseSetting("Forgejo:WebhookSecret", Secret);

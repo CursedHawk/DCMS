@@ -50,6 +50,12 @@ These were decided by the user on 2026-11-05.
   - `dcms sdk` saves it into the clone's `.dcms/packages`, a local NuGet source.
   - **Rejected:** a CI-published package on the GitLab registry. It needs a token for a private project, and it can drift from the server a clone talks to.
 
+- **The web IDE and a desktop clone side by side (D5, M4):**
+  - A plugin repository has the live channel sites have: the site hub takes `repoId`, for those who hold the binding's *read*.
+  - Its commits, merges and draft writes are announced there, and so is every push the webhook reports, a desktop one included.
+  - An open editor hears "main moved", with the reload banner.
+  - A commit onto a branch that moved resolves each conflicting file on its own (`resolutions`: mine, the branch's, or a hand merge in `ConflictResolver`), as a merge already did. The resolutions must cover exactly the conflicts there are when it commits, or it is a 409 again.
+
 ### Packages (#611 M3)
 
 **Any public npm or NuGet package**, declared and locked. The platform fetches exact versions, checks their integrity, never runs install scripts, and caches them.

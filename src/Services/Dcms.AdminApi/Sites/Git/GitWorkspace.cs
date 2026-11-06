@@ -32,7 +32,9 @@ public sealed record SaveFilesRequest(int? BaseVersion, Dictionary<string, FileW
 public sealed record FileWrite(string Content, string? BaseHash);
 public sealed record DeleteEntry(string Path, string? BaseHash);
 public sealed record GitRestoreRequest(string Sha);
-public sealed record CommitRequest(string? Branch, string? TargetBranch, string? NewBranch, string Message, string? Description, string? Resolve);
+/// <param name="Resolutions">Per conflicted file, the content to commit (null deletes it): the IDE's per-file resolution.</param>
+public sealed record CommitRequest(string? Branch, string? TargetBranch, string? NewBranch, string Message, string? Description, string? Resolve,
+    Dictionary<string, string?>? Resolutions = null);
 public sealed record CreateBranchRequest(string Name, string? From);
 public sealed record MergeRequest(string Head, string? Base, string? Strategy);
 public sealed record ResolveMergeRequest(string Head, string? Base, Dictionary<string, string?>? Resolutions);
@@ -258,7 +260,7 @@ public static class GitWorkspaces
     /// platform is the committer. A commit to <c>release</c> fires the push webhook. Committing
     /// to the same branch after it moved underneath the draft replays the draft's edits onto the
     /// new head; a file changed on both sides is a 409 <c>branch-moved</c> unless
-    /// <c>resolve</c> says whose version wins.
+    /// <c>resolve</c> says whose version wins, or <c>resolutions</c> gives every such file's content.
     /// </summary>
     public static async Task<IResult> CommitAsync(
         GitWorkspace ws, CommitRequest body, SitesDbContext db, CurrentUser user, SiteGitService git, CancellationToken ct)
@@ -300,7 +302,12 @@ public static class GitWorkspaces
                 if (reconcile.Conflicts.Count > 0)
                 {
                     var resolve = body.Resolve?.Trim().ToLowerInvariant();
-                    if (resolve is not ("mine" or "theirs"))
+                    // Resolutions must cover exactly the conflicts there are now: the branch may have moved again since.
+                    var resolutions = body.Resolutions;
+                    var resolvedEach = resolutions is not null
+                        && reconcile.Conflicts.All(f => resolutions.ContainsKey(f.Path))
+                        && resolutions.Keys.All(p => reconcile.Conflicts.Any(f => f.Path == p));
+                    if (resolve is not ("mine" or "theirs") && !resolvedEach)
                         return Results.Json(
                             new
                             {
@@ -320,7 +327,13 @@ public static class GitWorkspaces
                     // "theirs" is already reflected in reconcile.Merged (it holds HEAD's version
                     // for conflicting files); "mine" overlays the draft's version.
                     var merged = new Dictionary<string, string>(reconcile.Merged, StringComparer.Ordinal);
-                    if (resolve == "mine")
+                    if (resolvedEach)
+                        foreach (var (path, content) in resolutions!)
+                        {
+                            if (content is null) merged.Remove(path);
+                            else merged[path] = content;
+                        }
+                    else if (resolve == "mine")
                         foreach (var f in reconcile.Conflicts)
                         {
                             if (f.BranchContent is null) merged.Remove(f.Path);

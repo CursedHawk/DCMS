@@ -254,8 +254,7 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
   const [draftMovedPaths, setDraftMovedPaths] = useState<string[] | null>(null);
   const draftVersion = useVfs((s) => s.version);
   useSiteLiveUpdates({
-    // A site's hub only; a repository has no live channel yet.
-    siteId: repo ? '' : siteId,
+    siteId,
     branch,
     myUserId: user?.profile.sub,
     // Somebody else committed to the branch in this editor. The banner the conflict path

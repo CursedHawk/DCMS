@@ -145,9 +145,11 @@ public static class RepoEndpoints
         {
             return Results.Forbid();
         }
-        // No live channel for plugin repositories yet: the IDE learns of moves on its next load.
+        // The repository's live channel (ADR 0031): open IDEs learn of commits, merges and draft writes as they happen.
+        var live = services.GetRequiredService<SiteLiveUpdates>();
         var workspace = new GitWorkspace(binding.Id, binding.TenantId, binding.RepoFullName, binding.DefaultBranch,
-            Announce: (_, _, _, _, _, _) => Task.CompletedTask,
+            Announce: (branch, sha, message, author, actor, token) => AnnounceAsync(live, binding, branch, sha, message, author, actor, token),
+            AnnounceDraft: (update, token) => live.DraftChangedAsync(binding.TenantId, update, token),
             RefuseRelease: async token =>
             {
                 // Release is what builds: an environment that leaves this instance's code to
@@ -165,4 +167,16 @@ public static class RepoEndpoints
             });
         return await handle(binding, workspace);
     }
+
+    /// <summary>
+    /// Tells everyone with the repository open that <paramref name="branch"/> moved: from the IDE,
+    /// or from a push made outside it (a desktop clone, ADR 0031), which the webhook reports.
+    /// A no-op without a sha, as a site's: a merge that changed nothing has none.
+    /// </summary>
+    public static Task AnnounceAsync(SiteLiveUpdates live, RepoBinding binding, string branch, string? sha, string? message,
+        string? author, Guid? actor, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(sha)
+            ? Task.CompletedTask
+            : live.CommitPushedAsync(binding.TenantId, new CommitUpdate(binding.Id, branch, sha, SiteLiveUpdates.Short(sha)!, message, author, actor,
+                DateTimeOffset.UtcNow), ct);
 }

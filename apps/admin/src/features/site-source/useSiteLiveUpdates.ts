@@ -119,6 +119,9 @@ export function useSiteLiveUpdates({
   const seenCommits = useRef(new Set<string>());
 
   const slug = getCurrentTenantSlug();
+  // A plugin's repository (`repo:{id}`, ADR 0031) has the same channel: messages carry the bare id.
+  const repoId = siteId.startsWith('repo:') ? siteId.slice('repo:'.length) : null;
+  const hubId = repoId ?? siteId;
 
   useEffect(() => {
     if (!siteId || !slug) return;
@@ -136,7 +139,7 @@ export function useSiteLiveUpdates({
         // pins the negotiate POST and the transport connect to the same admin-api replica,
         // so a scaled deployment would otherwise drop connections at random.
         .withUrl(
-          `${runtimeConfig.adminApiBase}/hub/sites?tenant=${encodeURIComponent(slug)}&siteId=${encodeURIComponent(siteId)}`,
+          `${runtimeConfig.adminApiBase}/hub/sites?tenant=${encodeURIComponent(slug)}&${repoId ? 'repoId' : 'siteId'}=${encodeURIComponent(hubId)}`,
           {
             // No accessTokenFactory: the edge attaches the operator's bearer as it proxies the
             // handshake (ADR 0014), which a browser cannot do for itself — a WebSocket handshake
@@ -150,7 +153,7 @@ export function useSiteLiveUpdates({
         .build();
 
       connection.on('BuildChanged', (update: BuildUpdate) => {
-        if (update.siteId !== siteId) return;
+        if (update.siteId !== hubId) return;
         mergeBuild(qc, siteId, update);
         void qc.invalidateQueries({ queryKey: ['site-builds', siteId] });
         // A finished build changes which one is live, so the site row is stale too.
@@ -182,7 +185,7 @@ export function useSiteLiveUpdates({
        * below the version already held is this editor's own work arriving back.
        */
       connection.on('DraftChanged', (draft: DraftUpdate) => {
-        if (draft.siteId !== siteId) return;
+        if (draft.siteId !== hubId) return;
         if (branchRef.current && draft.branch !== branchRef.current) return;
         if (!draft.actorUserId || draft.actorUserId !== myUserIdRef.current) return;
 
@@ -211,7 +214,7 @@ export function useSiteLiveUpdates({
       });
 
       connection.on('CommitPushed', (commit: CommitUpdate) => {
-        if (commit.siteId !== siteId) return;
+        if (commit.siteId !== hubId) return;
         if (seenCommits.current.has(commit.sha)) return;
         if (seenCommits.current.size >= 200) seenCommits.current.clear();
         seenCommits.current.add(commit.sha);
@@ -280,7 +283,7 @@ export function useSiteLiveUpdates({
       connRef.current = null;
       setHubConnected(SITE_HUB, false);
     };
-  }, [siteId, slug, qc]);
+  }, [siteId, hubId, repoId, slug, qc]);
 
   return { connected };
 }

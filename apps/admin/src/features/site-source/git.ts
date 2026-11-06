@@ -50,6 +50,8 @@ export interface CommitBody {
   // How to resolve files changed on both sides when the branch moved: keep the
   // draft's version ("mine") or the branch's ("theirs"). Omitted on the first try.
   resolve?: 'mine' | 'theirs';
+  /** Or each conflicted file's content (null deletes it): the per-file resolution. */
+  resolutions?: Record<string, string | null>;
 }
 
 export interface GitCompare {

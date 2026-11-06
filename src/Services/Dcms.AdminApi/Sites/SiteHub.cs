@@ -15,6 +15,9 @@ namespace Dcms.AdminApi.Sites;
 /// a build somebody else started, or a commit somebody else pushed to the branch you are
 /// editing, is news you need and had no way of receiving.
 ///
+/// <para>A plugin's repository (ADR 0031) joins the same way with <c>repoId</c> for <c>siteId</c>:
+/// its binding's id names the group, and the binding's read permission is needed besides membership.</para>
+///
 /// <para>Push-only, like <c>NotificationHub</c>: there are no client-to-server methods. What
 /// arrives here is a hint that something changed, carrying enough to render immediately; the
 /// authoritative read is still the REST endpoint, which is where the permission checks, the
@@ -40,8 +43,11 @@ public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) 
         var http = Context.GetHttpContext();
         var slug = http?.Request.Query["tenant"].ToString();
         var siteParam = http?.Request.Query["siteId"].ToString();
+        // A plugin's repository (ADR 0031) has the same channel, under its binding's id.
+        var repoParam = http?.Request.Query["repoId"].ToString();
+        var isRepo = Guid.TryParse(repoParam, out var id);
 
-        if (string.IsNullOrWhiteSpace(slug) || !Guid.TryParse(siteParam, out var siteId))
+        if (string.IsNullOrWhiteSpace(slug) || !(isRepo || Guid.TryParse(siteParam, out id)))
         {
             Context.Abort();
             return;
@@ -68,14 +74,29 @@ public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) 
         // It also says which environment the site is in (ADR 0028), which is where the caller
         // needs a role.
         var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+        var siteId = id;
         Guid? environmentId;
+        string? readPermission = null;
         using (RlsScope.Platform())
         {
-            // rls: platform -- one site, named by id and tenant, to learn its environment.
-            environmentId = await sites.Sites.IgnoreQueryFilters()
-                .Where(s => s.Id == siteId && s.TenantId == tenantId)
-                .Select(s => (Guid?)s.EnvironmentId)
-                .FirstOrDefaultAsync();
+            if (isRepo)
+            {
+                // rls: platform -- one binding, named by id and tenant, to learn its environment and who may read it.
+                var binding = await sites.RepoBindings.IgnoreQueryFilters()
+                    .Where(b => b.Id == siteId && b.TenantId == tenantId)
+                    .Select(b => new { b.EnvironmentId, b.ReadPermission })
+                    .FirstOrDefaultAsync();
+                environmentId = binding?.EnvironmentId;
+                readPermission = binding?.ReadPermission;
+            }
+            else
+            {
+                // rls: platform -- one site, named by id and tenant, to learn its environment.
+                environmentId = await sites.Sites.IgnoreQueryFilters()
+                    .Where(s => s.Id == siteId && s.TenantId == tenantId)
+                    .Select(s => (Guid?)s.EnvironmentId)
+                    .FirstOrDefaultAsync();
+            }
         }
         if (environmentId is not { } environment)
         {
@@ -101,6 +122,16 @@ public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) 
             logger.LogWarning(
                 "Site hub connection refused: user {User} is not a member of tenant {Tenant}.",
                 userId, tenantId);
+            Context.Abort();
+            return;
+        }
+
+        // A repository's code is its binding's to show (RepoEndpoints' read), not every member's.
+        if (readPermission is not null
+            && !Context.User!.FindAll("role").Any(c => c.Value == "SuperAdmin")
+            && !(await scope.ServiceProvider.GetRequiredService<Dcms.Shared.Security.Authorization.IPermissionResolver>()
+                .GetPermissionsAsync(tenantId, userId)).Contains(readPermission))
+        {
             Context.Abort();
             return;
         }

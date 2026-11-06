@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
-  Eye,
   FilePlus2,
   FileMinus2,
   FilePen,
@@ -46,6 +45,8 @@ import type { GitChange, GitCommit } from './git';
 import { gitApi } from './git';
 import { isRepoWorkspace } from './workspace';
 import { MergeDialog } from './MergeDialog';
+import { ConflictResolver } from './ConflictResolver';
+import { isFullyResolved, resolvedContent, type ConflictFile, type Resolution } from './conflict';
 import { RELEASE_BRANCH } from './constants';
 import { discardPlan } from './discard';
 import { useDiffStats } from './useDiffStats';
@@ -91,7 +92,8 @@ export function SourceControlView({
   const [creatingBranch, setCreatingBranch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
-  const [conflict, setConflict] = useState<CommitConflictFile[] | null>(null);
+  const [conflict, setConflict] = useState<ConflictFile[] | null>(null);
+  const [choices, setChoices] = useState<Record<string, Resolution>>({});
   const [showHistory, setShowHistory] = useState(true);
   const [showClone, setShowClone] = useState(false);
 
@@ -148,13 +150,13 @@ export function SourceControlView({
   };
 
   const commit = useMutation({
-    mutationFn: (v: { toNewBranch: boolean; resolve?: 'mine' | 'theirs' }) =>
+    mutationFn: (v: { toNewBranch: boolean; resolutions?: Record<string, string | null> }) =>
       gitApi.commit(siteId, {
         branch,
         message: message.trim(),
         description: description.trim() || undefined,
         newBranch: v.toNewBranch ? newBranchName.trim() : undefined,
-        resolve: v.resolve,
+        resolutions: v.resolutions,
       }),
     onSuccess: (res, v) => {
       toast.success(t('ide.git.committed'));
@@ -168,7 +170,11 @@ export function SourceControlView({
       // reconcile can't resolve alone. Ask the user which version to keep (showing content).
       if (e instanceof ApiError && e.status === 409) {
         const files = (e.detail as { files?: CommitConflictFile[] })?.files ?? [];
-        if (files.length) setConflict(files);
+        // The draft is "mine", the branch's new head "theirs"; no default choice, as a merge's.
+        if (files.length) {
+          setConflict(files.map((f) => ({ path: f.path, mine: f.draftContent, theirs: f.branchContent, base: f.baseContent })));
+          setChoices({});
+        }
         else toast.error(t('ide.git.branchMoved'));
       } else {
         toast.error(t('errors.generic'));
@@ -501,11 +507,11 @@ export function SourceControlView({
         }}
       />
 
-      {/* Commit conflict: the branch moved and the same files were edited on both
-          sides. Everything else was merged automatically — the user just picks which
-          version wins for these files, then the commit goes through. */}
+      {/* Commit conflict: the branch moved and the same files were edited on both sides.
+          Everything else was merged automatically; each of these is resolved on its own —
+          mine, the branch's, or by hand — then the commit goes through. */}
       <Dialog open={!!conflict} onOpenChange={(o) => !o && setConflict(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent wide>
           <DialogHeader>
             <DialogTitle>{t('ide.git.conflictTitle')}</DialogTitle>
           </DialogHeader>
@@ -513,46 +519,32 @@ export function SourceControlView({
             <p className="text-sm text-muted-foreground">
               {t('ide.git.conflictIntroCommit', { branch })}
             </p>
-            <ul className="max-h-48 space-y-1 overflow-auto rounded border bg-muted/40 p-2">
-              {(conflict ?? []).map((f) => (
-                <li key={f.path} className="flex items-center gap-1.5 text-xs">
-                  <FilePen className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />
-                  <span className="min-w-0 flex-1 truncate" title={f.path}>{f.path}</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openDiff({
-                        path: f.path,
-                        status: 'modified',
-                        original: f.branchContent,
-                        modified: f.draftContent,
-                      })
-                    }
-                    title={t('ide.git.viewDiff')}
-                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {conflict && (
+              <ConflictResolver
+                files={conflict}
+                resolutions={choices}
+                onChange={setChoices}
+                mineLabel={t('ide.git.yourEdits')}
+                theirsLabel={branch}
+              />
+            )}
           </DialogBody>
-          <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <DialogFooter>
             <Button variant="ghost" onClick={() => setConflict(null)} disabled={commit.isPending}>
               {t('actions.cancel')}
             </Button>
             <Button
-              variant="outline"
-              onClick={() => commit.mutate({ toNewBranch: false, resolve: 'theirs' })}
-              disabled={commit.isPending}
+              onClick={() =>
+                commit.mutate({
+                  toNewBranch: false,
+                  resolutions: Object.fromEntries(
+                    (conflict ?? []).map((f) => [f.path, resolvedContent(f, choices[f.path]!)]),
+                  ),
+                })
+              }
+              disabled={commit.isPending || !conflict || !isFullyResolved(conflict, choices)}
             >
-              {t('ide.git.useBranchVersion', { branch })}
-            </Button>
-            <Button
-              onClick={() => commit.mutate({ toNewBranch: false, resolve: 'mine' })}
-              disabled={commit.isPending}
-            >
-              {t('ide.git.keepMyChanges')}
+              {t('ide.git.commitResolved')}
             </Button>
           </DialogFooter>
         </DialogContent>

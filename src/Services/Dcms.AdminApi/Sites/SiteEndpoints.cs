@@ -730,7 +730,7 @@ public static class SiteEndpoints
             }
             if (binding is not null)
             {
-                return await RepoPushedAsync(binding, gitRef, afterSha, events, audit, ct);
+                return await RepoPushedAsync(binding, gitRef, afterSha, events, audit, live, root, ct);
             }
             if (site is null) return Results.Ok(new { ignored = "unknown repo" });
             // The site's own environment (ADR 0028): its build rows are that environment's.
@@ -889,11 +889,14 @@ public static class SiteEndpoints
     /// environment, and acts on its own (a Functions instance builds a deployment from release).
     /// </summary>
     private static async Task<IResult> RepoPushedAsync(
-        RepoBinding binding, string gitRef, string? afterSha, IEventPublisher events, IAuditRecorder audit, CancellationToken ct)
+        RepoBinding binding, string gitRef, string? afterSha, IEventPublisher events, IAuditRecorder audit,
+        SiteLiveUpdates live, JsonElement root, CancellationToken ct)
     {
         const string heads = "refs/heads/";
         if (!gitRef.StartsWith(heads, StringComparison.Ordinal)) return Results.Ok(new { ignored = "not a branch" });
         var branch = gitRef[heads.Length..];
+        // News for open IDEs, a push from a desktop clone above all; the pusher's name is self-asserted, a label only.
+        await Git.RepoEndpoints.AnnounceAsync(live, binding, branch, afterSha, PushedCommitMessage(root), PushedAuthor(root), null, ct);
 
         using var rls = RlsScope.Environment(binding.TenantId, binding.EnvironmentId);
         var pushed = new Dcms.PluginSdk.Abstractions.Platform.RepoPushed(binding.InstanceId, binding.EnvironmentId, binding.PluginId, branch, afterSha);
