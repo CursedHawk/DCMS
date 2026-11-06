@@ -240,6 +240,7 @@ mirror-base-images:
       --file "$DOCKERFILE"
       --cache-from "$IMAGE:dev"
       --build-arg BUILDKIT_INLINE_CACHE=1
+      --build-arg DCMS_VERSION="$CI_COMMIT_SHORT_SHA"
       --tag "$IMAGE:$CI_COMMIT_SHORT_SHA"
       .
     - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"

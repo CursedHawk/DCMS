@@ -609,9 +609,12 @@ function ChangeIcon({ status }: { status: GitChange['status'] }) {
   return <FilePen className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />;
 }
 
-/** What the repository's README says to run in a fresh clone, for this console. */
+/** What the repository's README says to run in a fresh clone, for this console and this OS. */
 function desktopCommands(origin: string): string {
-  return `npm install -g ${origin}/downloads/dcms-cli.tgz && dcms login --server ${origin} && dcms link && dcms sdk`;
+  const then = `dcms login --server ${origin}; dcms link; dcms sdk`;
+  return /Windows/.test(navigator.userAgent)
+    ? `irm ${origin}/downloads/install.ps1 | iex; ${then}`
+    : `curl -fsSL ${origin}/downloads/install.sh | sh && ${then}`;
 }
 
 function CopyRow({ label, value }: { label: string; value: string }) {

@@ -748,7 +748,7 @@
       "disabled": "Git backend není pro toto nasazení nakonfigurován.",
       "provisioning": "Vytváří se repozitář…",
       "clone": "Klonovat",
-      "desktopHint": "Na vašem počítači, v klonu (Node 20+): CLI kontroluje, spouští a nasazuje stejně jako webové IDE. Více v README repozitáře.",
+      "desktopHint": "Na vašem počítači, v klonu: příkazová řádka dcms (Linux, macOS, Windows) kontroluje, spouští a nasazuje stejně jako webové IDE. Více v README repozitáře.",
       "noRepoAccess": "Nemáte oprávnění klonovat tento repozitář. Požádejte správce o přístup k repozitáři tohoto webu.",
       "noGitPassword": "Není nastaveno git heslo. Klikněte pro nastavení hesla nebo přidání SSH klíče v Nastavení účtu.",
       "branch": "Větev",

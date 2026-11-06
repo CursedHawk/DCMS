@@ -1,5 +1,6 @@
 extern alias AdminApiApp;
 extern alias ScriptRunnerApp;
+extern alias CliApp;
 
 using System.Net;
 using System.Net.Http.Json;
@@ -104,6 +105,86 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var refused = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files = tampered }), ct), ct);
         refused.GetProperty("ok").GetBoolean().Should().BeFalse();
         refused.GetProperty("problems")[0].GetProperty("message").GetString().Should().Contain("integrity");
+    }
+
+    /// <summary>
+    /// The .NET command line (ADR 0032) end to end in-process: <c>dcms link</c> finds the app from a
+    /// clone's remote, then <c>sdk</c>, <c>check</c>, <c>run</c> and <c>secrets</c> go through the
+    /// same routes the web IDE uses, as the signed-in person, with idempotency keys on writes.
+    /// </summary>
+    [DockerFact]
+    public async Task The_command_line_links_a_clone_and_checks_runs_and_sets_secrets()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+        var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
+        var panel = await Json(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}/git", slug, owner), ct), ct);
+
+        var clone = Directory.CreateTempSubdirectory("dcms-clone-").FullName;
+        var configDir = Directory.CreateTempSubdirectory("dcms-config-").FullName;
+        try
+        {
+            void Git(params string[] args)
+            {
+                var start = new System.Diagnostics.ProcessStartInfo("git") { WorkingDirectory = clone, RedirectStandardError = true };
+                foreach (var a in args) start.ArgumentList.Add(a);
+                using var p = System.Diagnostics.Process.Start(start)!;
+                p.WaitForExit();
+                p.ExitCode.Should().Be(0, p.StandardError.ReadToEnd());
+            }
+            Git("init", "-q");
+            Git("remote", "add", "origin", panel.GetProperty("httpUrl").GetString()!);
+            Directory.CreateDirectory(Path.Combine(clone, "functions"));
+            File.WriteAllText(Path.Combine(clone, "functions", "hello.ts"), """
+                import { defineFunction } from "@dcms/functions";
+                export default defineFunction({ handler: (input: { name: string }) => `Hello, ${input.name}!` });
+                """);
+
+            var config = new CliApp::Dcms.Cli.Config(configDir);
+            config.WriteCredentials(new CliApp::Dcms.Cli.Credentials("http://localhost", "http://localhost/connect/token", "token", null, long.MaxValue / 2));
+            using var http = new HttpClient(new AsUser(owner) { InnerHandler = host.Server.CreateHandler() });
+            var stdout = new StringWriter();
+            var stderr = new StringWriter();
+            var commands = new CliApp::Dcms.Cli.Commands(config, new CliApp::Dcms.Cli.Api(config, http, stdout), http, stdout, stderr,
+                new StringReader("s3cret\n"), clone);
+            async Task<string> Dcms(params string[] args)
+            {
+                stdout.GetStringBuilder().Clear();
+                var code = await commands.Build().Parse(args).InvokeAsync(cancellationToken: ct);
+                code.Should().Be(0, $"dcms {string.Join(' ', args)}: {stderr}{stdout}");
+                return stdout.ToString();
+            }
+
+            (await Dcms("link")).Should().Contain($"Linked to fn in {slug} (production)");
+            (await Dcms("sdk")).Should().Contain(".dcms/functions.ts");
+            File.ReadAllText(Path.Combine(clone, ".gitignore")).Should().Contain(".dcms/");
+            (await Dcms("check")).Should().Contain("OK: hello");
+            (await Dcms("run", "hello", "--input", """{"name":"Ada"}""")).Should().Contain("Hello, Ada!");
+            (await Dcms("secrets", "set", "API_KEY")).Should().Contain("Set API_KEY.");
+            (await Dcms("secrets")).Should().Contain("API_KEY");
+            (await Dcms("secrets", "rm", "API_KEY")).Should().Contain("Removed API_KEY.");
+        }
+        finally
+        {
+            Directory.Delete(clone, recursive: true);
+            Directory.Delete(configDir, recursive: true);
+        }
+    }
+
+    /// <summary>The CLI's requests as the test host knows people: by header, not by bearer.</summary>
+    private sealed class AsUser(Guid user) : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.Add("X-Test-Sub", user.ToString());
+            request.Headers.Add("X-Test-Email", $"cli-{user:N}@dcms.test");
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     /// <summary>
@@ -322,7 +403,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
             await File.WriteAllTextAsync(Path.Combine(root, "nuget.config"), """
                 <configuration><packageSources><clear /><add key="dcms" value=".dcms/packages" /></packageSources></configuration>
                 """, ct);
-            // As `dcms sdk` writes it (packages/cli/src/lib.mjs csharpFiles), less the version file.
+            // As `dcms sdk` writes it (src/Tools/Dcms.Cli/Clone.cs CSharpFiles), less the version file.
             await File.WriteAllTextAsync(Path.Combine(root, "Functions.csproj"), $"""
                 <Project Sdk="Microsoft.NET.Sdk">
                   <PropertyGroup><TargetFramework>net10.0</TargetFramework><RestorePackagesPath>.dcms/nuget</RestorePackagesPath></PropertyGroup>

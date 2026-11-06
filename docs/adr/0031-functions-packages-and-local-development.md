@@ -41,8 +41,8 @@ These were decided by the user on 2026-11-05.
   - The person approves the code at `/connect/verify`, in a browser where they are signed in.
   - The edge passes a `dcms-cli` bearer through on the admin API routes only when no browser session is present. Every other bearer is still stripped there (ADR 0014).
   - Account settings list each signed-in command line and sign it out, which revokes its refresh tokens. Its access token lives at most 10 minutes more.
-- **The `dcms` CLI** (`packages/cli`):
-  - It is Node with no dependencies. It runs `login`, `link`, `sdk`, `check`, `run`, `runs`, `logs`, `secrets` and `deploy`, all over the endpoints the web IDE already uses.
+- **The `dcms` CLI** (first `packages/cli`, Node; rewritten in .NET as `src/Tools/Dcms.Cli` by ADR 0032):
+  - It runs `login`, `link`, `sdk`, `check`, `run`, `runs`, `logs`, `secrets` and `deploy`, all over the endpoints the web IDE already uses.
   - `link` reads the git remote, and `GET /api/admin/me/repos?remote=` names the workspace, environment and app.
 - **The C# SDK package is made by the server, not published by CI.**
   - `/_functions/sdk.nupkg` builds `Dcms.Functions.Sdk` from the running server's `Dcms.Functions.dll`. Its version is the content hash.

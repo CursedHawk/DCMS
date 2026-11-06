@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    dcms (ADR 0032): the desktop command line, published by the console image as one
+    self-contained file per platform (dotnet publish -r <rid>). DCMS_VERSION stamps the
+    version the console serves beside it, so `dcms version` can tell a stale copy.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dcms</AssemblyName>
+    <RootNamespace>Dcms.Cli</RootNamespace>
+    <Version Condition="'$(DCMS_VERSION)' != ''">0.0.0-$(DCMS_VERSION)</Version>
+    <InformationalVersion Condition="'$(DCMS_VERSION)' != ''">$(DCMS_VERSION)</InformationalVersion>
+    <InformationalVersion Condition="'$(DCMS_VERSION)' == ''">dev</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.Cli.Tests" />
+    <InternalsVisibleTo Include="Dcms.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

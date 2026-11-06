@@ -728,7 +728,7 @@
       "disabled": "Git backend is not configured for this deployment.",
       "provisioning": "Setting up the repository…",
       "clone": "Clone",
-      "desktopHint": "On your machine, in the clone (Node 20+): the CLI checks, runs and deploys as the web IDE does. The repository's README says more.",
+      "desktopHint": "On your machine, in the clone: the dcms command line (Linux, macOS, Windows) checks, runs and deploys as the web IDE does. The repository's README says more.",
       "noRepoAccess": "You don't have access to clone this repository. Ask an admin to grant you repo access for this site.",
       "noGitPassword": "No git password set. Click to set a password or add an SSH key in Account settings.",
       "branch": "Branch",

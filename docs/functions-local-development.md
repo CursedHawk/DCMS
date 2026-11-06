@@ -20,14 +20,16 @@ You may push to `main` and to any other branch. You may not push to `release`: i
 ## 2. Install and sign in
 
 ```sh
-npm install -g https://admin.example.com/downloads/dcms-cli.tgz   # Node 20 or newer
+curl -fsSL https://admin.example.com/downloads/install.sh | sh    # Linux, macOS
+irm https://admin.example.com/downloads/install.ps1 | iex         # Windows (PowerShell)
 dcms login --server https://admin.example.com
 ```
 
 `dcms login` prints a code and a link. Open the link in a browser where you are signed in to the console, check that the code matches, and approve. The command line then acts as you, with your permissions.
 
-- The sign-in is stored in `~/.config/dcms/credentials.json`, readable only by you.
-- **Account → Command lines** lists every machine you signed in this way, and signs any of them out.
+- The sign-in is stored in `credentials.json` in dcms's folder (`~/.config/dcms` on Linux, `~/Library/Application Support/dcms` on macOS, `%APPDATA%\dcms` on Windows), readable only by you.
+- `dcms version` says whether your copy matches the console's; `dcms update` replaces it with the console's build.
+- **Account → Devices** lists every machine you signed in this way, and signs any of them out.
 - `dcms logout` forgets the sign-in on this machine.
 
 ## 3. Link the clone and write the SDK

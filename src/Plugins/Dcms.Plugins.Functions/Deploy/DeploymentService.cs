@@ -102,9 +102,11 @@ public sealed class DeploymentService(
 
             ## Develop on your machine
 
-            Clone this repository (the console's Source control shows the URLs), then, with Node 20+:
+            Clone this repository (the console's Source control shows the URLs), then install the
+            dcms command line from your console and sign in:
 
-                npm install -g https://<your console>/downloads/dcms-cli.tgz
+                curl -fsSL https://<your console>/downloads/install.sh | sh     # Linux, macOS
+                irm https://<your console>/downloads/install.ps1 | iex          # Windows (PowerShell)
                 dcms login --server https://<your console>
                 dcms link && dcms sdk      # the SDK and editor config, in .dcms/
                 dcms check                 # the server's build of your working tree
