@@ -484,6 +484,13 @@ export function SourceControlView({
                     {t('ide.git.noGitPassword')}
                   </button>
                 ) : null}
+                {/* A Functions app on the desktop (ADR 0031): the CLI comes from this console. */}
+                {isRepoWorkspace(siteId) ? (
+                  <div className="space-y-1 pt-1" data-testid="clone-desktop">
+                    <p className="px-1 text-xs text-muted-foreground">{t('ide.git.desktopHint')}</p>
+                    <CopyRow label="CLI" value={desktopCommands(window.location.origin)} />
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="px-1 text-xs text-muted-foreground">{t('ide.git.noRepoAccess')}</p>
@@ -600,6 +607,11 @@ function ChangeIcon({ status }: { status: GitChange['status'] }) {
   if (status === 'added') return <FilePlus2 className="h-3.5 w-3.5 shrink-0 text-success-foreground" />;
   if (status === 'deleted') return <FileMinus2 className="h-3.5 w-3.5 shrink-0 text-destructive" />;
   return <FilePen className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />;
+}
+
+/** What the repository's README says to run in a fresh clone, for this console. */
+function desktopCommands(origin: string): string {
+  return `npm install -g ${origin}/downloads/dcms-cli.tgz && dcms login --server ${origin} && dcms link && dcms sdk`;
 }
 
 function CopyRow({ label, value }: { label: string; value: string }) {

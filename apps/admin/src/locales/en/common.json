@@ -728,6 +728,7 @@
       "disabled": "Git backend is not configured for this deployment.",
       "provisioning": "Setting up the repository…",
       "clone": "Clone",
+      "desktopHint": "On your machine, in the clone (Node 20+): the CLI checks, runs and deploys as the web IDE does. The repository's README says more.",
       "noRepoAccess": "You don't have access to clone this repository. Ask an admin to grant you repo access for this site.",
       "noGitPassword": "No git password set. Click to set a password or add an SSH key in Account settings.",
       "branch": "Branch",
@@ -986,6 +987,7 @@
         "hint": "Adding or removing a package changes package.json and package-lock.json (npm) or Functions.csproj and packages.lock.json (NuGet) in your draft: commit them like any change. The build installs exactly what the lock says."
       },
       "title": "Functions",
+      "size": "What it ships: its bundle with the packages it uses, or for C# the assemblies",
       "recheck": "Check again",
       "none": "No functions yet: add functions/<name>.ts, or a C# class marked [Function(\"name\")].",
       "problems_one": "{{count}} problem: see Problems.",

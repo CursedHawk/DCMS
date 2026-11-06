@@ -94,6 +94,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var files = Files("sha512-" + Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(tgz)));
         var check = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files }), ct), ct);
         check.GetProperty("ok").GetBoolean().Should().BeTrue(check.ToString());
+        check.GetProperty("sizes").GetProperty("doubles").GetInt64().Should().BeGreaterThan(0, "the editor shows what each function ships");
         var tried = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner,
             new { files, function = "doubles", input = new { n = 21 } }), ct), ct);
         tried.GetProperty("result").GetString().Should().Be("hello 42", tried.ToString());

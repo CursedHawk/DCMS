@@ -250,14 +250,24 @@ public sealed class DeploymentService(
     private static JsonElement? Json(string? json) => json is null ? null : JsonDocument.Parse(json).RootElement.Clone();
 
     /// <param name="Specs">Each function as the build read it: what the editor's Functions panel shows.</param>
+    /// <param name="Sizes">
+    /// What each function ships, in bytes (ADR 0031): a TypeScript function's bundle, packages
+    /// included; for C#, the build's assembly and its NuGet packages, which all its functions share.
+    /// </param>
     public sealed record DraftCheck(bool Ok, IReadOnlyList<BuildJob.Diagnostic> Problems, IReadOnlyList<string> Functions, IReadOnlyList<string> Permissions,
-        IReadOnlyList<FunctionSpec> Specs);
+        IReadOnlyList<FunctionSpec> Specs, IReadOnlyDictionary<string, long>? Sizes = null);
 
     /// <summary>Builds files (a draft, a branch) as a deployment would be built, without making one.</summary>
     public async Task<DraftCheck> CheckAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
     {
         var built = await builder.BuildAsync(files, FunctionsPlugin.PackagesAllowed(context.Instance), ct);
-        return new DraftCheck(built.Ok, built.Diagnostics, built.Functions.Select(f => f.Name).ToList(), built.Ok ? Required(built.Functions) : [], built.Functions);
+        // Assemblies travel base64: three bytes in four characters.
+        var dotnet = built.Bundles.Where(b => b.Key == BuildOutput.DotnetAssembly || b.Key.StartsWith(BuildOutput.NuGetPrefix, StringComparison.Ordinal))
+            .Sum(b => b.Value.Length * 3L / 4);
+        var sizes = built.Functions.ToDictionary(f => f.Name,
+            f => f.Runtime == FunctionManifest.Dotnet ? dotnet : System.Text.Encoding.UTF8.GetByteCount(built.Bundles[f.Name]));
+        return new DraftCheck(built.Ok, built.Diagnostics, built.Functions.Select(f => f.Name).ToList(), built.Ok ? Required(built.Functions) : [], built.Functions,
+            sizes);
     }
 
     /// <summary>

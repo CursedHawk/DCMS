@@ -748,6 +748,7 @@
       "disabled": "Git backend není pro toto nasazení nakonfigurován.",
       "provisioning": "Vytváří se repozitář…",
       "clone": "Klonovat",
+      "desktopHint": "Na vašem počítači, v klonu (Node 20+): CLI kontroluje, spouští a nasazuje stejně jako webové IDE. Více v README repozitáře.",
       "noRepoAccess": "Nemáte oprávnění klonovat tento repozitář. Požádejte správce o přístup k repozitáři tohoto webu.",
       "noGitPassword": "Není nastaveno git heslo. Klikněte pro nastavení hesla nebo přidání SSH klíče v Nastavení účtu.",
       "branch": "Větev",
@@ -1014,6 +1015,7 @@
         "hint": "Přidání nebo odebrání balíčku změní ve vašem konceptu package.json a package-lock.json (npm) nebo Functions.csproj a packages.lock.json (NuGet): commitněte je jako každou změnu. Build nainstaluje přesně to, co říká zámek."
       },
       "title": "Funkce",
+      "size": "Co obsahuje: svůj balík s použitými balíčky, u C# sestavení",
       "recheck": "Zkontrolovat znovu",
       "none": "Zatím žádné funkce: přidejte functions/<název>.ts nebo třídu C# označenou [Function(\"název\")].",
       "problems_one": "{{count}} problém: viz Problémy.",

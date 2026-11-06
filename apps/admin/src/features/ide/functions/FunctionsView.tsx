@@ -33,7 +33,11 @@ interface DraftCheck {
   problems: { message: string; file?: string | null; line?: number | null }[];
   specs: FunctionSpec[];
   permissions: string[];
+  /** What each function ships, in bytes: its bundle, or for C# the build's assemblies. */
+  sizes?: Record<string, number>;
 }
+
+const kb = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} kB`);
 
 interface Deployment {
   id: string;
@@ -163,6 +167,10 @@ export function FunctionsView({ functionsApi, onNew }: { functionsApi: string; o
                 </button>
                 <Badge tone="secondary">{fn.runtime === 'dotnet' ? 'C#' : 'TS'}</Badge>
                 {live?.functions.includes(fn.name) && <Badge tone="success">{t('ide.fn.live')}</Badge>}
+                <span className="flex-1" />
+                {check.data?.sizes?.[fn.name] !== undefined && (
+                  <span className="shrink-0 text-xs text-muted-foreground" title={t('ide.fn.size')}>{kb(check.data.sizes[fn.name])}</span>
+                )}
               </div>
               {fn.description && <p className="mt-1 text-muted-foreground">{fn.description}</p>}
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
