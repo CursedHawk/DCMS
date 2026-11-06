@@ -68,6 +68,12 @@ public sealed class FunctionDeployment : EnvironmentEntity
     /// </summary>
     public List<string> VouchedPermissions { get; set; } = [];
 
+    /// <summary>
+    /// Every package its lockfiles installed (ADR 0031): <c>npm:lodash@4.17.21</c>,
+    /// <c>nuget:Newtonsoft.Json@13.0.3</c>. Part of the build, so as immutable as it.
+    /// </summary>
+    public List<string> Packages { get; set; } = [];
+
     /// <summary>Why the build failed, in a sentence, for lists.</summary>
     public string? Error { get; set; }
 

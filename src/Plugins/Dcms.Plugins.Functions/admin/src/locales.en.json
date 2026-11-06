@@ -46,7 +46,8 @@
     "detail": "Deployment {{number}}",
     "problems": "What the build found",
     "permissions": "Deploying it takes:",
-    "egress": "Hosts its functions send requests to"
+    "egress": "Hosts its functions send requests to",
+    "packages": "Packages it installed ({{count}})"
   },
   "deploymentStatus": {
     "Building": "Building",

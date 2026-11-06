@@ -18,6 +18,8 @@ what the function declared in `uses`. This page is the list. ADRs 0029 and 0030 
   - No `npm:`/`jsr:`/`https:` specifiers and no `node:` modules.
   - In the editor, the Functions view's **Packages** section adds and removes packages and
     writes the lock, for npm and NuGet alike. On a desktop, `npm install` / `dotnet restore` do.
+  - The app's setting "Functions may use packages" (on by default) can turn packages off; then a
+    build that installs any fails. Each deployment lists the packages it installed.
 - **Globals**: the web's worker APIs, which the editor and the build check against
   (`lib: esnext, webworker`):
   - `fetch`, `Request`, `Response`, `Headers`, `FormData`, `URLSearchParams`, `Blob`, `File`:

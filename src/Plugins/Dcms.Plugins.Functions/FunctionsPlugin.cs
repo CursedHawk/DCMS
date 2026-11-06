@@ -39,11 +39,22 @@ public sealed class FunctionsPlugin : IPlugin
               "title": "Name",
               "description": "Shown in the admin and in the generated API description.",
               "maxLength": 120
+            },
+            "packages": {
+              "type": "boolean",
+              "title": "Functions may use packages",
+              "description": "Install the npm and NuGet packages the repository's lockfiles name. Off, a build that installs any fails.",
+              "default": true
             }
           },
           "additionalProperties": false
         }
         """;
+
+    /// <summary>The instance's "Functions may use packages" (ADR 0031): on unless its config turns it off.</summary>
+    public static bool PackagesAllowed(PluginInstanceContext? instance) =>
+        !(instance?.Config.RootElement is { ValueKind: System.Text.Json.JsonValueKind.Object } config
+          && config.TryGetProperty("packages", out var packages) && packages.ValueKind == System.Text.Json.JsonValueKind.False);
 
     public PluginManifest Manifest { get; } = PluginManifest.Create(
         id: PluginId,

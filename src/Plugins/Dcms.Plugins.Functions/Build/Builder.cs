@@ -11,8 +11,10 @@ namespace Dcms.Plugins.Functions.Build;
 /// C# function's class by name, and the build's one assembly and PDB under <see cref="DotnetAssembly"/>
 /// and <see cref="DotnetPdb"/> (ADR 0030). Function names cannot start with '@'.
 /// </param>
+/// <param name="Packages">Every package the lockfiles installed: <c>npm:lodash@4.17.21</c>, <c>nuget:Newtonsoft.Json@13.0.3</c>.</param>
 public sealed record BuildOutput(
-    bool Ok, IReadOnlyList<BuildJob.Diagnostic> Diagnostics, IReadOnlyList<FunctionSpec> Functions, IReadOnlyDictionary<string, string> Bundles)
+    bool Ok, IReadOnlyList<BuildJob.Diagnostic> Diagnostics, IReadOnlyList<FunctionSpec> Functions, IReadOnlyDictionary<string, string> Bundles,
+    IReadOnlyList<string>? Packages = null)
 {
     public const string DotnetAssembly = "@dotnet.dll";
     public const string DotnetPdb = "@dotnet.pdb";
@@ -34,9 +36,10 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk, PackageStor
     /// <summary>What one build may install in all (ADR 0031).</summary>
     public const long MaxPackagesBytes = 60L * 1024 * 1024;
 
-    public async Task<BuildOutput> BuildAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
+    /// <param name="packagesAllowed">The instance's "Functions may use packages" (ADR 0031): off, a lockfile that installs any is refused.</param>
+    public async Task<BuildOutput> BuildAsync(IReadOnlyDictionary<string, string> files, bool packagesAllowed, CancellationToken ct)
     {
-        var (packages, unusable) = await PackagesAsync(files, ct);
+        var (packages, installed, unusable) = await PackagesAsync(files, packagesAllowed, ct);
         if (unusable.Count > 0)
         {
             return new BuildOutput(false, unusable, [], new Dictionary<string, string>());
@@ -80,21 +83,28 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk, PackageStor
             File = byName[f.Name].File,
             Input = FunctionManifest.Schema(byName[f.Name].Input),
             Output = FunctionManifest.Schema(byName[f.Name].Output),
-        }).ToList(), bundles);
+        }).ToList(), bundles, installed);
     }
 
     /// <summary>The locked packages' archives, for script-runner to unpack offline into the build.</summary>
-    private async Task<(List<object> Packages, List<BuildJob.Diagnostic> Problems)> PackagesAsync(
-        IReadOnlyDictionary<string, string> files, CancellationToken ct)
+    private async Task<(List<object> Packages, List<string> Installed, List<BuildJob.Diagnostic> Problems)> PackagesAsync(
+        IReadOnlyDictionary<string, string> files, bool allowed, CancellationToken ct)
     {
         var (npm, npmRefused) = NpmLock.Read(files);
         var (nuget, nugetRefused) = NuGetLock.Read(files);
         if (npmRefused.Count > 0 || nugetRefused.Count > 0)
         {
-            return ([], npmRefused.Select(p => new BuildJob.Diagnostic(p, NpmLock.Lockfile))
+            return ([], [], npmRefused.Select(p => new BuildJob.Diagnostic(p, NpmLock.Lockfile))
                 .Concat(nugetRefused.Select(p => new BuildJob.Diagnostic(p, NuGetLock.Lockfile))).ToList());
         }
         var locked = npm.Concat(nuget).ToList();
+        if (locked.Count > 0 && !allowed)
+        {
+            return ([], [], [new BuildJob.Diagnostic(
+                "This app's settings do not let its functions use packages: remove them, or turn \"Functions may use packages\" on.",
+                npm.Count > 0 ? NpmLock.Lockfile : NuGetLock.Lockfile)]);
+        }
+        var installed = locked.Select(p => $"{(IsNuGet(p) ? "nuget" : "npm")}:{p.Name}@{p.Version}").Order(StringComparer.Ordinal).ToList();
         var problems = new List<BuildJob.Diagnostic>();
         // The total is enforced as archives arrive, not after: past it, what is still fetching is cancelled.
         long total = 0;
@@ -135,17 +145,19 @@ public sealed class Builder(IHttpClientFactory http, SdkTypings sdk, PackageStor
         }));
         if (Interlocked.Read(ref total) > MaxPackagesBytes)
         {
-            return ([], [new BuildJob.Diagnostic($"A build installs at most {MaxPackagesBytes / (1024 * 1024)} MB of packages.", NpmLock.Lockfile)]);
+            return ([], [], [new BuildJob.Diagnostic($"A build installs at most {MaxPackagesBytes / (1024 * 1024)} MB of packages.", NpmLock.Lockfile)]);
         }
         foreach (var (p, _, error) in fetched.Where(f => f.Error is not null))
         {
-            problems.Add(new BuildJob.Diagnostic(error!, p.Path.StartsWith("nuget/", StringComparison.Ordinal) ? NuGetLock.Lockfile : NpmLock.Lockfile));
+            problems.Add(new BuildJob.Diagnostic(error!, IsNuGet(p) ? NuGetLock.Lockfile : NpmLock.Lockfile));
         }
         var archives = problems.Count > 0
             ? new List<object>()
             : fetched.Select(f => (object)new { path = f.p.Path, data = Convert.ToBase64String(f.Bytes) }).ToList();
-        return problems.Count > 0 ? ([], problems) : (archives, problems);
+        return problems.Count > 0 ? ([], [], problems) : (archives, installed, problems);
     }
+
+    private static bool IsNuGet(LockedPackage p) => p.Path.StartsWith("nuget/", StringComparison.Ordinal);
 
     private sealed record Built(string Name, string Bundle, JsonNode? Definition, string Runtime = FunctionManifest.Runtime,
         string? File = null, string? Class = null, string? SourceMap = null, JsonNode? Input = null, JsonNode? Output = null);

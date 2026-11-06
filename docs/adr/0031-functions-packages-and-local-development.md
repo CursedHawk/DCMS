@@ -91,6 +91,13 @@ These were decided by the user on 2026-11-05.
   - `/_functions/packages/assemblies` returns the locked NuGet packages' assemblies (the build's `lib/` choice) to the C# language worker's `Packages` export.
   - Both are fetched again when a lock changes.
 
+#### Policy (P6)
+
+- **"Functions may use packages"**, the instance setting `packages`, is on by default. Turned off:
+  - a build whose lockfiles install any package fails, saying so;
+  - adding a package is refused. Removing one stays allowed, so a repository can get back inside the setting.
+- **Every deployment records what it installed** (`functions.deployments.Packages`: `npm:name@version`, `nuget:Id@version`, transitive ones included). The record is frozen with the build, and the Deployments screen lists it.
+
 #### Spike P0 (2026-11-05): go for both languages
 
 Measured with the runner's own Deno 2.5.4 and esbuild 0.28.2, under the production limits for a C# run (64 MB V8 heap, 768 MB `RLIMIT_DATA`, `--liftoff-only`).

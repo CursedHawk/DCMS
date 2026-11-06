@@ -44,7 +44,7 @@ public sealed record RunSimulation(JsonObject? Trigger = null, JsonObject? Reque
 
 public sealed record DeploymentDetail(
     DeploymentSummary Deployment, IReadOnlyList<FunctionSpec> Functions, JsonElement? Diagnostics,
-    IReadOnlyList<string> Permissions);
+    IReadOnlyList<string> Permissions, IReadOnlyList<string> Packages);
 
 /// <summary>Who could not deploy, and what they lack.</summary>
 public sealed class DeployRefusedException(IReadOnlyList<string> missing)
@@ -138,7 +138,7 @@ public sealed class DeploymentService(
         var functions = FunctionManifest.Deserialize(row.Manifest);
         return new DeploymentDetail(Summary(row), functions,
             row.Diagnostics is null ? null : JsonDocument.Parse(row.Diagnostics).RootElement.Clone(),
-            row.Status == FunctionDeploymentStatus.Ready ? Required(functions) : row.VouchedPermissions);
+            row.Status == FunctionDeploymentStatus.Ready ? Required(functions) : row.VouchedPermissions, row.Packages);
     }
 
     /// <summary>Makes a built deployment live (deploy), or an earlier one again (rollback).</summary>
@@ -256,7 +256,7 @@ public sealed class DeploymentService(
     /// <summary>Builds files (a draft, a branch) as a deployment would be built, without making one.</summary>
     public async Task<DraftCheck> CheckAsync(IReadOnlyDictionary<string, string> files, CancellationToken ct)
     {
-        var built = await builder.BuildAsync(files, ct);
+        var built = await builder.BuildAsync(files, FunctionsPlugin.PackagesAllowed(context.Instance), ct);
         return new DraftCheck(built.Ok, built.Diagnostics, built.Functions.Select(f => f.Name).ToList(), built.Ok ? Required(built.Functions) : [], built.Functions);
     }
 
@@ -269,7 +269,7 @@ public sealed class DeploymentService(
         RunSimulation? simulate = null)
     {
         simulate = simulate?.Checked();
-        var built = await builder.BuildAsync(files, ct);
+        var built = await builder.BuildAsync(files, FunctionsPlugin.PackagesAllowed(context.Instance), ct);
         if (!built.Ok)
         {
             throw new ContractValidationException("It does not build: " + string.Join("; ",

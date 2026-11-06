@@ -144,9 +144,14 @@ internal static class AdminEndpoints
             .RequirePluginPermission("read")
             .SkipAudit("Reads the assemblies of packages the caller's own lock names; changes nothing.");
 
-        endpoints.MapPost("/_functions/packages", (PackageChange body, Packages.PackageResolver packages, CancellationToken ct) =>
+        endpoints.MapPost("/_functions/packages", (PackageChange body, Packages.PackageResolver packages, IPluginContext context, CancellationToken ct) =>
                 Run(async () =>
                 {
+                    // Removing one is always allowed: it is how a repository gets back inside the setting.
+                    if (!body.Remove && !FunctionsPlugin.PackagesAllowed(context.Instance))
+                    {
+                        return Results.BadRequest(new { error = "This app's settings do not let its functions use packages." });
+                    }
                     try
                     {
                         return Results.Ok(new

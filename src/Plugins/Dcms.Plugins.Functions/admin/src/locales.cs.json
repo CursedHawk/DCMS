@@ -46,7 +46,8 @@
     "detail": "Nasazení {{number}}",
     "problems": "Co sestavení našlo",
     "permissions": "Nasazení vyžaduje:",
-    "egress": "Hostitelé, kterým jeho funkce posílají požadavky"
+    "egress": "Hostitelé, kterým jeho funkce posílají požadavky",
+    "packages": "Balíčky, které nainstaloval ({{count}})"
   },
   "deploymentStatus": {
     "Building": "Sestavuje se",

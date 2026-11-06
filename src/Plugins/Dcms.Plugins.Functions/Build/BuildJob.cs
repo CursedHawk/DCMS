@@ -71,7 +71,7 @@ public sealed class BuildJob(FunctionsDbContext db, Builder builder, ILogger<Bui
         try
         {
             var files = await context.Contracts.Get<IPluginRepos>().ReadFilesAsync(new RepoFilesQuery(sha, instance.InstanceId), ct);
-            var built = await builder.BuildAsync(files.Files, ct);
+            var built = await builder.BuildAsync(files.Files, FunctionsPlugin.PackagesAllowed(instance), ct);
             if (!built.Ok)
             {
                 Fail(deployment, built.Diagnostics);
@@ -80,6 +80,7 @@ public sealed class BuildJob(FunctionsDbContext db, Builder builder, ILogger<Bui
             {
                 deployment.Manifest = FunctionManifest.Serialize(built.Functions);
                 deployment.Bundles = JsonSerializer.Serialize(built.Bundles);
+                deployment.Packages = [.. built.Packages ?? []];
                 deployment.Status = FunctionDeploymentStatus.Ready;
             }
         }

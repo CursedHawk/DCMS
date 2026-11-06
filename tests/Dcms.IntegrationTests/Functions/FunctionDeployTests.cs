@@ -106,6 +106,62 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
     }
 
     /// <summary>
+    /// Package policy (ADR 0031, P6): a deployment lists every package it installed, and the
+    /// instance's "Functions may use packages" turned off refuses both a build that installs one
+    /// and adding one, while removing one stays allowed.
+    /// </summary>
+    [DockerFact]
+    public async Task A_deployment_lists_its_packages_and_the_setting_turns_them_off()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = Host();
+        var client = host.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var instanceId = await InstallAsync(client, slug, ct);
+        var owner = await SeedMemberAsync(tenantId, "Owner", ct);
+        var api = "/api/admin/plugins/fn/_functions";
+
+        var tgz = Convert.FromBase64String(FunctionRunnerTests.Tarball(FunctionRunnerTests.TinyLib));
+        _egress.Packages["/tiny-lib/-/tiny-lib-1.2.0.tgz"] = tgz;
+        var files = new Dictionary<string, string>
+        {
+            ["package.json"] = """{ "name": "fns", "dependencies": { "tiny-lib": "^1.2.0" } }""",
+            ["package-lock.json"] = $$"""
+                { "name": "fns", "lockfileVersion": 3, "packages": {
+                  "": { "name": "fns", "dependencies": { "tiny-lib": "^1.2.0" } },
+                  "node_modules/tiny-lib": { "version": "1.2.0", "resolved": "https://registry.npmjs.org/tiny-lib/-/tiny-lib-1.2.0.tgz",
+                    "integrity": "sha512-{{Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(tgz))}}" }
+                } }
+                """,
+            ["functions/doubles.ts"] = """
+                import { defineFunction } from "@dcms/functions";
+                import { double } from "tiny-lib";
+                export default defineFunction({ handler: (input: { n: number }) => double(input.n) });
+                """,
+        };
+
+        var repo = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/repo", slug, owner), ct), ct);
+        var sha = await ShipAsync(client, slug, owner, $"/api/admin/repos/{repo.GetProperty("id").GetGuid()}", files, "Packages", ct);
+        await BuildAsync(host, tenantId, instanceId, sha, ct);
+        var built = (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments", slug, owner), ct), ct)).EnumerateArray().Single();
+        built.GetProperty("status").GetString().Should().Be("Ready", built.ToString());
+        var detail = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{built.GetProperty("id").GetGuid()}", slug, owner), ct), ct);
+        detail.GetProperty("packages").EnumerateArray().Select(p => p.GetString()).Should().Equal("npm:tiny-lib@1.2.0");
+
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/plugins/instances/{instanceId}", slug, Guid.Empty,
+            new { config = """{ "packages": false }""" }, superAdmin: true), ct)).EnsureSuccessStatusCode();
+        var refused = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/check", slug, owner, new { files }), ct), ct);
+        refused.GetProperty("ok").GetBoolean().Should().BeFalse();
+        refused.GetProperty("problems")[0].GetProperty("message").GetString().Should().Contain("Functions may use packages");
+        var add = await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages", slug, owner,
+            new { ecosystem = "npm", name = "tiny-lib", remove = false, files }), ct);
+        add.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var remove = await client.SendAsync(Req(HttpMethod.Post, $"{api}/packages", slug, owner,
+            new { ecosystem = "npm", name = "tiny-lib", remove = true, files }), ct);
+        remove.StatusCode.Should().Be(HttpStatusCode.OK, await remove.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>
     /// NuGet packages (ADR 0031): Functions.csproj's reference, locked by packages.lock.json, fetched
     /// from nuget.org and checked by content hash; its assembly travels with the deployment and is
     /// loaded before the function's.

@@ -162,6 +162,10 @@ namespace Dcms.Shared.Data.Migrations.Functions
                     b.Property<int>("Number")
                         .HasColumnType("integer");
 
+                    b.PrimitiveCollection<List<string>>("Packages")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)

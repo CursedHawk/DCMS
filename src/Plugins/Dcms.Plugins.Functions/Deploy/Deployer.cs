@@ -44,7 +44,7 @@ internal static class Deployer
         await db.SaveChangesAsync(ct);
 
         var files = await plugin.Contracts.Get<IPluginRepos>().ReadFilesAsync(new RepoFilesQuery(sha), ct);
-        var built = await builder.BuildAsync(files.Files, ct);
+        var built = await builder.BuildAsync(files.Files, FunctionsPlugin.PackagesAllowed(plugin.Instance), ct);
         if (!built.Ok)
         {
             var first = built.Diagnostics.FirstOrDefault();
@@ -56,6 +56,7 @@ internal static class Deployer
         }
         deployment.Manifest = FunctionManifest.Serialize(built.Functions);
         deployment.Bundles = JsonSerializer.Serialize(built.Bundles);
+        deployment.Packages = [.. built.Packages ?? []];
         deployment.Status = FunctionDeploymentStatus.Ready;
         await db.SaveChangesAsync(ct);
         return deployment;

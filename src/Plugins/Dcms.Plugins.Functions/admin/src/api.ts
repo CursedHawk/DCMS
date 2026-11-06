@@ -47,6 +47,8 @@ export interface DeploymentDetail {
   functions: FunctionSpec[];
   diagnostics?: Diagnostic[] | null;
   permissions: string[];
+  /** Every package its lockfiles installed: `npm:lodash@4.17.21`, `nuget:Newtonsoft.Json@13.0.3`. */
+  packages: string[];
 }
 
 export type RunStatus = 'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Terminated';

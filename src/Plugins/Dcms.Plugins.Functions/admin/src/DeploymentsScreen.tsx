@@ -111,6 +111,14 @@ export function DeploymentsScreen({ instance }: PluginScreenProps) {
               </ul>
             </div>
           ) : null}
+          {detail.data.packages?.length ? (
+            <details className="space-y-1" data-testid="deployment-packages">
+              <summary className="cursor-pointer text-sm">{t('deployments.packages', { count: detail.data.packages.length })}</summary>
+              <ul className="mt-1 columns-1 space-y-0.5 font-mono text-xs sm:columns-2">
+                {detail.data.packages.map((p) => <li key={p} className="break-all">{p}</li>)}
+              </ul>
+            </details>
+          ) : null}
         </section>
       ) : null}
     </div>
