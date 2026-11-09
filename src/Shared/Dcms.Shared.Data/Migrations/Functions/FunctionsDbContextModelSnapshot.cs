@@ -271,6 +271,10 @@ namespace Dcms.Shared.Data.Migrations.Functions
                     b.Property<string>("Trace")
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("TriggerDetail")
                         .HasColumnType("jsonb");
 

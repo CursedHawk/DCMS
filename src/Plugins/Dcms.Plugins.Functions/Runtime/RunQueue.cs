@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -52,15 +53,18 @@ public sealed class RunQueue(FunctionsDbContext db)
         var finished = refused is null ? (DateTimeOffset?)null : now;
         var inputJson = input?.ToJsonString();
         var detailJson = detail?.ToJsonString();
+        // What queued it -- a request, a message, an outbox event, another run -- so the run's
+        // span continues that trace rather than starting one nobody can connect.
+        var traceParent = Activity.Current is { IdFormat: ActivityIdFormat.W3C } current ? current.Id : null;
         // ON CONFLICT is the idempotency: a redelivered event or another replica's schedule tick
         // finds its run already there and creates nothing.
         var created = await db.Database.SqlQuery<Guid>($"""
             INSERT INTO functions.runs ("Id", "TenantId", "EnvironmentId", "InstanceId", "Function", "DeploymentId", "DeploymentNumber",
                 "TriggerKind", "TriggerEventId", "Input", "TriggerDetail", "Status", "Attempts", "NextAttemptAt", "CorrelationId", "CausationId",
-                "Depth", "Error", "Calls", "DurationMs", "CreatedAt", "FinishedAt")
+                "Depth", "TraceParent", "Error", "Calls", "DurationMs", "CreatedAt", "FinishedAt")
             VALUES ({Guid.CreateVersion7()}, {live.TenantId}, {live.EnvironmentId}, {live.InstanceId}, {function}, {live.Id}, {live.Number},
                 {kind}, {eventId}, {inputJson}::jsonb, {detailJson}::jsonb, {status}, 0, {now}, {origin.CorrelationId}, {origin.CausationId},
-                {origin.Depth}, {refused}, 0, 0, {now}, {finished})
+                {origin.Depth}, {traceParent}, {refused}, 0, 0, {now}, {finished})
             ON CONFLICT ("TenantId", "EnvironmentId", "InstanceId", "TriggerEventId", "Function") DO NOTHING
             RETURNING "Id" AS "Value"
             """).ToListAsync(ct);

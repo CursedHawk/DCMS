@@ -53,4 +53,30 @@ public class PublicEgressTests
         using var allowed = new HttpClient(PublicEgress.Handler(allowPrivate: true));
         (await allowed.GetStringAsync($"{local}/secret", ct)).Should().Be("internal", "the test switch does let local targets through");
     }
+
+    [Fact]
+    public async Task A_third_party_gets_no_trace_context_of_ours_unless_the_caller_sends_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var builder = WebApplication.CreateSlimBuilder();
+        await using var app = builder.Build();
+        app.Urls.Add("http://127.0.0.1:0");
+        app.MapGet("/echo", (HttpRequest r) => r.Headers.TraceParent.ToString());
+        await app.StartAsync(ct);
+        var echo = $"{app.Urls.First()}/echo";
+
+        using var span = new System.Diagnostics.Activity("outbound").SetIdFormat(System.Diagnostics.ActivityIdFormat.W3C).Start();
+        using (var plain = new HttpClient(new SocketsHttpHandler()))
+        {
+            (await plain.GetStringAsync(echo, ct)).Should().Contain(span.TraceId.ToHexString(), "an ordinary client does send it");
+        }
+
+        using var egress = new HttpClient(PublicEgress.Handler(allowPrivate: true));
+        (await egress.GetStringAsync(echo, ct)).Should().BeEmpty();
+
+        // A function passing its ctx.run.traceId on sets the header itself, and it goes as set.
+        var own = $"00-{span.TraceId.ToHexString()}-0123456789abcdef-01";
+        using var request = new HttpRequestMessage(HttpMethod.Get, echo) { Headers = { { "traceparent", own } } };
+        (await (await egress.SendAsync(request, ct)).Content.ReadAsStringAsync(ct)).Should().Be(own);
+    }
 }

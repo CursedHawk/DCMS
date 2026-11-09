@@ -21,6 +21,10 @@ public static class PublicEgress
     /// </summary>
     public static SocketsHttpHandler Handler(bool allowPrivate) => new()
     {
+        // A third party gets no traceparent, tracestate or baggage of ours: the platform's trace
+        // ids and sampling stay inside it. A caller that wants one sent (a function passing its
+        // ctx.run.traceId on) sets the header itself.
+        ActivityHeadersPropagator = System.Diagnostics.DistributedContextPropagator.CreateNoOutputPropagator(),
         AllowAutoRedirect = true,
         MaxAutomaticRedirections = 3,
         ConnectCallback = async (context, ct) =>

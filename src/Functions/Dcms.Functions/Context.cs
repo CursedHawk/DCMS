@@ -79,7 +79,15 @@ public sealed record User(string Id, string? Email, IReadOnlyList<string>? Group
 
 public sealed record TriggerInfo(string Kind, JsonNode? Detail);
 
-public sealed record RunInfo(string Function, int Deployment, int Depth);
+/// <param name="Function">This function's name.</param>
+/// <param name="Deployment">The deployment's number; 0 for a test from the editor.</param>
+/// <param name="Depth">How many invokes deep this run is.</param>
+/// <param name="TraceId">
+/// This run's W3C trace id (32 hex digits): the trace of the request, job or event that started
+/// it, which every run it sets off shares. Quote it to support, or send it on yourself as a
+/// <c>traceparent</c> header; the platform does not add one to your outbound requests.
+/// </param>
+public sealed record RunInfo(string Function, int Deployment, int Depth, string? TraceId = null);
 
 /// <summary>The run's log, shown with the run to holders of the app's logs permission. Console.WriteLine lands here too.</summary>
 public sealed class Logger(Action<string, string> write)

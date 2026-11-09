@@ -132,7 +132,8 @@ public sealed partial class RunWorker(
                 else
                 {
                     outcome = await sp.GetRequiredService<FunctionRunner>().RunAsync(target, Parse(run.Input),
-                        new RunTrigger(run.TriggerKind, Parse(run.TriggerDetail), Origin: new RunOrigin(run.CorrelationId, run.CausationId, run.Depth), RunId: run.Id),
+                        new RunTrigger(run.TriggerKind, Parse(run.TriggerDetail), Origin: new RunOrigin(run.CorrelationId, run.CausationId, run.Depth), RunId: run.Id,
+                            TraceParent: run.TraceParent),
                         ct);
                 }
                 // A function that threw is tried again; one that hit a limit would only hit it again.

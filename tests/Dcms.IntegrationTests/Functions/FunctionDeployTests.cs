@@ -578,7 +578,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
                 public sealed class WhoCalls : Function<JsonNode, object>
                 {
                     public override Task<object> Run(JsonNode input, Context ctx) =>
-                        Task.FromResult<object>(new { method = ctx.Request?.Method, user = ctx.User?.Email, trigger = ctx.Trigger?.Kind });
+                        Task.FromResult<object>(new { method = ctx.Request?.Method, user = ctx.User?.Email, trigger = ctx.Trigger?.Kind, trace = ctx.Run?.TraceId });
                 }
                 """,
             ["functions/OrderTotal.cs"] = """
@@ -627,6 +627,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         }), ct), ct);
         simulated.GetProperty("status").GetString().Should().Be("ok", simulated.ToString());
         simulated.GetProperty("result").ToString().Should().Contain("\"method\":\"POST\"").And.Contain("ada@example.com").And.Contain("\"trigger\":\"http\"");
+        // Its trace id, the one the run's span is in.
+        simulated.GetProperty("result").GetProperty("trace").GetString().Should().MatchRegex("^[0-9a-f]{32}$");
         (await client.SendAsync(Req(HttpMethod.Post, $"{api}/test", slug, owner, new { files, function = "who-calls", simulate = new { trigger = new { kind = "admin" } } }), ct))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -863,13 +865,13 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
                   uses: { messages: { emit: ["companies.new"] } },
                   async handler(input: { record: { name: string } }, ctx) {
                     await ctx.messages.emit("companies.new", { name: input.record.name });
-                    return input.record.name;
+                    return { name: input.record.name, trace: ctx.run?.traceId };
                   },
                 });
                 """,
             ["functions/greet.ts"] = """
                 import { defineFunction, on } from "@dcms/functions";
-                export default defineFunction({ triggers: [on.message("companies.new")], handler: (input: { name: string }) => `hello ${input.name}` });
+                export default defineFunction({ triggers: [on.message("companies.new")], handler: (input: { name: string }, ctx) => ({ hello: input.name, trace: ctx.run?.traceId }) });
                 """,
             ["functions/shout.ts"] = """
                 import { defineFunction, on } from "@dcms/functions";
@@ -898,8 +900,19 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/companies", slug, owner, new { name = "Acme" }), ct), ct);
         await DrainAsync(host, tenantId, ct);
         var runs = await RunsAsync(tenantId, ct);
-        runs.Should().ContainSingle(r => r.Function == "welcome").Which.Should().Be(("welcome", "Succeeded", "\"Acme\"", 1));
-        runs.Should().ContainSingle(r => r.Function == "greet").Which.Should().Be(("greet", "Succeeded", "\"hello Acme\"", 2));
+        var welcome = runs.Should().ContainSingle(r => r.Function == "welcome").Subject;
+        var greet = runs.Should().ContainSingle(r => r.Function == "greet").Subject;
+        (welcome.Status, welcome.Depth, greet.Status, greet.Depth).Should().Be(("Succeeded", 1, "Succeeded", 2));
+        var welcomed = JsonNode.Parse(welcome.Result!)!;
+        var greeted = JsonNode.Parse(greet.Result!)!;
+        (welcomed["name"]!.GetValue<string>(), greeted["hello"]!.GetValue<string>()).Should().Be(("Acme", "Acme"));
+        // One trace: the request that created the row, through the outbox, the row's run, the
+        // message it emitted and the run that started -- each queued run's span under what queued it.
+        var trace = welcomed["trace"]!.GetValue<string>();
+        trace.Should().MatchRegex("^[0-9a-f]{32}$");
+        greeted["trace"]!.GetValue<string>().Should().Be(trace);
+        (await TraceParentsAsync(tenantId, ct)).Where(t => t.Function is "welcome" or "greet")
+            .Should().HaveCount(2).And.OnlyContain(t => t.TraceParent != null && t.TraceParent.Split('-')[1] == trace);
 
         // A function that rewrites what triggers it: the cascade stops at the depth limit.
         var deal = await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/crm/_records/deals", slug, owner, new { title = "x" }), ct), ct);
@@ -985,6 +998,19 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var runs = new List<(string, string, string?, int)>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) runs.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetInt32(3)));
+        return runs;
+    }
+
+    private async Task<List<(string Function, string? TraceParent)>> TraceParentsAsync(Guid tenantId, CancellationToken ct)
+    {
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """SELECT "Function", "TraceParent" FROM functions.runs WHERE "TenantId" = @tenant""";
+        cmd.Parameters.AddWithValue("tenant", tenantId);
+        var runs = new List<(string, string?)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) runs.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1)));
         return runs;
     }
 

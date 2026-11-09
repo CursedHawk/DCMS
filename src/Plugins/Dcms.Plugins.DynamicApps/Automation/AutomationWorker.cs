@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 using Dcms.Shared.Data;
+using Dcms.Shared.Telemetry;
 namespace Dcms.Plugins.DynamicApps.Automation;
 
 /// <summary>
@@ -216,7 +217,12 @@ public sealed class AutomationWorker(
         foreach (var message in pending)
         {
             var restored = new AuditScope();
-            AuditPropagation.Restore(restored, AuditPropagation.FromJson(message.ContextJson), message.TenantId);
+            var carried = AuditPropagation.FromJson(message.ContextJson);
+            AuditPropagation.Restore(restored, carried, message.TenantId);
+            // The change's trace goes on through the outbox: what this event sets off (a queued
+            // function run) is a child of this span, not a root nobody can connect to the request.
+            using var activity = DcmsActivitySource.StartLinked("apps.outbox route", AuditPropagation.ParentContext(carried));
+            activity?.SetTag("dcms.app_event.id", message.Id);
             using (ambient.Enter(restored))
             {
                 try

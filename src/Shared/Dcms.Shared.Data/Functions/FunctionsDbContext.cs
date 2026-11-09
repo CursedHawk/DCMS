@@ -145,6 +145,9 @@ public sealed class FunctionRun : EnvironmentEntity
     public Guid? CausationId { get; set; }
     public int Depth { get; set; }
 
+    /// <summary>The W3C traceparent of what queued it: the run's span continues that trace.</summary>
+    public string? TraceParent { get; set; }
+
     [AuditIgnore]
     public string? Result { get; set; }
     public string? Error { get; set; }
@@ -259,6 +262,7 @@ public class FunctionsDbContext(DbContextOptions<FunctionsDbContext> options) : 
             e.Property(r => r.Result).HasColumnType("jsonb");
             e.Property(r => r.Trace).HasColumnType("jsonb");
             e.Property(r => r.Error).HasMaxLength(4000);
+            e.Property(r => r.TraceParent).HasMaxLength(64);
             e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.TriggerEventId, r.Function }).IsUnique();
             e.HasIndex(r => new { r.TenantId, r.EnvironmentId, r.InstanceId, r.CreatedAt });
             e.HasIndex(r => r.CorrelationId);

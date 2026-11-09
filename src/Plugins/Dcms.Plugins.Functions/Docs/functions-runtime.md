@@ -131,6 +131,21 @@ must hold the permissions what it uses implies.
       headers: new Dictionary<string, string> { ["Authorization"] = $"Bearer {ctx.Secrets.Ref("STRIPE_KEY")}" });
   ```
 
+## Trace id
+
+`ctx.run.traceId` (C#: `ctx.Run.TraceId`) is the run's W3C trace id, 32 hex digits. It is the
+trace of what started the run, an HTTP call, a job, a row change, a message, and every run that
+one sets off (`invoke`, `jobs.enqueue`, `messages.emit`) shares it. Quote it when reporting a
+problem.
+
+Outbound requests carry no `traceparent` of the platform's. To continue the trace in a service of
+your own, send one yourself:
+
+```ts
+const span = crypto.getRandomValues(new Uint8Array(8)).reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
+await fetch("https://api.example.com/orders", { headers: { traceparent: `00-${ctx.run!.traceId}-${span}-01` } });
+```
+
 ## Limits of a run
 
 | | |

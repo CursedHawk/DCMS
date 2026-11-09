@@ -7,6 +7,7 @@ using Dcms.Plugins.Functions.Build;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Data.Functions;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Functions.Runtime;
@@ -18,7 +19,9 @@ public delegate Task<WebSocket> FunctionSocketFactory(CancellationToken ct);
 /// <param name="Generation">How many runs deep in a chain of enqueued jobs this is: 0 for one nothing enqueued.</param>
 /// <param name="Origin">The action this run's chain began with; a new one when nothing set it off.</param>
 /// <param name="RunId">The queued run, when it is one: what its writes and messages name as their cause.</param>
-public sealed record RunTrigger(string Kind, JsonNode? Detail = null, int Generation = 0, RunOrigin? Origin = null, Guid? RunId = null)
+/// <param name="TraceParent">The queued run's stored traceparent: its span's parent, there being no live one.</param>
+public sealed record RunTrigger(string Kind, JsonNode? Detail = null, int Generation = 0, RunOrigin? Origin = null, Guid? RunId = null,
+    string? TraceParent = null)
 {
     public RunOrigin Chain { get; } = Origin ?? RunOrigin.New();
 
@@ -55,6 +58,27 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
         RunTarget target, JsonNode? input, RunTrigger trigger, CancellationToken ct,
         JsonObject? request = null, JsonObject? user = null, int depth = 0, RunBudget? budget = null, JsonObject? simulatedTrigger = null)
     {
+        // The run's span: a child of the request, job or run that started it, or -- queued, with
+        // nothing live -- of whatever queued it. Its host calls (queries, fetches) nest under it,
+        // and the function is told its trace id (ctx.run.traceId).
+        var queued = trigger.TraceParent is { } stored && ActivityContext.TryParse(stored, null, out var parent) ? parent : default;
+        using var activity = DcmsActivitySource.StartLinked($"function {target.Function.Name}", queued, ActivityKind.Internal);
+        activity?.SetTag("dcms.function.name", target.Function.Name);
+        activity?.SetTag("dcms.function.trigger", trigger.Kind);
+        activity?.SetTag("dcms.function.deployment", target.Deployment.Number);
+        activity?.SetTag("dcms.function.depth", depth);
+        if (trigger.RunId is { } runId) activity?.SetTag("dcms.function.run_id", runId);
+
+        var outcome = await RunInSessionAsync(target, input, trigger, ct, request, user, depth, budget, simulatedTrigger);
+        activity?.SetTag("dcms.function.status", outcome.Status);
+        if (!outcome.Succeeded) activity?.SetStatus(ActivityStatusCode.Error, outcome.Status);
+        return outcome;
+    }
+
+    private async Task<RunOutcome> RunInSessionAsync(
+        RunTarget target, JsonNode? input, RunTrigger trigger, CancellationToken ct,
+        JsonObject? request, JsonObject? user, int depth, RunBudget? budget, JsonObject? simulatedTrigger)
+    {
         // Every call the run makes resolves in the deployment's own environment, however it was started.
         using var rls = RlsScope.Environment(target.Deployment.TenantId, target.Deployment.EnvironmentId);
         var clock = Stopwatch.StartNew();
@@ -79,7 +103,11 @@ public sealed class FunctionRunner(FunctionSocketFactory sockets, IServiceProvid
                     // What the function is told started it. A test from the editor may claim a row
                     // event or a message (workbench W2); the run itself stays what it is.
                     ["trigger"] = simulatedTrigger?.DeepClone() ?? new JsonObject { ["kind"] = trigger.Kind, ["detail"] = trigger.Detail?.DeepClone() },
-                    ["run"] = new JsonObject { ["function"] = target.Function.Name, ["deployment"] = target.Deployment.Number, ["depth"] = depth },
+                    ["run"] = new JsonObject
+                    {
+                        ["function"] = target.Function.Name, ["deployment"] = target.Deployment.Number, ["depth"] = depth,
+                        ["traceId"] = Activity.Current?.TraceId.ToHexString(),
+                    },
                     ["request"] = request?.DeepClone(),
                     ["user"] = user?.DeepClone(),
                 },

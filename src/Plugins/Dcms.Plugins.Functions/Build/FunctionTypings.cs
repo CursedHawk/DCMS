@@ -215,7 +215,19 @@ public static class FunctionTypings
           user: User | null;
           /** What started this run: the trigger and its event. */
           trigger: { kind: string; detail: Json } | null;
-          run: { function: string; deployment: number; depth: number } | null;
+          run: {
+            function: string;
+            /** The deployment's number; 0 for a test from the editor. */
+            deployment: number;
+            /** How many invokes deep this run is. */
+            depth: number;
+            /**
+             * This run's W3C trace id (32 hex digits): the trace of the request, job or event that
+             * started it, which every run it sets off shares. Quote it to support, or send it on
+             * yourself as a `traceparent` header; the platform does not add one to your requests.
+             */
+            traceId: string | null;
+          } | null;
         }
 
         export interface FunctionSpec<I, O> {
