@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
 namespace Dcms.ScriptRunner;
@@ -20,8 +21,11 @@ namespace Dcms.ScriptRunner;
 /// through them, log and result size. Past any of them the process is killed and the run ends as
 /// <c>limit</c>.</para>
 /// </summary>
-public sealed class FunctionSession : IDisposable
+public sealed partial class FunctionSession : IDisposable
 {
+    [GeneratedRegex(@"\b(?:[A-Z][A-Za-z]*Error|Aborted|OutOfMemoryException)\b")]
+    private static partial Regex ErrorName();
+
     private readonly ScriptRunnerOptions _o;
     private readonly ILogger<FunctionSession> logger;
     private readonly SemaphoreSlim _gate;
@@ -192,7 +196,10 @@ public sealed class FunctionSession : IDisposable
             }
             // The exit code only: stderr can quote the function and its data, and logs leave this box.
             logger.LogWarning("deno exited with {ExitCode} ({StderrChars} characters on stderr)", process.ExitCode, errors.Length);
-            return Done("error", error: $"The function could not run (exit {process.ExitCode}).");
+            // Which JS errors it died of, by class name only (never their messages): what tells a
+            // runtime failure from one of the function's own when the exit code alone cannot.
+            var died = string.Join(", ", ErrorName().Matches(errors).Select(m => m.Value).Distinct().Take(3));
+            return Done("error", error: $"The function could not run (exit {process.ExitCode}{(died.Length > 0 ? $": {died}" : "")}).");
         }
         finally
         {

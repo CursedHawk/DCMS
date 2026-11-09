@@ -58,7 +58,9 @@ public class PublicEgressTests
     public async Task A_third_party_gets_no_trace_context_of_ours_unless_the_caller_sends_one()
     {
         var ct = TestContext.Current.CancellationToken;
-        var builder = WebApplication.CreateSlimBuilder();
+        // A service's own telemetry, OpenTelemetry's HttpClient instrumentation included: that
+        // injects headers by itself, around whatever the handler is told.
+        var builder = WebApplication.CreateSlimBuilder().AddDcmsServiceDefaults("egress-test");
         await using var app = builder.Build();
         app.Urls.Add("http://127.0.0.1:0");
         app.MapGet("/echo", (HttpRequest r) => r.Headers.TraceParent.ToString());

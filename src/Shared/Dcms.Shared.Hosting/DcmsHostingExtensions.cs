@@ -136,6 +136,13 @@ public static class DcmsHostingExtensions
             }
         });
 
+        // W3C trace context alone. With anything else (the SDK's default adds baggage), the
+        // HttpClient instrumentation writes the headers itself, over whatever the handler's own
+        // propagator says -- so PublicEgress could not keep our traceparent from a third party.
+        // With this one it leaves propagation to HttpClient, which honours each handler's setting.
+        // Nothing here uses OpenTelemetry baggage.
+        OpenTelemetry.Sdk.SetDefaultTextMapPropagator(new OpenTelemetry.Context.Propagation.TraceContextPropagator());
+
         var otel = builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
                 .AddService(serviceName, serviceNamespace: ServiceNamespace, serviceVersion: serviceVersion, serviceInstanceId: serviceInstanceId)
