@@ -7,7 +7,7 @@ import * as data from '../fixtures/data';
  * saved settings through the plugin's own route.
  */
 
-test.use({ grants: [...data.ALL_TENANT_PERMISSIONS, 'plugin:youtube:sync'] });
+test.use({ grants: [...data.ALL_TENANT_PERMISSIONS, 'plugin:youtube:videos:sync'] });
 
 const INSTANCE = {
   id: 'cccccccc-0000-0000-0000-0000000000b1', pluginId: 'youtube', slug: 'videos', name: 'Videos',

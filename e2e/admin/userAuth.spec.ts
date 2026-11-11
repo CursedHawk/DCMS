@@ -11,10 +11,10 @@ import * as data from '../fixtures/data';
 test.use({
   grants: [
     ...data.ALL_TENANT_PERMISSIONS,
-    'plugin:user-auth:users-read',
-    'plugin:user-auth:users-manage',
-    'plugin:user-auth:access-manage',
-    'plugin:user-auth:providers-manage',
+    'plugin:user-auth:users:users-read',
+    'plugin:user-auth:users:users-manage',
+    'plugin:user-auth:users:access-manage',
+    'plugin:user-auth:users:providers-manage',
   ],
 });
 

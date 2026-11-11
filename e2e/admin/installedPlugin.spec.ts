@@ -26,9 +26,9 @@ test.beforeAll(() => {
 test.use({
   grants: [
     ...data.ALL_TENANT_PERMISSIONS,
-    'plugin:sample-guestbook:read',
-    'plugin:sample-guestbook:moderate',
-    'plugin:sample-guestbook:export',
+    'plugin:sample-guestbook:guests:read',
+    'plugin:sample-guestbook:guests:moderate',
+    'plugin:sample-guestbook:guests:export',
   ],
 });
 

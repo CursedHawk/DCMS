@@ -10,8 +10,8 @@ import * as data from '../fixtures/data';
 test.use({
   grants: [
     ...data.ALL_TENANT_PERMISSIONS,
-    'plugin:functions:read', 'plugin:functions:edit', 'plugin:functions:deploy',
-    'plugin:functions:logs', 'plugin:functions:keys', 'plugin:functions:secrets',
+    'plugin:functions:fn:read', 'plugin:functions:fn:edit', 'plugin:functions:fn:deploy',
+    'plugin:functions:fn:logs', 'plugin:functions:fn:keys', 'plugin:functions:fn:secrets',
   ],
 });
 

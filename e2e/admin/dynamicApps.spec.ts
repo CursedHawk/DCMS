@@ -11,13 +11,13 @@ import * as data from '../fixtures/data';
 test.use({
   grants: [
     ...data.ALL_TENANT_PERMISSIONS,
-    'plugin:dynamic-apps:model-read',
-    'plugin:dynamic-apps:model-write',
-    'plugin:dynamic-apps:publish',
-    'plugin:dynamic-apps:data-read',
-    'plugin:dynamic-apps:data-write',
-    'plugin:dynamic-apps:data-delete',
-    'plugin:dynamic-apps:data-import',
+    'plugin:dynamic-apps:crm:model-read',
+    'plugin:dynamic-apps:crm:model-write',
+    'plugin:dynamic-apps:crm:publish',
+    'plugin:dynamic-apps:crm:data-read',
+    'plugin:dynamic-apps:crm:data-write',
+    'plugin:dynamic-apps:crm:data-delete',
+    'plugin:dynamic-apps:crm:data-import',
   ],
 });
 
@@ -297,7 +297,7 @@ test('a CSV file is checked, then imported into the table', async ({ page, api }
 });
 
 test.describe('a member who may read the app\'s records and nothing else', () => {
-  test.use({ grants: ['plugin:dynamic-apps:data-read'] });
+  test.use({ grants: ['plugin:dynamic-apps:crm:data-read'] });
 
   test('opens them from the menu, without the plugin management around them', async ({ page, api }) => {
     const record = { id: 'dddddddd-0000-0000-0000-000000000002', version: 1, created_at: '2026-10-07T10:00:00Z',
