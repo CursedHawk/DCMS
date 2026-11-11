@@ -23,7 +23,7 @@ namespace Dcms.ScriptRunner;
 /// </summary>
 public sealed partial class FunctionSession : IDisposable
 {
-    [GeneratedRegex(@"\b(?:[A-Z][A-Za-z]*Error|Error|Uncaught|ExitStatus|Aborted|OutOfMemoryException)\b")]
+    [GeneratedRegex(@"\b(?:[A-Z][A-Za-z]*Error|Error|Uncaught|ExitStatus|Aborted|OutOfMemoryException|Fatal|Check failed)\b")]
     private static partial Regex ErrorName();
 
     private readonly ScriptRunnerOptions _o;
@@ -188,9 +188,12 @@ public sealed partial class FunctionSession : IDisposable
             }
             var errors = await worker.Stderr;
             // 133: V8 aborted (SIGTRAP) at its heap limit; 134: V8's fatal out-of-memory abort (SIGABRT), seen
-            // when the box itself is short of memory; 137: the kernel's OOM killer.
+            // when the box itself is short of memory; 137: the kernel's OOM killer. V8's fatal-error path
+            // ("# Fatal error ... Check failed", exit 1 under Deno) is a commit refused under the process's
+            // data limit: memory too (CSharpFunctionTests on CI, a .NET hog came back as "exit 1").
             if (process.ExitCode is 133 or 134 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
-                || errors.Contains("out of memory", StringComparison.OrdinalIgnoreCase))
+                || errors.Contains("out of memory", StringComparison.OrdinalIgnoreCase)
+                || errors.Contains("# Fatal", StringComparison.Ordinal) || errors.Contains("Fatal JavaScript", StringComparison.Ordinal))
             {
                 return Done("limit", error: $"The function used more than {heap} MB of memory.");
             }
@@ -271,7 +274,8 @@ public sealed partial class FunctionSession : IDisposable
                 (_o.DataLimitMegabytes + 2L * heap) * 1024 * 1024,
                 new Dictionary<string, string> { ["DENO_DIR"] = cache.FullName });
             return new Worker(process, cache, new LineReader(process.StandardOutput, _o.MaxMessageBytes),
-                Confined.ReadBoundedAsync(process.StandardError, 4_000, onOverflow: null));
+                // Enough for V8's out-of-memory report, whose GC trace comes before the line that says so.
+                Confined.ReadBoundedAsync(process.StandardError, 64_000, onOverflow: null));
         }
         catch
         {

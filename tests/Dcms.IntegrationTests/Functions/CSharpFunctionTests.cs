@@ -605,7 +605,10 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
                 static int s_runs;
                 public override Task<int> Run(JsonNode input, Context ctx)
                 {
-                    if (++s_runs == 1) { var keep = new List<byte[]>(); while (true) keep.Add(new byte[16 * 1024 * 1024]); }
+                    // One allocation past what the sandbox has: the limit, every time. (Filling memory a
+                    // block at a time lets whichever allocation comes last fail, at random; Limits_end_the_run
+                    // covers that. This test is about what happens to the process after a limit.)
+                    if (++s_runs == 1) GC.KeepAlive(new byte[Array.MaxLength]);
                     return Task.FromResult(s_runs);
                 }
             }
