@@ -66,8 +66,6 @@ function SettingsForm({ instance, manifest }: { instance: PluginInstance; manife
   useEffect(() => setConfig(parseInstanceConfig(instance.config)), [instance.config]);
   const schema = parseConfigSchema(manifest.configJsonSchema);
   const descriptionRequired = manifest.allowMultipleInstances;
-  // Only a plugin that offers contracts has anything an AI agent could use.
-  const offersContracts = (manifest.provides?.length ?? 0) > 0;
 
   const save = useMutation({
     mutationFn: () =>
@@ -116,15 +114,14 @@ function SettingsForm({ instance, manifest }: { instance: PluginInstance; manife
         />
         <p className="text-xs text-muted-foreground">{t('plugins.descriptionHint')}</p>
       </div>
-      {offersContracts ? (
-        <div className="flex items-start justify-between gap-4 rounded-md border p-3">
-          <div className="space-y-0.5">
-            <Label htmlFor="plugin-ai-tools">{t('plugins.aiTools.label')}</Label>
-            <p className="text-xs text-muted-foreground">{t('plugins.aiTools.hint')}</p>
-          </div>
-          <Switch id="plugin-ai-tools" checked={aiTools} onCheckedChange={setAiTools} />
+      {/* Every plugin has something for an agent: its settings (dcms.plugins@1), and whatever contracts it offers. */}
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="plugin-ai-tools">{t('plugins.aiTools.label')}</Label>
+          <p className="text-xs text-muted-foreground">{t('plugins.aiTools.hint')}</p>
         </div>
-      ) : null}
+        <Switch id="plugin-ai-tools" checked={aiTools} onCheckedChange={setAiTools} />
+      </div>
       {Object.keys(schema).length > 0 ? (
         <Card>
           <CardHeader>

@@ -168,7 +168,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   {
     name: 'list_plugins',
     description:
-      'List the plugin instances installed in this workspace and whether each is enabled.',
+      "List the plugin instances installed in this workspace: whether each is enabled, its settings, and whether its AI tools are on (only then can you change its settings or use its tools; only a person can turn them on).",
     permission: Perm.PluginsManage,
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     run: async () => JSON.stringify(await api.get('/admin/plugins/instances')),

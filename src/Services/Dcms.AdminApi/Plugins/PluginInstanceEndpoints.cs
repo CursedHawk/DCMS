@@ -49,166 +49,43 @@ public static class PluginInstanceEndpoints
             return Results.Ok(instances);
         }).RequirePermission(PlatformPermissions.PluginsManage);
 
-        app.MapPost("/api/admin/plugins/instances", async (
-            CreateInstanceRequest body, IPluginCatalog catalog, PluginRegistry registry, PluginConfigValidator validator,
-            CmsDbContext db, TenancyDbContext tenancy, ITenantContext tenant, IEventPublisher events, ICacheService cache, DcmsMetrics metrics,
-            CancellationToken ct) =>
-        {
-            var manifest = catalog.Find(body.PluginId);
-            if (manifest is null)
+        // Install, configure, enable: PluginInstanceService, shared with dcms.plugins@1.
+        app.MapPost("/api/admin/plugins/instances", (CreateInstanceRequest body, PluginInstanceService plugins, CancellationToken ct) =>
+            Run(async () =>
             {
-                return Results.BadRequest(new { error = "Unknown plugin." });
-            }
-            if (PluginInstanceSlugs.Problem(body.Slug) is { } slugProblem)
-            {
-                return Results.BadRequest(new { error = slugProblem });
-            }
-            if (catalog.Manifests.FirstOrDefault(m => m.ReservedSlugs?.Contains(body.Slug) == true) is { } owner)
-            {
-                return Results.BadRequest(new { error = $"slug '{body.Slug}' is reserved: the {owner.Name} plugin's routes use it." });
-            }
-            if (await db.PluginInstances.AnyAsync(p => p.Slug == body.Slug, ct))
-            {
-                return Results.Conflict(new { error = "slug already in use." });
-            }
-            if (await EnvironmentLinkRules.AppLinkedAsync(tenancy, tenant.TenantId!.Value, body.Slug, ct))
-            {
-                return Results.Conflict(new { error = "Another environment's app is linked at this address." });
-            }
-            if (!manifest.AllowMultipleInstances &&
-                await db.PluginInstances.AnyAsync(p => p.PluginId == body.PluginId, ct))
-            {
-                return Results.Conflict(new { error = "This plugin allows only a single instance." });
-            }
-
-            // A new instance is enabled, so it must not need a contract nothing here provides.
-            if (await MissingAsync(registry, db, manifest.Id, ct) is { Count: > 0 } missing)
-            {
-                return MissingConflict(missing);
-            }
-
-            var config = body.Config ?? "{}";
-            var (valid, errors) = validator.Validate(manifest.ConfigJsonSchema, config);
-            if (!valid)
-            {
-                return Results.BadRequest(new { error = "Invalid configuration.", details = errors });
-            }
-
-            var instance = new PluginInstance
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenant.TenantId!.Value,
-                PluginId = manifest.Id,
-                PluginVersion = manifest.Version,
-                Slug = body.Slug,
-                Name = body.Name ?? manifest.Name,
-                Description = body.Description ?? manifest.Description,
-                ConfigJson = config,
-            };
-            var firstOfPlugin = !await db.PluginInstances.AnyAsync(p => p.PluginId == manifest.Id, ct);
-            db.PluginInstances.Add(instance);
-            await db.SaveChangesAsync(ct);
-            if (firstOfPlugin)
-            {
-                await PluginDefaultGrants.ApplyAsync(tenancy, instance.TenantId, manifest, ct);
-            }
-            await PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Created, ct);
-
-            return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance")
+                var instance = await plugins.CreateAsync(body.PluginId, body.Slug, body.Name, body.Description, body.Config, ct);
+                return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });
+            })).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance")
             .ManagedByDeployments("plugins");
 
-        app.MapPut("/api/admin/plugins/instances/{id:guid}", async (
-            Guid id, UpdateInstanceRequest body, IPluginCatalog catalog, PluginConfigValidator validator,
-            CmsDbContext db, IEventPublisher events, ICacheService cache, DcmsMetrics metrics, CancellationToken ct) =>
-        {
-            var instance = await db.PluginInstances.FirstOrDefaultAsync(p => p.Id == id, ct);
-            if (instance is null)
-            {
-                return Results.NotFound();
-            }
-            var manifest = catalog.Find(instance.PluginId);
-            if (manifest is not null && body.Config is not null)
-            {
-                var (valid, errors) = validator.Validate(manifest.ConfigJsonSchema, body.Config);
-                if (!valid)
-                {
-                    return Results.BadRequest(new { error = "Invalid configuration.", details = errors });
-                }
-                instance.ConfigJson = body.Config;
-            }
-            instance.Name = body.Name ?? instance.Name;
-            instance.Description = body.Description ?? instance.Description;
-            instance.AiToolsEnabled = body.AiToolsEnabled ?? instance.AiToolsEnabled;
-            instance.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(ct);
-            await PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Updated, ct);
-            return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance")
+        app.MapPut("/api/admin/plugins/instances/{id:guid}", (Guid id, UpdateInstanceRequest body, PluginInstanceService plugins, CancellationToken ct) =>
+            Run(async () => await plugins.UpdateAsync(id, body.Name, body.Description, body.Config, body.AiToolsEnabled, ct) is null
+                ? Results.NotFound()
+                : Results.NoContent()))
+            .RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance")
             .ManagedByDeployments("plugins");
 
-        app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", async (
-            Guid id, string action, CmsDbContext db, PluginRegistry registry, IEventPublisher events, ICacheService cache, DcmsMetrics metrics,
-            CancellationToken ct) =>
-        {
-            if (action is not ("enable" or "disable"))
-            {
-                return Results.NotFound();
-            }
-            var instance = await db.PluginInstances.FirstOrDefaultAsync(p => p.Id == id, ct);
-            if (instance is null)
-            {
-                return Results.NotFound();
-            }
-            if (action == "enable" && !instance.Enabled
-                && await MissingAsync(registry, db, instance.PluginId, ct) is { Count: > 0 } missing)
-            {
-                return MissingConflict(missing);
-            }
-            if (action == "disable" && instance.Enabled)
-            {
-                var remaining = await db.PluginInstances.AsNoTracking()
-                    .Where(p => p.Enabled && p.Id != instance.Id)
-                    .Select(p => new { p.PluginId, p.Slug })
-                    .ToListAsync(ct);
-                var dependents = PluginDependencies.Dependents(
-                    registry, instance.PluginId, remaining.Select(r => (r.PluginId, r.Slug)).ToList());
-                if (dependents.Count > 0)
-                {
-                    return Results.Conflict(new
-                    {
-                        error = "Other plugins require this one; disable them first: "
-                                + string.Join(", ", dependents.Select(d => $"{d.Slug} ({d.PluginId})").Distinct()) + ".",
-                        dependents = dependents.Select(d => new { d.PluginId, d.Slug, d.ContractId }),
-                    });
-                }
-            }
-            instance.Enabled = action == "enable";
-            instance.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(ct);
-            await PublishChange(events, cache, metrics, instance,
-                instance.Enabled ? PluginInstanceChangeKind.Enabled : PluginInstanceChangeKind.Disabled, ct);
-            return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance")
+        app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", (Guid id, string action, PluginInstanceService plugins, CancellationToken ct) =>
+            action is not ("enable" or "disable")
+                ? Task.FromResult(Results.NotFound())
+                : Run(async () => await plugins.SetEnabledAsync(id, action == "enable", ct) is null ? Results.NotFound() : Results.NoContent()))
+            .RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance")
             .ManagedByDeployments("plugins");
 
         return app;
     }
 
-    private static async Task<IReadOnlyList<MissingProvider>> MissingAsync(
-        PluginRegistry registry, CmsDbContext db, string pluginId, CancellationToken ct)
+    private static async Task<IResult> Run(Func<Task<IResult>> call)
     {
-        var enabled = await db.PluginInstances.AsNoTracking()
-            .Where(p => p.Enabled).Select(p => p.PluginId).Distinct().ToListAsync(ct);
-        return PluginDependencies.Missing(registry, pluginId, enabled);
+        try
+        {
+            return await call();
+        }
+        catch (PluginInstanceRefusal refusal)
+        {
+            return Results.Json(refusal.Body, statusCode: refusal.Status);
+        }
     }
-
-    private static IResult MissingConflict(IReadOnlyList<MissingProvider> missing) => Results.Conflict(new
-    {
-        error = "This plugin requires plugins that are not enabled here; enable them first: "
-                + string.Join(", ", missing.Select(m => string.Join(" or ", m.ProviderPluginIds)).Distinct()) + ".",
-        missing = missing.Select(m => new { m.ContractId, m.ProviderPluginIds }),
-    });
 
     /// <summary>
     /// The single place a plugin instance change leaves this service, which is why the counter

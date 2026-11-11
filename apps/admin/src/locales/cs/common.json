@@ -239,7 +239,7 @@
   "plugins": {
     "aiTools": {
       "label": "Povolit AI asistentovi používat tento plugin",
-      "hint": "Asistent může volat, co tento plugin nabízí — jen to, co dovolují oprávnění daného člena, a zápisy stále vyžadují schválení."
+      "hint": "Asistent může měnit nastavení tohoto pluginu a volat, co nabízí — jen to, co dovolují oprávnění daného člena, a rizikové změny nejdřív vyžadují schválení. Zapnout to může jen člověk."
     },
     "binding": {
       "unset": "Žádný",

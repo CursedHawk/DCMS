@@ -172,7 +172,9 @@ builder.AddDcmsPlugins(Dcms.PluginSdk.Abstractions.PluginPlane.Admin, plugins =>
     // The admin plane's media contract can import files; the site plane's cannot.
     .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginMedia, Dcms.AdminApi.Media.AdminPluginMedia>()
     // Git is here: a plugin's own repository, edited in the IDE (ADR 0029).
-    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginRepos, Dcms.AdminApi.Sites.Git.AdminPluginRepos>(),
+    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginRepos, Dcms.AdminApi.Sites.Git.AdminPluginRepos>()
+    // The console's plugin instances as a contract, for the assistant (install, settings, enable).
+    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginInstances, Dcms.AdminApi.Plugins.AdminPluginInstances>(),
     runsBackgroundWork);
 // Plugin imports fetch URLs that came from outside: public addresses only (PublicEgress).
 builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientName, client =>
@@ -194,6 +196,7 @@ builder.Services.AddJobHandler<Dcms.AdminApi.Media.DriveFileJob, Dcms.AdminApi.M
 // Environments (ADR 0026): the configuration kinds a workspace's environments move between them
 // as migrations, in the order a migration applies them; plugins add theirs on top.
 builder.Services.AddScoped<Dcms.AdminApi.Environments.EnvironmentMigrator>();
+builder.Services.AddScoped<Dcms.AdminApi.Plugins.PluginInstanceService>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.RolesConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.PluginsConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ApiConnectionsConfigKind>();

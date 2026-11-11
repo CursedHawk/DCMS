@@ -238,7 +238,7 @@
   "plugins": {
     "aiTools": {
       "label": "Let the AI assistant use this plugin",
-      "hint": "The assistant can call what this plugin offers — only what each member's own permissions allow, and writes still ask for approval."
+      "hint": "The assistant can change this plugin's settings and call what it offers — only what each member's own permissions allow, and risky changes ask for approval first. Only a person can turn this on."
     },
     "binding": {
       "unset": "None",
