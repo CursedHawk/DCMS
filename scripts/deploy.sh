@@ -73,7 +73,7 @@ CONFIG_MOUNTED_SERVICES=(alloy prometheus loki tempo pyroscope grafana nats vaul
 # tempo, alloy. Losing them costs telemetry rather than service, which is the right side of
 # the line to be stuck on -- but it is a gap, not a decision.
 HEALTH_GATED_SERVICES=(
-  identity admin-api jobs-worker content-api ai-gateway platform-api
+  vault identity admin-api jobs-worker content-api ai-gateway platform-api
   media-worker email-worker script-runner site-builder site-host edge
   admin-spa platform-spa landing-spa forgejo
 )

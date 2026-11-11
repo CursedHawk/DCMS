@@ -176,6 +176,10 @@ services:
       start_period: 5s
     image: hashicorp/vault:latest
     logging: *default-logging
+    # A Transit-sealed Vault exits 1 if the seal Vault on VPSM does not answer within its
+    # 2-minute boot timeout -- and without a restart policy it then stays down, taking every
+    # runtime Vault call (AI key decrypt, edge TLS keys) with it until a human notices.
+    restart: unless-stopped
     cap_add:
       - IPC_LOCK
     environment:
