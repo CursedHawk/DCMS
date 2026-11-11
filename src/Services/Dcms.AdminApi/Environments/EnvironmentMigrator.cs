@@ -508,9 +508,11 @@ public sealed class EnvironmentMigrator(
         if (applier.UserId is { } userId)
         {
             using var scope = target.Scope();
-            // Owner holds everything here, and every action on each plugin instance the deployment
-            // creates (plugin permissions are held per instance), which it cannot hold yet.
-            if (await db.MemberRoles.IgnoreTenantFilter().AnyAsync(r => r.TenantId == target.TenantId && r.Membership!.UserId == userId
+            // Owner of the target environment itself (roles are per environment) holds everything
+            // here, and every action on each plugin instance the deployment creates (plugin
+            // permissions are held per instance), which it cannot hold yet.
+            if (await db.MemberRoles.IgnoreTenantFilter().AnyAsync(r => r.TenantId == target.TenantId && r.EnvironmentId == target.Id && r.Role!.EnvironmentId == target.Id
+                    && r.Membership!.UserId == userId
                     && r.Role!.IsSystem && r.Role.Name == Tenancy.TenantProvisioning.OwnerRole, ct))
             {
                 return new EnvironmentApplyContext(null) { UserId = userId };
