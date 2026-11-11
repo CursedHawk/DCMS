@@ -34,7 +34,7 @@ public class PluginReferenceTests
     {
         var forms = PluginReference.Build(Registry, "forms")!;
 
-        forms.Provides.Single().Hooks.Should().ContainSingle().Which.Name.Should().Be("forms.submitting");
+        forms.Provides.Single(c => c.Id == "forms.submissions@1").Hooks.Should().ContainSingle().Which.Name.Should().Be("forms.submitting");
         forms.CSharp.Should().Contain("HookSubscription.Of<FormSubmitting, MyInterceptor>");
         forms.Consumes.Should().Contain(r => r.ContractId == "visitors.identity@1" && r.Optional
                                             // VisitorAuth's visitors, and User Authentication's users as visitors (ADR 0022).

@@ -22,6 +22,8 @@ public sealed class PluginInstancesContractTests(ContentFlowFixture fixture)
         var overview = await Json(await Call(app, "List", new { }, ct), ct);
         overview.GetProperty("available").EnumerateArray().Should().Contain(p => p.GetProperty("id").GetString() == "blog");
 
+        (await Call(app, "Install", new { pluginId = "blog", slug = "news", config = new { postsPerPage = 3 } }, ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "an agent installs with the defaults; configuring waits for the opt-in");
         var installed = await Json(await Call(app, "Install", new { pluginId = "blog", slug = "news", name = "News" }, ct), ct);
         installed.GetProperty("enabled").GetBoolean().Should().BeTrue();
         installed.GetProperty("aiToolsEnabled").GetBoolean().Should().BeFalse("a new instance's AI tools start off");

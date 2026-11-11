@@ -63,7 +63,7 @@ public sealed class YouTubePlugin : IPlugin
                 Unpublished: typeof(YouTubeVideoUnpublished)),
         ],
         publicConfigKeys: [YouTubeSettings.ChannelTitleKey],
-        provides: [ContractProvision.Of<IYouTubeVideos, YouTubeVideosSource>()],
+        provides: [ContractProvision.Of<IYouTubeVideos, YouTubeVideosSource>(), ContractProvision.Of<IYouTubeSyncing, YouTubeSyncing>()],
         consumes:
         [
             ContractRequirement.Of<IPluginContent>(),

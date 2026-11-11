@@ -111,6 +111,25 @@ as untrusted. The server re-checks exposure, opt-in and permission on every call
 AI through `dcms.ai` (the tenant's provider and quota via ai-gateway) and offer tools simply by
 exposing operations to `Ai`; there is no separate tool API.
 
+**Configuring plugins (2026-11, epic #624).** `dcms.plugins@1` is an admin-only platform
+contract over the console's instance routes (one `PluginInstanceService`): list, install,
+get/replace an instance's settings, enable or disable — five tools in all, not two per
+instance. A platform contract has no instance for the dispatcher to gate, so the
+implementation applies the same rule itself: on the AI plane an existing instance is reachable
+only with its AI tools on. **No input record carries `aiToolsEnabled`** (strict binding
+refuses it): the agent never widens its own reach, and installs with default settings only.
+Installing is `Dangerous`, because the first instance of a plugin also grants the workspace's
+Member role its defaults. Since every plugin now has something for an agent, the Settings
+screen offers the AI switch for every plugin.
+
+**Write operations get a contract of their own** (`forms.inbox`, `visitors.accounts`,
+`live-chat.moderation`, `functions.ops`, `youtube.sync`, `users.roles`, `users.realm`) rather
+than more operations on a read contract: a function that `uses.contracts` a read contract
+vouches at deploy for every admin-exposed operation's permission (`HostCalls.ContractPermissions`),
+so a write added there would make existing deployers need — and existing deployments gain — it.
+**No operation returns a credential:** secrets and provider client secrets are write-only, and
+a new Functions API key is made in the console only.
+
 ## Consequences
 
 - A plugin that needs a table, a secret, an email, a queue or another plugin's data has one

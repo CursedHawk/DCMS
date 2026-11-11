@@ -95,7 +95,7 @@ public sealed class LiveChatPlugin : IPlugin
         category: "Engagement",
         summary: "Live chat between site visitors and your team.",
         iconName: "MessagesSquare",
-        provides: [ContractProvision.Of<ILiveChat, LiveChatConversations>()],
+        provides: [ContractProvision.Of<ILiveChat, LiveChatConversations>(), ContractProvision.Of<ILiveChatModeration, LiveChatModeration>()],
         consumes:
         [
             // Grounds the bot's answers in the tenant's published content.

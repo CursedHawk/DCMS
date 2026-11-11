@@ -22,6 +22,7 @@ public sealed record PluginSettings(InstalledPlugin Instance, JsonElement Config
 public sealed record PluginSettingsUpdate(string Instance, string? Name = null, string? Description = null, JsonElement? Config = null);
 
 /// <param name="Slug">Lowercase letters, digits and hyphens: the instance's address (<c>/api/{slug}</c>) and its tools' prefix.</param>
+/// <param name="Config">The console's initial configuration. Refused on the AI plane: an agent configures an instance only once a person opted it in.</param>
 public sealed record PluginInstall(string PluginId, string Slug, string? Name = null, string? Description = null, JsonElement? Config = null);
 
 public sealed record PluginEnabledChange(string Instance, bool Enabled);
@@ -51,9 +52,12 @@ public interface IPluginInstances
                       "read it with GetSettings first and send it back with only the asked-for changes.")]
     Task<PluginSettings> UpdateSettingsAsync(PluginSettingsUpdate input, CancellationToken ct);
 
-    [Operation(OpRisk.Safe, Permission = "plugins:manage", Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "Install a plugin as a new, enabled instance. Its AI tools start off: ask the operator to turn them on in its Settings " +
-                      "before configuring it from here.")]
+    // Dangerous: a new instance is live at once, and the first of a plugin also gives the workspace's
+    // Member role that plugin's default permissions — a workspace role change the operator approves.
+    [Operation(OpRisk.Dangerous, Permission = "plugins:manage", Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Install a plugin as a new, enabled instance with its default settings (the first instance of a plugin also gives the " +
+                      "workspace's Member role its default permissions). Its AI tools start off: ask the operator to turn them on in its " +
+                      "Settings before configuring it from here.")]
     Task<InstalledPlugin> InstallAsync(PluginInstall input, CancellationToken ct);
 
     [Operation(OpRisk.Dangerous, Permission = "plugins:manage", Expose = OpExposure.Admin | OpExposure.Ai,

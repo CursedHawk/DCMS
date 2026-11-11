@@ -7,6 +7,9 @@ public static class ChatPermissions
 {
     /// <summary>The platform permission the chat console uses.</summary>
     public const string Read = "chat:read";
+
+    /// <summary>The platform permission the chat console's write actions use.</summary>
+    public const string Manage = "chat:manage";
 }
 
 /// <param name="Status">"Open" or "Closed"; all when null.</param>
@@ -45,4 +48,20 @@ public interface ILiveChat
     [Operation(OpRisk.Read, Permission = ChatPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai,
         ReturnsExternalText = true, Description = "One conversation's messages, oldest first.")]
     Task<ConversationMessages> GetMessagesAsync(ConversationRef input, CancellationToken ct);
+}
+
+/// <summary>
+/// The chat console's actions on conversations, for the assistant. Its own contract: what reads
+/// conversations must not start to need — or grant — deleting them.
+/// </summary>
+[DcmsContract("live-chat.moderation", 1, Description = "Close or delete site chat conversations.")]
+public interface ILiveChatModeration
+{
+    [Operation(OpRisk.Safe, Permission = ChatPermissions.Manage, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Close an open conversation.")]
+    Task CloseAsync(ConversationRef input, CancellationToken ct);
+
+    [Operation(OpRisk.Dangerous, Permission = ChatPermissions.Manage, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Delete a conversation and its messages for good.")]
+    Task DeleteAsync(ConversationRef input, CancellationToken ct);
 }

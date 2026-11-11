@@ -48,6 +48,12 @@ public sealed class AdminPluginInstances(
 
     public async Task<InstalledPlugin> InstallAsync(PluginInstall input, CancellationToken ct)
     {
+        if (context.PluginId == AiCaller && input.Config is { ValueKind: not JsonValueKind.Null })
+        {
+            // The opt-in gate covers every configuration, a new instance's first one too.
+            throw new ContractValidationException(
+                "Install with the default settings; once the operator has turned on the instance's AI tools, change them with UpdateSettings.");
+        }
         if (input.Config is { ValueKind: not JsonValueKind.Object and not JsonValueKind.Null })
         {
             throw new ContractValidationException("config is a JSON object.");

@@ -113,6 +113,8 @@ public sealed class FunctionsPlugin : IPlugin
             ContractProvision.Of<IUserResources, FunctionUserResources>(),
             // The app's code for the console's assistant: write, check, test, ship, deploy.
             ContractProvision.Of<IFunctionsCode, FunctionsCodeContract>(),
+            // Its runs, API keys (list and revoke only) and secrets (write-only), for the assistant.
+            ContractProvision.Of<IFunctionsOps, FunctionsOpsContract>(),
         ],
         jobs: [JobDeclaration.Of<BuildJob>(BuildJob.Name), JobDeclaration.Of<RunJob>(RunJob.Name)],
         subscribes:

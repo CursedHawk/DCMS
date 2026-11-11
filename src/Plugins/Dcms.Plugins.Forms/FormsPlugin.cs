@@ -129,7 +129,7 @@ public sealed class FormsPlugin : IPlugin
         category: "Engagement",
         summary: "Contact and signup forms, with submissions in an inbox.",
         iconName: "Inbox",
-        provides: [ContractProvision.Of<IFormSubmissions, FormSubmissions>()],
+        provides: [ContractProvision.Of<IFormSubmissions, FormSubmissions>(), ContractProvision.Of<IFormInbox, FormInbox>()],
         consumes:
         [
             ContractRequirement.Of<IPluginEmail>(),

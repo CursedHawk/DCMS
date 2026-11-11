@@ -8,6 +8,9 @@ public static class FormsPermissions
 {
     /// <summary>Reading submissions is a content permission: whoever may read the site's content may read what visitors sent.</summary>
     public const string SubmissionsRead = "content:read";
+
+    /// <summary>Marking and deleting them is the matching content write, as in the console's inbox.</summary>
+    public const string SubmissionsWrite = "content:write";
 }
 
 public sealed record SubmissionSummary(
@@ -25,6 +28,8 @@ public sealed record SubmissionQuery(string? FormName = null, int Page = 1, int 
 public sealed record SubmissionPage(IReadOnlyList<SubmissionSummary> Items, int Page, int PageSize, long TotalCount);
 
 public sealed record SubmissionRef(Guid SubmissionId);
+
+public sealed record SubmissionHandled(Guid SubmissionId, bool Handled = true);
 
 /// <summary>A form was submitted and stored. The payload is fetched through the contract, not carried here.</summary>
 [ContractEvent("form.submitted")]
@@ -54,3 +59,20 @@ public interface IFormSubmissions
 [ContractHook("forms.submitting")]
 public sealed record FormSubmitting(
     Guid InstanceId, string FormName, IReadOnlyDictionary<string, JsonElement> Data, Guid? VisitorId) : IPluginHook;
+
+/// <summary>
+/// The console's inbox actions on a Forms instance's submissions, for the assistant. A contract of
+/// its own, not more of <see cref="IFormSubmissions"/>: functions that read submissions vouch for
+/// that contract's permissions, and reading must not start to need — or grant — deleting.
+/// </summary>
+[DcmsContract("forms.inbox", 1, Description = "Mark a Forms instance's submissions handled, or delete them.")]
+public interface IFormInbox
+{
+    [Operation(OpRisk.Safe, Permission = FormsPermissions.SubmissionsWrite, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Mark a submission handled (or not handled again), as the inbox does.")]
+    Task MarkHandledAsync(SubmissionHandled input, CancellationToken ct);
+
+    [Operation(OpRisk.Dangerous, Permission = FormsPermissions.SubmissionsWrite, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Delete a submission for good.")]
+    Task DeleteAsync(SubmissionRef input, CancellationToken ct);
+}

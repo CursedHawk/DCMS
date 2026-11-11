@@ -88,7 +88,7 @@ public interface IVisitorProfiles
         Description = "The profile attributes this site defines, with their types and visibility.")]
     Task<AttributeDefinitionList> ListAttributeDefinitionsAsync(CancellationToken ct);
 
-    [Operation(OpRisk.Safe, Permission = VisitorPermissions.Manage, Expose = OpExposure.Admin,
+    [Operation(OpRisk.Safe, Permission = VisitorPermissions.Manage, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Set or clear attributes shared with plugins on a visitor's profile.")]
     Task<VisitorProfile> SetAttributesAsync(SetVisitorAttributes input, CancellationToken ct);
 }
@@ -132,3 +132,35 @@ public sealed record AttributeDefinition(
 /// <summary>Enums on the wire as the lowercase names the config schema uses ("plugins", "select").</summary>
 public sealed class CamelCaseEnumConverter<T>() : System.Text.Json.Serialization.JsonStringEnumConverter<T>(JsonNamingPolicy.CamelCase)
     where T : struct, Enum;
+
+/// <param name="Search">Part of an email or display name; all visitors, newest first, when empty.</param>
+public sealed record VisitorSearch(string? Search = null, int Page = 1, int PageSize = 25);
+
+public sealed record VisitorAccountInfo(Guid Id, string Email, string? DisplayName, bool EmailVerified, DateTimeOffset CreatedAt);
+
+public sealed record VisitorAccountPage(IReadOnlyList<VisitorAccountInfo> Items, long Total);
+
+/// <summary>
+/// The site's visitor accounts as the plugin's admin page manages them, for the assistant. A
+/// contract of its own: functions that read profiles vouch for <see cref="IVisitorProfiles"/>,
+/// and reading must not start to need — or grant — deleting accounts.
+/// </summary>
+[DcmsContract("visitors.accounts", 1, Description = "Find site visitor accounts, sign them out, mark them verified or delete them.")]
+public interface IVisitorAccounts
+{
+    [Operation(OpRisk.Read, Permission = VisitorPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
+        Description = "Visitor accounts matching an email or name, newest first.")]
+    Task<VisitorAccountPage> FindAsync(VisitorSearch input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe, Permission = VisitorPermissions.Manage, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "End a visitor's sessions everywhere: they sign in again once their current access token expires (minutes).")]
+    Task SignOutEverywhereAsync(VisitorRef input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe, Permission = VisitorPermissions.Manage, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Mark a visitor's email address verified.")]
+    Task MarkEmailVerifiedAsync(VisitorRef input, CancellationToken ct);
+
+    [Operation(OpRisk.Dangerous, Permission = VisitorPermissions.Manage, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Delete a visitor account and its sessions for good.")]
+    Task DeleteAsync(VisitorRef input, CancellationToken ct);
+}

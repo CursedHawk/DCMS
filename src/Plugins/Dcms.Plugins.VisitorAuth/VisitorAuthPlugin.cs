@@ -55,6 +55,7 @@ public sealed class VisitorAuthPlugin : IPlugin
         [
             ContractProvision.Of<IVisitorIdentity, VisitorIdentity>(),
             ContractProvision.Of<IVisitorProfiles, VisitorProfiles>(),
+            ContractProvision.Of<IVisitorAccounts, VisitorAccounts>(),
         ],
         consumes: [ContractRequirement.Of<IPluginEvents>()],
         dataSets:

@@ -45,3 +45,30 @@ public sealed class FormSubmissions(IPluginContext context, FormsDbContext db) :
         JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(s.DataJson) ?? [],
         s.VisitorId, s.SubmittedAt, s.HandledAt is not null);
 }
+
+/// <summary><c>forms.inbox@1</c>: the inbox's two actions on the providing instance's own submissions.</summary>
+public sealed class FormInbox(IPluginContext context, FormsDbContext db) : IFormInbox
+{
+    public async Task MarkHandledAsync(SubmissionHandled input, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(context.TenantId);
+        var row = await MineAsync(input.SubmissionId, ct);
+        row.HandledAt = input.Handled ? row.HandledAt ?? DateTimeOffset.UtcNow : null;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteAsync(SubmissionRef input, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(context.TenantId);
+        db.Submissions.Remove(await MineAsync(input.SubmissionId, ct));
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<FormSubmission> MineAsync(Guid id, CancellationToken ct)
+    {
+        var instanceId = context.Instance?.InstanceId
+            ?? throw new ContractValidationException("forms.inbox@1 is served by a Forms instance.");
+        return await db.Submissions.FirstOrDefaultAsync(s => s.Id == id && s.TenantId == context.TenantId && s.PluginInstanceId == instanceId, ct)
+               ?? throw new ContractValidationException($"No submission {id} in this form instance.");
+    }
+}
