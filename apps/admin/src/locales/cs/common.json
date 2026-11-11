@@ -176,8 +176,6 @@
     "selectAll": "Vybrat vše",
     "selectNone": "Zrušit výběr",
     "notInUse": "Zde se nepoužívá",
-    "showUnused": "Zobrazit {{count}} nepoužívaných",
-    "hideUnused": "Skrýt nepoužívané",
     "openFeature": "Otevřít",
     "deleteConfirm": "Smazat roli „{{name}}“?",
     "deleteConfirmInUse_one": "Smazat roli „{{name}}“? {{count}} člen přijde o vše, co uděluje.",

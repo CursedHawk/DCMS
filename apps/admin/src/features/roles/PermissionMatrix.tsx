@@ -12,8 +12,8 @@ import { type PermissionDef, groupPermissions } from '../rbac/api';
  * this actually affect* (each entry names the plugin instances or the site it
  * covers, and links to it), and *which of these matter here* — a plugin that
  * ships in the binary but has no enabled instance contributes permissions that
- * grant access to nothing, and those are folded away by default rather than
- * padding the list with noise.
+ * grant access to nothing, so they are not listed at all: only what the
+ * workspace has, and what the role already holds.
  */
 export function PermissionMatrix({
   catalog,
@@ -29,14 +29,13 @@ export function PermissionMatrix({
 }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
-  const [showUnused, setShowUnused] = useState(false);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return catalog.filter((p) => {
       // A permission the role already holds is always shown, even if its feature
       // is gone — otherwise it could never be revoked from this screen.
-      if (!p.feature.inUse && !showUnused && !selected.has(p.key)) return false;
+      if (!p.feature.inUse && !selected.has(p.key)) return false;
       if (!q) return true;
       return (
         p.displayName.toLowerCase().includes(q) ||
@@ -46,10 +45,9 @@ export function PermissionMatrix({
         p.feature.instances.some((i) => i.name.toLowerCase().includes(q))
       );
     });
-  }, [catalog, query, showUnused, selected]);
+  }, [catalog, query, selected]);
 
   const groups = groupPermissions(visible);
-  const unusedCount = catalog.filter((p) => !p.feature.inUse && !selected.has(p.key)).length;
 
   return (
     <div className="space-y-3">
@@ -66,17 +64,6 @@ export function PermissionMatrix({
         <span className="text-xs text-muted-foreground">
           {t('roles.selectedCount', { count: selected.size })}
         </span>
-        {unusedCount > 0 ? (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            onClick={() => setShowUnused((v) => !v)}
-          >
-            {showUnused
-              ? t('roles.hideUnused')
-              : t('roles.showUnused', { count: unusedCount })}
-          </button>
-        ) : null}
       </div>
 
       <div className="max-h-[55vh] space-y-4 overflow-y-auto pr-1">

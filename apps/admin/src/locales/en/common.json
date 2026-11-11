@@ -176,8 +176,6 @@
     "selectAll": "Select all",
     "selectNone": "Clear",
     "notInUse": "Not in use here",
-    "showUnused": "Show {{count}} unused",
-    "hideUnused": "Hide unused",
     "openFeature": "Open",
     "deleteConfirm": "Delete the role “{{name}}”?",
     "deleteConfirmInUse_one": "Delete the role “{{name}}”? {{count}} member will lose everything it grants.",
