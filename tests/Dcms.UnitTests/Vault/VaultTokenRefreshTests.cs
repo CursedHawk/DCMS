@@ -92,3 +92,55 @@ public class VaultTokenRefreshTests
         attempts.Should().Be(1);
     }
 }
+
+/// <summary>
+/// VaultSharp keeps the AppRole login as a lazily started Task for the life of the client. A
+/// login that failed because Vault was unreachable is therefore cached as a FAULTED task, and
+/// every later call rethrows that same exception, even after Vault is back. On vps1 that
+/// turned a two-hour Vault outage into ai-gateway answering every AI request with 500 until
+/// the container was restarted. Real client, real HTTP: the cache lives inside VaultSharp.
+/// </summary>
+public class VaultUnreachableRecoveryTests
+{
+    [Fact]
+    public async Task A_login_that_failed_while_Vault_was_down_is_not_reused_once_it_is_back()
+    {
+        var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+
+        var client = new VaultSharp.VaultClient(new VaultSharp.VaultClientSettings(
+            $"http://127.0.0.1:{port}",
+            new VaultSharp.V1.AuthMethods.AppRole.AppRoleAuthMethodInfo("role", "secret")));
+        var encryptor = new VaultTransitEncryptor(client, NullLogger<VaultTransitEncryptor>.Instance);
+
+        // Vault down: nothing listens, the login fails.
+        await FluentActions.Awaiting(() => encryptor.DecryptAsync("k", "vault:v1:x"))
+            .Should().ThrowAsync<HttpRequestException>();
+
+        // Vault back.
+        using var vault = new HttpListener();
+        vault.Prefixes.Add($"http://127.0.0.1:{port}/");
+        vault.Start();
+        var ct = TestContext.Current.CancellationToken;
+        _ = Task.Run(async () =>
+        {
+            while (vault.IsListening)
+            {
+                var ctx = await vault.GetContextAsync();
+                var body = ctx.Request.Url!.AbsolutePath.Contains("login")
+                    ? """{"auth":{"client_token":"t","lease_duration":3600,"renewable":true}}"""
+                    : """{"data":{"plaintext":"aGk="}}""";
+                var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.OutputStream.WriteAsync(bytes, ct);
+                ctx.Response.Close();
+            }
+        }, ct);
+
+        var plaintext = await encryptor.DecryptAsync("k", "vault:v1:x", ct);
+
+        System.Text.Encoding.UTF8.GetString(plaintext).Should().Be("hi");
+    }
+}

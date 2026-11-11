@@ -61,5 +61,16 @@ public static class VaultTokenRefresh
             resetToken();
             return await operation();
         }
+        catch (HttpRequestException ex)
+        {
+            // VaultSharp holds the AppRole login as a lazily started Task for the life of the
+            // client. A login that failed because Vault was unreachable stays cached as that
+            // FAULTED task, so every later call rethrows the same exception even after Vault is
+            // back -- on vps1 ai-gateway answered every AI request with 500 for hours after a
+            // Vault outage had ended. Drop the cached login; one fresh attempt per call.
+            logger.LogWarning(ex, "Could not reach Vault trying to {What}; dropping the cached login and retrying once.", what);
+            resetToken();
+            return await operation();
+        }
     }
 }
