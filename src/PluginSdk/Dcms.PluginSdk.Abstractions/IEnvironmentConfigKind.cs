@@ -30,6 +30,13 @@ public interface IEnvironmentConfigKind
     string? Permission => null;
 
     /// <summary>
+    /// The instance (its slug) of the kind's plugin that an item configures, when
+    /// <see cref="Permission"/> is a plugin key: plugin permissions are held per instance. Null,
+    /// the default: the permission held on any instance does.
+    /// </summary>
+    string? InstanceOf(string key) => null;
+
+    /// <summary>
     /// Where a migration applies this kind among the others, lowest first. The host's own kinds
     /// sit below 100 — roles, then plugin instances — so a plugin's kind (100 by default) finds
     /// the instance it configures already there.
@@ -66,8 +73,10 @@ public interface IEnvironmentConfigKind
 
 /// <summary>Who an item is being applied for.</summary>
 /// <param name="Held">
-/// The permissions the deployer was checked to hold in the receiving environment; null when no
-/// person is behind the write (a platform administrator, or a new environment copying its source).
+/// The permissions the deployer was checked to hold in the receiving environment; null when they
+/// hold everything (a platform administrator, the workspace's Owner — who also holds every action
+/// on each plugin instance the deployment creates) or no person is behind the write (a new
+/// environment copying its source).
 /// What an item vouches for must come from here, never be worked out afresh at write time: an
 /// earlier write in the same deployment can change what that would say.
 /// </param>
@@ -76,7 +85,7 @@ public sealed record EnvironmentApplyContext(IReadOnlySet<string>? Held)
     /// <summary>The value the change was made from, in the environment it was cut in; null for an add.</summary>
     public JsonElement? Before { get; init; }
 
-    /// <summary>The deployer, when a person is behind the write (<see cref="Held"/> is not null).</summary>
+    /// <summary>The deployer, when a person is behind the write.</summary>
     public Guid? UserId { get; init; }
 }
 

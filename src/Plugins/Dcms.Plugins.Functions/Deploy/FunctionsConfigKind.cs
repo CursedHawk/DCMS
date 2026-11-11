@@ -32,6 +32,9 @@ internal sealed class FunctionsConfigKind(
 
     public string? Permission => FunctionsPermissions.Deploy;
 
+    /// <summary>An item is an app, by its slug: the permission is held on it.</summary>
+    public string? InstanceOf(string key) => key;
+
     /// <summary>After Dynamic Apps (100): a build type-checks against the tables they bring.</summary>
     public int Order => 110;
 
@@ -58,8 +61,15 @@ internal sealed class FunctionsConfigKind(
             .ToList();
     }
 
-    public Task<IReadOnlyCollection<string>> PermissionsForAsync(Guid tenantId, string key, JsonElement value, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyCollection<string>>(value.Deserialize<Value>()?.Permissions ?? []);
+    /// <summary>What it was vouched for where it comes from, on the instances this environment has too.</summary>
+    public async Task<IReadOnlyCollection<string>> PermissionsForAsync(Guid tenantId, string key, JsonElement value, CancellationToken ct)
+    {
+        var slugs = (await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+            .Where(p => p.TenantId == tenantId).Select(p => p.Slug).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        return (value.Deserialize<Value>()?.Permissions ?? [])
+            .Where(p => !PluginPermissions.TryParse(p, out _, out var slug, out _) || slug is null || slug == key || slugs.Contains(slug))
+            .ToList();
+    }
 
     public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
@@ -103,13 +113,14 @@ internal sealed class FunctionsConfigKind(
 
         // Definer's rights, as a deploy by hand: what it uses here, all of which the deployer holds.
         // Refused, the build stays Ready for someone who does to deploy.
-        var required = DeploymentService.Required(registry, FunctionManifest.Deserialize(deployment.Manifest));
-        var missing = context.Held is { } held ? required.Where(p => !held.Contains(p)).ToList() : [];
+        var required = DeploymentService.Required(registry, FunctionManifest.Deserialize(deployment.Manifest), key);
+        var instances = (await contexts.EnabledInstancesAsync(tenantId, ct)).Select(i => (i.PluginId, i.Slug));
+        var (vouched, missing) = await FunctionManifest.Vouch(required, instances, p => Task.FromResult(context.Held?.Contains(p) ?? true));
         if (missing.Count > 0)
         {
             throw new EnvironmentConfigException($"app '{key}' uses what its deployer does not hold here: {string.Join(", ", missing)}");
         }
-        await Deployer.ActivateAsync(db, deployment, required, by, ct);
+        await Deployer.ActivateAsync(db, deployment, vouched, by, ct);
     }
 
     private static string Short(string sha) => sha[..Math.Min(sha.Length, 12)];

@@ -68,7 +68,7 @@ public sealed class AiContractTests(ContentFlowFixture fixture)
 
         // A member who may edit but not publish gets the edit tools and not publishing — in the
         // catalog, and when the call is made anyway.
-        var editor = await app.AddMemberAsync(["plugin:dynamic-apps:model-read", "plugin:dynamic-apps:model-write"], ct);
+        var editor = await app.AddMemberAsync(["plugin:dynamic-apps:crm:model-read", "plugin:dynamic-apps:crm:model-write"], ct);
         var editorTools = await CatalogAsync(app, editor, ct);
         editorTools.Should().Contain("dynamic-apps.config/ApplyChangeSet").And.NotContain("dynamic-apps.config/PublishDraft")
             .And.NotContain("dynamic-apps.records/QueryRecords");

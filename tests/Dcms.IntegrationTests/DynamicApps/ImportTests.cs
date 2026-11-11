@@ -114,7 +114,7 @@ public sealed class ImportTests(ContentFlowFixture fixture)
         var ct = TestContext.Current.CancellationToken;
         var app = await AppHarness.CreateAsync(fixture, ct);
         await app.PublishAsync(Model, ct);
-        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write"], ct);
+        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:crm:data-read", "plugin:dynamic-apps:crm:data-write"], ct);
         (await app.SendAsync(HttpMethod.Post, "/_records/companies/import", new { csv = "name\nAcme\n" }, ct, writer))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden, "creating records one by one is not importing them");
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Put, $"/api/admin/plugins/instances/{app.InstanceId}", app.Owner, app.Tenant,

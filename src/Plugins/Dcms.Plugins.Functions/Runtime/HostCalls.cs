@@ -126,12 +126,12 @@ public sealed partial class HostCalls(
         {
             throw new HostCallException($"This function does not declare uses.tables[\"{key}\"]: [\"{verb}\"].");
         }
-        Vouched(verb switch
+        Vouched(PluginPermissions.ForInstance(verb switch
         {
-            "read" => "plugin:dynamic-apps:data-read",
-            "delete" => "plugin:dynamic-apps:data-delete",
-            _ => "plugin:dynamic-apps:data-write",
-        });
+            "read" => FunctionManifest.DataRead,
+            "delete" => FunctionManifest.DataDelete,
+            _ => FunctionManifest.DataWrite,
+        }, app));
 
         var provider = (await instances.EnabledInstancesAsync(context.TenantId, ct))
             .FirstOrDefault(i => i.Slug == app && i.PluginId == "dynamic-apps")
@@ -217,7 +217,7 @@ public sealed partial class HostCalls(
         // The admin plane, as a member would call it, with the deployer's vouched permissions.
         var input = a.Count > 0 && a[0] is { } given ? JsonSerializer.SerializeToElement(given) : (JsonElement?)null;
         var outcome = await dispatcher.ExecuteAsync(context.TenantId, contract.Id, operation.Name, path[0], input,
-            ContractPlane.Admin, Actor, permission => Task.FromResult(target.Vouched.Contains(permission)), ct);
+            ContractPlane.Admin, Actor, permission => Task.FromResult(FunctionManifest.Covers(target.Vouched, permission)), ct);
         return outcome.Status switch
         {
             200 => JsonSerializer.SerializeToNode(outcome.Value, ContractDescriptorBuilder.Json),
@@ -245,7 +245,7 @@ public sealed partial class HostCalls(
         {
             throw new HostCallException($"This function does not declare uses.secrets: [\"{name}\"].");
         }
-        Vouched(FunctionsPermissions.Secrets);
+        Vouched(Own(FunctionsPermissions.Secrets));
         var secret = await context.Contracts.Get<IPluginSecrets>().GetAsync(new SecretName(name, target.Deployment.InstanceId), ct);
         return secret.Value;
     }
@@ -259,7 +259,7 @@ public sealed partial class HostCalls(
             throw new HostCallException("http.fetch takes an absolute http(s) URL.");
         }
         Egress(url);
-        Vouched(FunctionsPermissions.Egress);
+        Vouched(Own(FunctionsPermissions.Egress));
         var method = (args?["method"]?.GetValue<string>() ?? "GET").ToUpperInvariant();
         if (!Methods.Contains(method))
         {
@@ -383,7 +383,7 @@ public sealed partial class HostCalls(
             {
                 throw new HostCallException($"This function does not declare uses.secrets: [\"{name}\"].");
             }
-            Vouched(FunctionsPermissions.Secrets);
+            Vouched(Own(FunctionsPermissions.Secrets));
             var secret = await context.Contracts.Get<IPluginSecrets>().GetAsync(new SecretName(name, target.Deployment.InstanceId), ct);
             var value = secret.Value ?? throw new HostCallException($"The secret {name} is not set.");
             if (value.Contains('\r') || value.Contains('\n'))
@@ -709,9 +709,13 @@ public sealed partial class HostCalls(
 
     private PluginActor Actor => new(PluginActor.System.Kind, Key: $"function:{target.Function.Name}");
 
+    /// <summary>One of this app's own permissions, on this app (plugin permissions are held per instance).</summary>
+    private string Own(string permission) =>
+        PluginPermissions.Resolve(FunctionsPlugin.PluginId, context.Instance?.Slug, permission);
+
     private void Vouched(string permission)
     {
-        if (!target.Vouched.Contains(permission))
+        if (!FunctionManifest.Covers(target.Vouched, permission))
         {
             throw new HostCallException($"Deployment {target.Deployment.Number} was not deployed by someone holding '{permission}'. Deploy it again.");
         }

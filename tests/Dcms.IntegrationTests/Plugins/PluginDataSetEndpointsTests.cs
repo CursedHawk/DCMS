@@ -92,7 +92,7 @@ public sealed class PluginDataSetEndpointsTests(ContentFlowFixture fixture)
         await RegisterAsync(fixture.Content.CreateClient(), tenant, "ada@site.test", ct);
         var admin = fixture.Admin.CreateClient();
 
-        var reader = await AddMemberAsync(admin, owner, tenant, ["plugin:visitor-auth:read"], ct);
+        var reader = await AddMemberAsync(admin, owner, tenant, ["plugin:visitor-auth:members:read"], ct);
         var page = await JsonAsync(admin, AdminReq(HttpMethod.Get, "/api/admin/plugins/members/_data/visitors", reader, tenant), ct);
         var key = page.GetProperty("rows")[0].GetProperty("key").GetString();
         var sets = await JsonAsync(admin, AdminReq(HttpMethod.Get, "/api/admin/plugins/members/_data", reader, tenant), ct);

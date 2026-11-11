@@ -2,9 +2,19 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Dcms.Shared.Security.Authorization;
 
-public sealed class PermissionRequirement(string permission) : IAuthorizationRequirement
+/// <param name="anyInstance">
+/// For a plugin-wide key (<c>plugin:{id}:{action}</c>) checked where no instance is known: held
+/// when the action is held on any instance (<c>plugin:{id}:{slug}:{action}</c>).
+/// </param>
+public sealed class PermissionRequirement(string permission, bool anyInstance = false) : IAuthorizationRequirement
 {
     public string Permission { get; } = permission;
+
+    public bool AnyInstance { get; } = anyInstance;
+
+    /// <summary>Whether a set of held keys satisfies this requirement.</summary>
+    public bool IsMetBy(IReadOnlySet<string> held) =>
+        held.Contains(Permission) || (AnyInstance && held.Any(k => PlatformPermissions.IsInstanceOf(k, Permission)));
 }
 
 /// <summary>

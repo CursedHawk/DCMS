@@ -62,7 +62,7 @@ public static class PluginEndpoints
                 .AddEndpointFilter(new PluginHostContextFilter(plugin.Manifest.Id))
                 .AddEndpointFilter(PluginPermissionConvention.DeclareAudit);
             plugin.MapHostEndpoints(group, host);
-            PluginPermissionConvention.Apply(group, plugin.Manifest);
+            PluginPermissionConvention.Apply(group, plugin.Manifest, hostRoutes: true);
         }
         return app;
     }
@@ -87,7 +87,7 @@ public static class PluginEndpoints
             {
                 plugin.MapEndpoints(builder);
             }
-            PluginPermissionConvention.Apply(group, plugin.Manifest);
+            PluginPermissionConvention.Apply(group, plugin.Manifest, hostRoutes: false);
         }
         return app;
     }
@@ -182,6 +182,22 @@ public sealed class PluginInstanceFilter(string pluginId) : IEndpointFilter
             return Results.NotFound();
         }
 
+        // Plugin permissions are held per instance, so the route's permission is checked here, once
+        // the instance is known, rather than by a static policy on the endpoint.
+        // (A platform key or another plugin's is the endpoint's static policy: see PluginPermissionConvention.)
+        if (http.GetEndpoint()?.Metadata.OfType<PluginPermissionMetadata>().LastOrDefault() is { } required
+            && PluginPermissions.TryParse(PluginPermissions.Resolve(pluginId, required.Permission), out var owner, out _, out _)
+            && owner == pluginId)
+        {
+            var key = PluginPermissions.Resolve(pluginId, instance.Slug, required.Permission);
+            var authz = http.RequestServices.GetRequiredService<IAuthorizationService>();
+            if (!(await authz.AuthorizeAsync(http.User, null, PermissionPolicyProvider.PolicyName(key))).Succeeded)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Forbidden",
+                    detail: $"This requires the '{key}' permission.");
+            }
+        }
+
         var pluginContext = await factory.CreateAsync(tenantId, pluginId, instance, factory.CurrentActor(), http.RequestAborted);
         http.RequestServices.GetRequiredService<PluginContextAccessor>().Current = pluginContext;
         return await next(context);
@@ -211,7 +227,11 @@ internal static class PluginPermissionConvention
         return next(context);
     }
 
-    public static void Apply(IEndpointConventionBuilder group, PluginManifest manifest) =>
+    /// <param name="hostRoutes">
+    /// Routes outside any instance: their permission is held on any instance of the plugin.
+    /// Instance routes are checked by <see cref="PluginInstanceFilter"/> on the instance itself.
+    /// </param>
+    public static void Apply(IEndpointConventionBuilder group, PluginManifest manifest, bool hostRoutes) =>
         group.Finally(endpoint =>
         {
             if (endpoint.Metadata.OfType<PluginPermissionMetadata>().LastOrDefault() is { } required)
@@ -223,7 +243,14 @@ internal static class PluginPermissionConvention
                         $"Plugin '{manifest.Id}' route {endpoint.DisplayName} requires '{key}', which neither the plugin nor the platform declares.");
                 }
                 endpoint.Metadata.Add(new PermissionMetadata(key));
-                endpoint.Metadata.Add(new AuthorizeAttribute(PermissionPolicyProvider.PolicyName(key)));
+                if (hostRoutes || !PluginPermissions.TryParse(key, out var owner, out _, out _) || owner != manifest.Id)
+                {
+                    // No instance, or a key that is not the plugin's own (platform or another plugin's):
+                    // a static policy, with plugin keys held on any instance.
+                    endpoint.Metadata.Add(new AuthorizeAttribute(PluginPermissions.TryParse(key, out _, out _, out _)
+                        ? PermissionPolicyProvider.AnyInstancePolicyName(key)
+                        : PermissionPolicyProvider.PolicyName(key)));
+                }
             }
             if (endpoint.Metadata.OfType<PluginPublicRouteMetadata>().LastOrDefault() is { } open)
             {

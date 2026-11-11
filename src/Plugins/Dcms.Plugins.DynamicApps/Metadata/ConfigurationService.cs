@@ -802,8 +802,10 @@ public sealed class ConfigurationService(
     public Task<IReadOnlyCollection<string>> NeededPermissionsAsync(string snapshot, CancellationToken ct) =>
         Task.FromResult<IReadOnlyCollection<string>>([]);
 
+    /// <summary>Whether the member holds a Dynamic Apps permission on this app (they are held per instance).</summary>
     private async Task<bool> HoldsAsync(string permission)
     {
+        permission = PluginPermissions.Resolve(DynamicAppsPlugin.PluginId, context.Instance?.Slug, permission);
         if (_vouched?.Contains(permission) == true) return true;
         var user = services.GetService<IHttpContextAccessor>()?.HttpContext?.User;
         var authz = services.GetService<IAuthorizationService>();

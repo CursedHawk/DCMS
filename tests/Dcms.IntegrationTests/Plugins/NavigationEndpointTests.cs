@@ -71,7 +71,7 @@ public sealed class NavigationEndpointTests
     [Fact]
     public void Every_enabled_instance_is_an_app_with_its_work_under_it()
     {
-        var apps = AppsFor(PlatformPermissions.PluginsManage, PlatformPermissions.ContentRead, "plugin:dynamic-apps:data-read");
+        var apps = AppsFor(PlatformPermissions.PluginsManage, PlatformPermissions.ContentRead, "plugin:dynamic-apps:crm:data-read");
 
         // One per instance, named by the instance; an instance of a plugin no longer installed is not one.
         apps.Select(a => (a.To, a.Label, a.Detail)).Should().Equal(
@@ -85,8 +85,9 @@ public sealed class NavigationEndpointTests
     [Fact]
     public void A_member_sees_only_the_apps_and_screens_they_may_open()
     {
-        var reader = AppsFor("plugin:dynamic-apps:data-read");
-        reader.Should().HaveCount(2);
+        // Plugin permissions are held per instance: reading CRM opens CRM, not the HR desk.
+        var reader = AppsFor("plugin:dynamic-apps:crm:data-read");
+        reader.Select(a => a.To).Should().Equal("/apps/crm");
         reader[0].Children!.Select(c => c.To).Should().Equal("/apps/crm/records", "/apps/crm/inbox");
 
         // Nothing to open in it: no screen, no collection, not a plugin manager.

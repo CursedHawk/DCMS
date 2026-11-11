@@ -151,10 +151,27 @@ a new Functions API key is made in the console only.
 - **Plugin data was sandbox-scoped** (fixed after the review) until ADR 0026 retired the preview
   sandbox: a preview now acts on its environment's live data, and safe experiments belong in a
   development environment, which is a tenant of its own.
-- **Owners hold every plugin permission.** The Owner role is seeded with platform *and*
-  plugin permissions (`OwnerPermissionBackfill.OwnerPermissions`), and the startup backfill
-  adds any missing ones to existing tenants — including when a plugin later gains a permission.
-  Other roles get `plugin:{id}:{action}` keys through the role editor.
+- **Owners hold every plugin permission.** The Owner role holds every action on every
+  instance (`OwnerPermissionBackfill.OwnerPermissions`): granted when an instance is created,
+  and the startup backfill adds any missing ones — including when a plugin later gains a
+  permission. Other roles get them through the role editor.
+
+## Amendment (2026-11-11): plugin permissions are held per instance
+
+Roles hold plugin permissions per instance, `plugin:{id}:{slug}:{action}` (the slug never
+changes and names the same instance in every environment), so two YouTube channels or two
+Dynamic Apps applications are granted separately. Code keeps naming the plugin-wide
+`plugin:{id}:{action}`; the platform puts the slug in where the instance is known:
+`PluginInstanceFilter` for plugin routes (no static policy any more), the dispatcher after it
+picks the provider (and the catalog per instance), data sets, table views, navigation, the
+console's screens and `useCan`, repository bindings, tracked jobs, notifications a plugin raises,
+and Functions' vouching (its own keys on its app, table verbs on the table's app). Where no
+instance is known — host routes, a plugin-wide key in a job, a notification audience, another
+plugin's key on an open contract, an environment kind without `InstanceOf` — holding the action
+on any instance counts (`PermissionRequirement(anyInstance: true)`). A new instance gives Owner
+every action on it and Member its `GrantToMembers` ones; on startup, plugin-wide keys still
+stored (roles, repository bindings, Functions deployments' vouched sets) become the same keys on
+every instance of the plugin in their environment.
 
 ## Amendment (2026-10-15): tracked jobs and the worker role
 

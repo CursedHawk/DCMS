@@ -38,11 +38,11 @@ public sealed class GuestbookSampleTests(ContentFlowFixture fixture)
             }), ct);
         installed.StatusCode.Should().Be(HttpStatusCode.Created, await installed.Content.ReadAsStringAsync(ct));
 
-        // GrantToMembers: the first guestbook gave the Member role `read`.
+        // GrantToMembers: the guestbook gave the Member role `read` on it.
         var roles = await Json(admin, Req(HttpMethod.Get, "/api/admin/roles", owner, tenant), ct);
         roles.EnumerateArray().Single(r => r.GetProperty("name").GetString() == "Member")
             .GetProperty("permissions").EnumerateArray().Select(p => p.GetString())
-            .Should().Contain("plugin:sample-guestbook:read");
+            .Should().Contain("plugin:sample-guestbook:guests:read");
 
         // Site route + its own hook: the blocked word is masked, the entry waits for approval.
         var signed = await Json(content, Site(HttpMethod.Post, tenant, "/api/guests/sign", new { name = "Ada", message = "What a darn fine site" }), ct);

@@ -27,6 +27,9 @@ internal sealed class DynamicAppsConfigKind(
 
     public string? Permission => DynamicAppsPermissions.Publish;
 
+    /// <summary>An item is an application, by its instance's slug: the permission is held on it.</summary>
+    public string? InstanceOf(string key) => key;
+
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
         var instances = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()

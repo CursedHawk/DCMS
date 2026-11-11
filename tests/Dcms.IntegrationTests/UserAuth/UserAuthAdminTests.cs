@@ -40,7 +40,7 @@ public sealed class UserAuthAdminTests(ContentFlowFixture fixture)
         var outsider = await app.AddMemberAsync([], ct);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/plugins/users/users", outsider, app.Tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        var reader = await app.AddMemberAsync(["plugin:user-auth:users-read"], ct);
+        var reader = await app.AddMemberAsync(["plugin:user-auth:users:users-read"], ct);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/plugins/users/users", reader, app.Tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.OK);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/users/invite", reader, app.Tenant,
@@ -164,7 +164,7 @@ public sealed class UserAuthAdminTests(ContentFlowFixture fixture)
         token.GetProperty("accessToken").GetString().Should().Be($"preview:{userId}");
         fixture.Realms.PreviewRequests.Should().Contain((userId, app.Owner), "identity is told which administrator asked");
 
-        var reader = await app.AddMemberAsync(["plugin:user-auth:users-read"], ct);
+        var reader = await app.AddMemberAsync(["plugin:user-auth:users:users-read"], ct);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/plugins/users/users/{userId}/preview-token", reader, app.Tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden, "acting as a user takes managing them");
     }

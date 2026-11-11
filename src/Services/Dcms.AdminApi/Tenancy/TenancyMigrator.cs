@@ -1,3 +1,4 @@
+using Dcms.Shared.Caching;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.Audit;
@@ -144,10 +145,18 @@ public static class DcmsMigrationRunner
         }
 
         // Last: it records what it grants, so the audit outbox has to exist first.
+        await PluginPermissionScoping.ApplyAsync(
+            scoped.GetRequiredService<CmsDbContext>(),
+            scoped.GetRequiredService<SitesDbContext>(),
+            scoped.GetRequiredService<FunctionsDbContext>(),
+            logger,
+            ct);
         await OwnerPermissionBackfill.ApplyAsync(
             scoped.GetRequiredService<TenancyDbContext>(),
+            scoped.GetRequiredService<CmsDbContext>(),
             scoped.GetRequiredService<IPluginCatalog>(),
             scoped.GetRequiredService<IAuditRecorder>(),
+            scoped.GetRequiredService<ICacheService>(),
             logger,
             ct);
     }

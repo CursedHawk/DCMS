@@ -338,7 +338,7 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
                 VALUES (gen_random_uuid(), @tenant, @tenant, 'Function editor', false) RETURNING "Id"),
             grant_edit AS (
                 INSERT INTO tenancy.tenant_role_permissions ("Id", "TenantId", "EnvironmentId", "TenantRoleId", "Permission")
-                SELECT gen_random_uuid(), @tenant, @tenant, "Id", 'plugin:functions:edit' FROM role),
+                SELECT gen_random_uuid(), @tenant, @tenant, "Id", 'plugin:functions:fn:edit' FROM role),
             membership AS (
                 INSERT INTO tenancy.tenant_memberships ("Id", "TenantId", "UserId", "Email", "CreatedAt")
                 VALUES (gen_random_uuid(), @tenant, @user, @email, now()) RETURNING "Id")

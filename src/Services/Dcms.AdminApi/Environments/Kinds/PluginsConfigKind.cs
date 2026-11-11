@@ -74,8 +74,6 @@ public sealed class PluginsConfigKind(
         {
             throw new EnvironmentMigrationException("environments.errors.slugTakenByOtherPlugin", key);
         }
-        var firstOfPlugin = created && !await db.PluginInstances.IgnoreTenantFilter()
-            .AnyAsync(p => p.TenantId == tenantId && p.PluginId == manifest.Id, ct);
         var wasEnabled = !created && instance.Enabled;
         instance.Name = wanted.Name;
         instance.Description = wanted.Description;
@@ -84,7 +82,8 @@ public sealed class PluginsConfigKind(
         instance.AiToolsEnabled = wanted.AiToolsEnabled;
         instance.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        if (firstOfPlugin) await PluginDefaultGrants.ApplyAsync(tenancy, tenantId, manifest, ct);
+        // Owner holds everything on it; Member's permissions on it came with the roles (Order 10).
+        if (created) await PluginDefaultGrants.ApplyAsync(tenancy, cache, tenantId, manifest, key, memberDefaults: false, ct);
 
         var change = created ? PluginInstanceChangeKind.Created
             : wasEnabled == instance.Enabled ? PluginInstanceChangeKind.Updated

@@ -164,4 +164,49 @@ public static class PluginPermissions
     /// <summary>The key a manifest or route reference means: a bare action is the plugin's own, anything with ':' is a full key.</summary>
     public static string Resolve(string pluginId, string permission) =>
         permission.Contains(':') ? permission : $"plugin:{pluginId}:{permission}";
+
+    /// <summary>
+    /// The key a reference means on one instance of the plugin: plugin keys are held per instance
+    /// (<c>plugin:{pluginId}:{slug}:{action}</c>), so the plugin's own keys take the slug, and
+    /// platform keys or another plugin's keys stay as they are.
+    /// </summary>
+    public static string Resolve(string pluginId, string? slug, string permission)
+    {
+        var key = Resolve(pluginId, permission);
+        return slug is not null && TryParse(key, out var owner, out var keySlug, out _) && owner == pluginId && keySlug is null
+            ? ForInstance(key, slug)
+            : key;
+    }
+
+    /// <summary>
+    /// A plugin-wide key (<c>plugin:{pluginId}:{action}</c>, what manifests, routes and operations
+    /// name) on one instance: <c>plugin:{pluginId}:{slug}:{action}</c>. Anything else is returned as is.
+    /// </summary>
+    public static string ForInstance(string key, string slug) =>
+        TryParse(key, out var pluginId, out var keySlug, out var action) && keySlug is null
+            ? $"plugin:{pluginId}:{slug}:{action}"
+            : key;
+
+    /// <summary>A plugin key's parts; <paramref name="slug"/> is null for a plugin-wide key.</summary>
+    public static bool TryParse(string key, out string pluginId, out string? slug, out string action)
+    {
+        pluginId = action = string.Empty;
+        slug = null;
+        var parts = key.Split(':');
+        if (parts[0] != "plugin" || parts.Length is not (3 or 4) || parts.Any(p => p.Length == 0))
+        {
+            return false;
+        }
+        pluginId = parts[1];
+        slug = parts.Length == 4 ? parts[2] : null;
+        action = parts[^1];
+        return true;
+    }
+
+    /// <summary>
+    /// The plugin-wide key an instance key is held on (<c>plugin:{pluginId}:{action}</c>); anything
+    /// else as is. For checks that have no instance: holding the action on any instance.
+    /// </summary>
+    public static string WithoutInstance(string key) =>
+        TryParse(key, out var pluginId, out var slug, out var action) && slug is not null ? $"plugin:{pluginId}:{action}" : key;
 }

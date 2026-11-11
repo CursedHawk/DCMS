@@ -53,7 +53,7 @@ public sealed class TenantProvisioning(
         // Its production environment (ADR 0028), whose id is the tenant's.
         db.Environments.Add(new TenantEnvironment { Id = tenantId, TenantId = tenantId, Name = TenantEnvironment.Production });
 
-        var ownerRole = NewRole(tenantId, OwnerRole, OwnerPermissionBackfill.OwnerPermissions(plugins));
+        var ownerRole = NewRole(tenantId, OwnerRole, OwnerPermissionBackfill.OwnerPermissions(plugins, []));
         var memberRole = NewRole(tenantId, MemberRoleName,
             [PlatformPermissions.MediaRead, PlatformPermissions.AnalyticsRead]);
         db.TenantRoles.AddRange(ownerRole, memberRole);

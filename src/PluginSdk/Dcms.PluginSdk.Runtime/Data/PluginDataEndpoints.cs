@@ -66,12 +66,12 @@ public static class PluginDataEndpoints
         var result = new List<object>();
         foreach (var declaration in PluginDataSets.Of(found.Plugin.Manifest))
         {
-            if (!await MayAsync(http, ReadPermission(found.Plugin.Manifest.Id, declaration)))
+            if (!await MayAsync(http, found, ReadPermission(found.Plugin.Manifest.Id, declaration)))
             {
                 continue;
             }
             var set = await OpenAsync(http, found, declaration, ct);
-            result.Add(Describe(declaration, await set.DescribeAsync(ct), await MayAsync(http, WritePermission(found.Plugin.Manifest.Id, declaration))));
+            result.Add(Describe(declaration, await set.DescribeAsync(ct), await MayAsync(http, found, WritePermission(found.Plugin.Manifest.Id, declaration))));
         }
         return Results.Ok(result);
     }
@@ -261,11 +261,11 @@ public static class PluginDataEndpoints
         {
             return Results.NotFound();
         }
-        if (!await MayAsync(http, ReadPermission(found.Plugin.Manifest.Id, declaration)))
+        if (!await MayAsync(http, found, ReadPermission(found.Plugin.Manifest.Id, declaration)))
         {
             return Results.NotFound(); // a set the caller may not read is not listed either
         }
-        if (write && !await MayAsync(http, WritePermission(found.Plugin.Manifest.Id, declaration)))
+        if (write && !await MayAsync(http, found, WritePermission(found.Plugin.Manifest.Id, declaration)))
         {
             return Results.Json(new { error = "You may view this data but not change it." }, statusCode: StatusCodes.Status403Forbidden);
         }
@@ -345,10 +345,12 @@ public static class PluginDataEndpoints
     internal static string WritePermission(string pluginId, DataSetDeclaration set) =>
         PluginPermissions.Resolve(pluginId, set.WritePermission ?? PlatformPermissions.PluginsManage);
 
-    private static async Task<bool> MayAsync(HttpContext http, string permission)
+    /// <summary>Whether the caller holds the permission on this instance (plugin permissions are held per instance).</summary>
+    private static async Task<bool> MayAsync(HttpContext http, FoundInstance found, string permission)
     {
+        var key = PluginPermissions.Resolve(found.Plugin.Manifest.Id, found.Instance.Slug, permission);
         var authz = http.RequestServices.GetRequiredService<IAuthorizationService>();
-        return (await authz.AuthorizeAsync(http.User, null, PermissionPolicyProvider.PolicyName(permission))).Succeeded;
+        return (await authz.AuthorizeAsync(http.User, null, PermissionPolicyProvider.PolicyName(key))).Succeeded;
     }
 
     private static async Task<JsonObject> ValuesAsync(HttpContext http, JsonObject? itemSchema, CancellationToken ct)

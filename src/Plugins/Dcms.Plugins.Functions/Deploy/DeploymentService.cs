@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Dcms.Plugins.Functions.Build;
 using Dcms.Plugins.Functions.Runtime;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.Functions;
@@ -62,7 +63,7 @@ public sealed class DeployRefusedException(IReadOnlyList<string> missing)
 /// </summary>
 public sealed class DeploymentService(
     FunctionsDbContext db, IPluginContext context, IHttpContextAccessor http, IAuthorizationService authz,
-    PluginRegistry registry, FunctionRunner runner, RunQueue runs, Builder builder)
+    PluginRegistry registry, FunctionRunner runner, RunQueue runs, Builder builder, PluginContextFactory contexts)
 {
     /// <summary>What a new repository starts with: one function to call, and how to write more.</summary>
     public static readonly IReadOnlyDictionary<string, string> Starter = new Dictionary<string, string>
@@ -320,22 +321,19 @@ public sealed class DeploymentService(
         var required = target.Status == FunctionDeploymentStatus.Ready
             ? Required(FunctionManifest.Deserialize(target.Manifest))
             : target.VouchedPermissions;
-        var missing = new List<string>();
-        foreach (var permission in required)
-        {
-            if (!(await authz.AuthorizeAsync(http.HttpContext!.User, null, new PermissionRequirement(permission))).Succeeded)
-            {
-                missing.Add(permission);
-            }
-        }
-        return missing.Count > 0 ? throw new DeployRefusedException(missing) : required;
+        var instances = (await contexts.EnabledInstancesAsync(context.TenantId, http.HttpContext?.RequestAborted ?? default))
+            .Select(i => (i.PluginId, i.Slug));
+        var (vouched, missing) = await FunctionManifest.Vouch(required, instances,
+            async permission => (await authz.AuthorizeAsync(http.HttpContext!.User, null, new PermissionRequirement(permission))).Succeeded);
+        return missing.Count > 0 ? throw new DeployRefusedException(missing) : vouched;
     }
 
     /// <summary>Everything the functions use, contract operations included.</summary>
-    private List<string> Required(IReadOnlyList<FunctionSpec> functions) => Required(registry, functions);
+    private List<string> Required(IReadOnlyList<FunctionSpec> functions) =>
+        Required(registry, functions, context.Instance?.Slug ?? throw new InvalidOperationException("No instance."));
 
-    public static List<string> Required(PluginRegistry registry, IReadOnlyList<FunctionSpec> functions) =>
-        [.. FunctionManifest.RequiredPermissions(functions)
+    public static List<string> Required(PluginRegistry registry, IReadOnlyList<FunctionSpec> functions, string slug) =>
+        [.. FunctionManifest.RequiredPermissions(functions, slug)
             .Concat(functions.SelectMany(f => f.Uses.Contracts).SelectMany(c => HostCalls.ContractPermissions(registry, c)))
             .Distinct().Order(StringComparer.Ordinal)];
 

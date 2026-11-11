@@ -89,13 +89,9 @@ public sealed class PluginInstanceService(
             Description = description ?? manifest.Description,
             ConfigJson = config,
         };
-        var firstOfPlugin = !await db.PluginInstances.AnyAsync(p => p.PluginId == manifest.Id, ct);
         db.PluginInstances.Add(instance);
         await db.SaveChangesAsync(ct);
-        if (firstOfPlugin)
-        {
-            await PluginDefaultGrants.ApplyAsync(tenancy, instance.TenantId, manifest, ct);
-        }
+        await PluginDefaultGrants.ApplyAsync(tenancy, cache, instance.TenantId, manifest, slug, memberDefaults: true, ct);
         await PluginInstanceEndpoints.PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Created, ct);
         return instance;
     }

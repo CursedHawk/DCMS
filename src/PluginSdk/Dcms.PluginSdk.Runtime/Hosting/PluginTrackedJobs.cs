@@ -28,6 +28,13 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
     [System.Text.RegularExpressions.GeneratedRegex("^[a-z0-9-]{1,64}$")]
     private static partial System.Text.RegularExpressions.Regex NamePattern();
 
+    /// <summary>
+    /// Who sees the job: the permission on the instance being served (plugin permissions are held
+    /// per instance); without one, on any instance (see the jobs list).
+    /// </summary>
+    private string? Required(string? permission) =>
+        permission is null ? null : PluginPermissions.Resolve(caller.PluginId, caller.Instance?.Slug, permission);
+
     public async Task<JobTicket> TrackAsync(TrackedJobMirror input, CancellationToken ct)
     {
         if (!NamePattern().IsMatch(input.Name))
@@ -40,7 +47,7 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
             null,
             input.TitleKey ?? "jobs.kinds.plugin.title",
             input.TitleParams ?? (object)new { plugin = caller.PluginId, job = input.Name },
-            RequiredPermission: input.RequiredPermission is { } permission ? PlatformPermissions.ForPlugin(caller.PluginId, permission) : null,
+            RequiredPermission: Required(input.RequiredPermission),
             Id: input.Id,
             DedupeKey: $"{KindPrefix}{caller.PluginId}:{input.Name}:{input.Id}",
             Cancelable: false,
@@ -91,9 +98,7 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
             new PluginJobPayload(caller.PluginId, input.Name, input.InstanceId ?? caller.Instance?.InstanceId, payload),
             input.TitleKey ?? "jobs.kinds.plugin.title",
             input.TitleParams ?? (object)new { plugin = caller.PluginId, job = input.Name },
-            RequiredPermission: input.RequiredPermission is { } permission
-                ? PlatformPermissions.ForPlugin(caller.PluginId, permission)
-                : null,
+            RequiredPermission: Required(input.RequiredPermission),
             DedupeKey: input.DedupeKey is { } key ? $"{kind}:{key}" : null,
             Cancelable: input.Cancelable,
             Links: Links(input.Links)), ct);

@@ -12,7 +12,10 @@ export interface PluginScreenInfo {
   permission: string;
   /** Its group in the app's sub-navigation: the app's work, or under Admin. */
   section: 'work' | 'admin';
-  /** Whether the signed-in member may open it. */
+  /**
+   * Whether the signed-in member may open it on some instance. Plugin permissions are held per
+   * instance: in an app, check `permission` on the app's instance (`resolvePermission`).
+   */
   allowed: boolean;
 }
 

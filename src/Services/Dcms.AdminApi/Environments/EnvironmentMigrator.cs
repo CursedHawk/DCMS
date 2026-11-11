@@ -1,3 +1,4 @@
+using Dcms.Shared.Security.Authorization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
@@ -507,6 +508,13 @@ public sealed class EnvironmentMigrator(
         if (applier.UserId is { } userId)
         {
             using var scope = target.Scope();
+            // Owner holds everything here, and every action on each plugin instance the deployment
+            // creates (plugin permissions are held per instance), which it cannot hold yet.
+            if (await db.MemberRoles.IgnoreTenantFilter().AnyAsync(r => r.TenantId == target.TenantId && r.Membership!.UserId == userId
+                    && r.Role!.IsSystem && r.Role.Name == Tenancy.TenantProvisioning.OwnerRole, ct))
+            {
+                return new EnvironmentApplyContext(null) { UserId = userId };
+            }
             held = await permissions.GetPermissionsAsync(target.TenantId, userId, ct);
         }
         // What each role really holds as the writes go in: the live export, moved only by them.
@@ -514,7 +522,11 @@ public sealed class EnvironmentMigrator(
         foreach (var w in writes)
         {
             var kind = KindOf(w.Change.Kind);
-            if (kind.Permission is { } needed && !held.Contains(needed))
+            // A plugin's kind: its permission on the item's instance, or on any where the item has none.
+            if (kind.Permission is { } needed
+                && (kind.InstanceOf(w.Change.Key) is { } slug
+                    ? !held.Contains(PluginPermissions.ForInstance(needed, slug))
+                    : !new PermissionRequirement(needed, anyInstance: true).IsMetBy(held)))
             {
                 throw new EnvironmentMigrationException("environments.errors.notAllowed", needed);
             }

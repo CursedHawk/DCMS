@@ -19,6 +19,29 @@ public class PluginPermissionTests
         PluginPermissions.Resolve("guestbook", reference).Should().Be(key);
 
     [Theory]
+    [InlineData("moderate", "plugin:guestbook:book:moderate")]
+    [InlineData("plugin:guestbook:moderate", "plugin:guestbook:book:moderate")]
+    [InlineData("plugin:guestbook:other:moderate", "plugin:guestbook:other:moderate")]
+    [InlineData("content:read", "content:read")]
+    [InlineData("plugin:forms:read", "plugin:forms:read")]
+    public void On_an_instance_the_plugins_own_keys_take_its_slug(string reference, string key) =>
+        PluginPermissions.Resolve("guestbook", "book", reference).Should().Be(key);
+
+    [Fact]
+    public void Keys_are_held_per_instance_and_a_plugin_wide_one_on_any()
+    {
+        PluginPermissions.WithoutInstance("plugin:guestbook:book:moderate").Should().Be("plugin:guestbook:moderate");
+        PluginPermissions.WithoutInstance("content:read").Should().Be("content:read");
+        PluginPermissions.TryParse("repo:1:read", out _, out _, out _).Should().BeFalse();
+
+        var held = new HashSet<string> { "plugin:guestbook:book:moderate" };
+        new Dcms.Shared.Security.Authorization.PermissionRequirement("plugin:guestbook:moderate").IsMetBy(held).Should().BeFalse();
+        new Dcms.Shared.Security.Authorization.PermissionRequirement("plugin:guestbook:moderate", anyInstance: true).IsMetBy(held).Should().BeTrue();
+        new Dcms.Shared.Security.Authorization.PermissionRequirement("plugin:guestbook:read", anyInstance: true).IsMetBy(held).Should().BeFalse();
+        new Dcms.Shared.Security.Authorization.PermissionRequirement("plugin:other:moderate", anyInstance: true).IsMetBy(held).Should().BeFalse();
+    }
+
+    [Theory]
     [InlineData("Moderate")]
     [InlineData("")]
     [InlineData("a:b")]

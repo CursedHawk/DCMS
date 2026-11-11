@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.AspNetCore.SignalR;
@@ -160,9 +161,12 @@ public sealed class NotificationPublisher(
     {
         var tenantId = request.TenantId;
 
-        var roleIds = tenancy.TenantRolePermissions.IgnoreTenantFilter()
-            .Where(p => p.TenantId == tenantId && p.Permission == request.RequiredPermission)
-            .Select(p => p.TenantRoleId);
+        var permissions = tenancy.TenantRolePermissions.IgnoreTenantFilter().Where(p => p.TenantId == tenantId);
+        // A plugin-wide key (plugin:{id}:{action}) reaches whoever holds the action on any instance.
+        permissions = PluginPermissions.TryParse(request.RequiredPermission, out var pluginId, out var slug, out var action) && slug is null
+            ? permissions.Where(p => p.Permission.StartsWith($"plugin:{pluginId}:") && p.Permission.EndsWith($":{action}"))
+            : permissions.Where(p => p.Permission == request.RequiredPermission);
+        var roleIds = permissions.Select(p => p.TenantRoleId);
 
         var permitted = await tenancy.Memberships.AsNoTracking().IgnoreTenantFilter()
             .Where(m => m.TenantId == tenantId && m.Roles.Any(mr => roleIds.Contains(mr.TenantRoleId)))

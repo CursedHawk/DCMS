@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using System.Security.Claims;
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -100,9 +101,16 @@ public static class ContractEndpoints
 
     private static Task<bool> NoPermissions(string permission) => Task.FromResult(false);
 
-    /// <summary>The same permission check <c>RequirePermission</c> uses, including the SuperAdmin bypass.</summary>
+    /// <summary>
+    /// The same permission check <c>RequirePermission</c> uses, including the SuperAdmin bypass. The
+    /// dispatcher asks about the providing instance; a plugin-wide key it still asks about (another
+    /// plugin's, on an open contract) is held on any instance.
+    /// </summary>
     private static Func<string, Task<bool>> Permissions(ClaimsPrincipal user, IAuthorizationService authz) =>
-        async permission => (await authz.AuthorizeAsync(user, null, PermissionPolicyProvider.PolicyName(permission))).Succeeded;
+        async permission => (await authz.AuthorizeAsync(user, null,
+            PluginPermissions.TryParse(permission, out _, out var slug, out _) && slug is null
+                ? PermissionPolicyProvider.AnyInstancePolicyName(permission)
+                : PermissionPolicyProvider.PolicyName(permission))).Succeeded;
 
     private static async Task<JsonElement?> ReadInputAsync(HttpRequest request, CancellationToken ct)
     {

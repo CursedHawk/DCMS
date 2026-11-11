@@ -35,6 +35,7 @@ import { iconByName } from '../../app/navApi';
 import { ResourceHistory } from '../audit/ResourceHistory';
 import { PluginReferenceTabs } from '../marketplace/PluginReferencePage';
 import { usePluginReference, type PluginReference } from '../marketplace/api';
+import { resolvePermission } from '@dcms/plugin-ui';
 import { screenTitle, usePluginUi, type PluginUiInfo } from '../../pluginHost/api';
 import { PluginScreenView } from '../../pluginHost/PluginScreenView';
 import { CollectionView } from '../content/ContentPage';
@@ -96,7 +97,8 @@ export function AppPage({ slug, page, type }: { slug: string; page?: string; typ
     );
   }
 
-  const allowed = plugin.screens.filter((s) => s.allowed);
+  // Plugin permissions are held per instance: this app's own.
+  const allowed = plugin.screens.filter((s) => s.allowed && can(me.data, resolvePermission(plugin.pluginId, s.permission, instance.slug)));
   const entry = (s: PluginUiInfo['screens'][number]): AppNavEntry => ({
     id: s.id,
     label: screenTitle(s, i18n.language),

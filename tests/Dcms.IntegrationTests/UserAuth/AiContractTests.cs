@@ -62,7 +62,7 @@ public sealed class AiContractTests(ContentFlowFixture fixture)
         roles.GetProperty("roles")[0].GetProperty("grants").GetArrayLength().Should().Be(0);
 
         // A reader gets the reads, and not the writes — in the catalog, and when the call is made anyway.
-        var reader = await app.AddMemberAsync(["plugin:user-auth:users-read"], ct);
+        var reader = await app.AddMemberAsync(["plugin:user-auth:users:users-read"], ct);
         (await CatalogAsync(app, reader, ct)).Should().Contain("users.roles/ListRoles").And.NotContain("users.roles/CreateRole")
             .And.NotContain("users.realm/SetProvider");
         (await Call(app, "users.roles", "CreateRole", new { key = "sneaky", name = "Sneaky" }, ct, @as: reader))

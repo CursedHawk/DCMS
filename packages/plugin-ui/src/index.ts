@@ -213,16 +213,29 @@ export function usePluginT() {
   return useTranslation([pluginNamespace(pluginId), 'common']);
 }
 
-/** The full key a permission reference means for a plugin: a bare action is its own. */
-export function resolvePermission(pluginId: string, permission: string): string {
-  return permission.includes(':') ? permission : `plugin:${pluginId}:${permission}`;
+/**
+ * The full key a permission reference means for a plugin: a bare action is its own. Plugin keys
+ * are held per instance (`plugin:{pluginId}:{slug}:{action}`), so with a slug the plugin's own
+ * key names that instance; platform keys and other plugins' keys stay as they are.
+ */
+export function resolvePermission(pluginId: string, permission: string, slug?: string): string {
+  const key = permission.includes(':') ? permission : `plugin:${pluginId}:${permission}`;
+  const parts = key.split(':');
+  return slug && parts.length === 3 && parts[0] === 'plugin' && parts[1] === pluginId
+    ? `plugin:${pluginId}:${slug}:${parts[2]}`
+    : key;
 }
 
-/** Whether the signed-in member holds a permission: `useCan('moderate')` or `useCan('content:write')`. */
+/**
+ * Whether the signed-in member holds a permission on the screen's instance:
+ * `useCan('moderate')` or `useCan('content:write')`. Outside an app, on any instance.
+ */
 export function useCan(permission: string): boolean {
   const host = usePluginHost();
-  const { pluginId } = usePluginScreen();
-  return host.can(resolvePermission(pluginId, permission));
+  const { pluginId, instance, instances } = usePluginScreen();
+  return instance
+    ? host.can(resolvePermission(pluginId, permission, instance.slug))
+    : instances.some((i) => host.can(resolvePermission(pluginId, permission, i.slug)));
 }
 
 /**

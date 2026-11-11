@@ -230,7 +230,9 @@ public sealed class PluginNotifications(IPluginContext caller, IEventPublisher e
             TenantId: caller.TenantId,
             Kind: kind,
             Severity: input.Severity.ToString(),
-            RequiredPermission: input.RequiredPermission,
+            // The plugin's own keys on the instance it speaks for (held per instance); a plugin-wide
+            // key otherwise reaches whoever holds it on any instance.
+            RequiredPermission: PluginPermissions.Resolve(caller.PluginId, caller.Instance?.Slug, input.RequiredPermission),
             TitleKey: $"notifications.kinds.{slug}.title",
             BodyKey: $"notifications.kinds.{slug}.body",
             ParamsJson: JsonSerializer.Serialize(values),

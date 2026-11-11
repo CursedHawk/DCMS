@@ -57,8 +57,10 @@ public static class PluginUiEndpoints
                         icon = screen.IconName ?? manifest.IconName,
                         permission,
                         section = screen.Section == AdminScreenSection.Admin ? "admin" : "work",
+                        // On some instance: plugin permissions are held per instance, and the console
+                        // checks the app's own instance against `permission` (resolvePermission).
                         allowed = authz is not null
-                                  && (await authz.AuthorizeAsync(http.User, null, PermissionPolicyProvider.PolicyName(permission))).Succeeded,
+                                  && (await authz.AuthorizeAsync(http.User, null, PermissionPolicyProvider.AnyInstancePolicyName(permission))).Succeeded,
                     });
                 }
                 result.Add(new

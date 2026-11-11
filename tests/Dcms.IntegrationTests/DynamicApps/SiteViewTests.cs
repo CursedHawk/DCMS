@@ -199,7 +199,7 @@ public sealed class SiteViewTests(ContentFlowFixture fixture)
         var ct = TestContext.Current.CancellationToken;
         var (app, _) = await SetUpAsync(ct);
         await app.PublishAsync(Tasks, ct);
-        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write"], ct);
+        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:crm:data-read", "plugin:dynamic-apps:crm:data-write"], ct);
         await app.JsonAsync(HttpMethod.Post, "/_records/tasks", ct, new { title = "Owner's" }, HttpStatusCode.Created);
         await app.JsonAsync(HttpMethod.Post, "/_records/tasks", ct, new { title = "Writer's" }, HttpStatusCode.Created, writer);
 

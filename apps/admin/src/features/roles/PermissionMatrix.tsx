@@ -9,11 +9,11 @@ import { type PermissionDef, groupPermissions } from '../rbac/api';
  * The permission picker for a role.
  *
  * Two things it has to answer that a flat checkbox list could not: *what does
- * this actually affect* (each entry names the plugin instances or the site it
- * covers, and links to it), and *which of these matter here* — a plugin that
- * ships in the binary but has no enabled instance contributes permissions that
- * grant access to nothing, so they are not listed at all: only what the
- * workspace has, and what the role already holds.
+ * this actually affect* (plugin permissions are held per instance, so each
+ * instance is its own group, linking to its app; a repo key names its site), and
+ * *which of these matter here* — a switched-off instance's permissions grant
+ * access to nothing, so they are not listed: only what the workspace uses, and
+ * what the role already holds.
  */
 export function PermissionMatrix({
   catalog,
@@ -131,14 +131,9 @@ function FeatureLine({ feature }: { feature: PermissionDef['feature'] }) {
     );
   }
 
-  // Plugin permissions are only meaningful through the instances the tenant has
-  // enabled, so name them; a bare plugin name would not say which gallery.
-  const detail =
-    feature.kind === 'plugin' && feature.instances.length > 0
-      ? feature.instances.map((i) => i.name).join(', ')
-      : feature.kind === 'platform'
-        ? null
-        : feature.name;
+  // Plugin permissions are held per instance and grouped by it: the group heading
+  // already says which gallery, so only the link is left to add.
+  const detail = feature.kind === 'platform' || feature.kind === 'plugin' ? null : feature.name;
 
   if (!detail && !feature.route) return null;
 

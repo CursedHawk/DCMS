@@ -97,7 +97,7 @@ public static class NavigationEndpoints
         {
             if (find(instance.PluginId) is not { } manifest) continue;
             var screens = (manifest.AdminScreens ?? [])
-                .Where(s => may(PluginPermissions.Resolve(manifest.Id, s.Permission ?? PlatformPermissions.PluginsManage)))
+                .Where(s => may(PluginPermissions.Resolve(manifest.Id, instance.Slug, s.Permission ?? PlatformPermissions.PluginsManage)))
                 .ToList();
             var children = screens
                 .Where(s => s.Section == AdminScreenSection.Work)

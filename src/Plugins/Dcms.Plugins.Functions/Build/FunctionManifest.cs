@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -134,29 +135,37 @@ public static partial class FunctionManifest
     /// The permissions a deployment of <paramref name="functions"/> needs its deployer to hold
     /// (definer's rights): what its table verbs mean in Dynamic Apps, and the right to secrets a
     /// function could carry off. Contract operations are added where their calls are brokered.
+    ///
+    /// <para>Plugin permissions are held per instance: this app's own on <paramref name="slug"/>,
+    /// a table's on its app. A plugin-wide key left (an event's, a notification audience's, a
+    /// contract operation's) means "on any instance": <see cref="Vouch"/> narrows it to the
+    /// instances the deployer holds it on.</para>
     /// </summary>
-    public static List<string> RequiredPermissions(IEnumerable<FunctionSpec> functions)
+    public static List<string> RequiredPermissions(IEnumerable<FunctionSpec> functions, string slug)
     {
-        var required = new SortedSet<string>(StringComparer.Ordinal) { FunctionsPermissions.Deploy };
+        var required = new SortedSet<string>(StringComparer.Ordinal) { PluginPermissions.ForInstance(FunctionsPermissions.Deploy, slug) };
         foreach (var function in functions)
         {
-            foreach (var verb in function.Uses.Tables.Values.SelectMany(v => v))
+            foreach (var (table, verbs) in function.Uses.Tables)
             {
-                required.Add(verb switch
+                foreach (var verb in verbs)
                 {
-                    "read" => "plugin:dynamic-apps:data-read",
-                    "delete" => "plugin:dynamic-apps:data-delete",
-                    _ => "plugin:dynamic-apps:data-write",
-                });
+                    required.Add(PluginPermissions.ForInstance(verb switch
+                    {
+                        "read" => DataRead,
+                        "delete" => DataDelete,
+                        _ => DataWrite,
+                    }, AppOf(table)));
+                }
             }
             if (function.Uses.Secrets.Count > 0)
             {
-                required.Add(FunctionsPermissions.Secrets);
+                required.Add(PluginPermissions.ForInstance(FunctionsPermissions.Secrets, slug));
             }
             // Requests leave the platform: whatever the function reads can go with them.
             if (function.Uses.Egress.Count > 0)
             {
-                required.Add(FunctionsPermissions.Egress);
+                required.Add(PluginPermissions.ForInstance(FunctionsPermissions.Egress, slug));
             }
             if (function.Uses.Content)
             {
@@ -176,12 +185,20 @@ public static partial class FunctionManifest
         return [.. required];
     }
 
+    public const string DataRead = "plugin:dynamic-apps:data-read";
+    public const string DataWrite = "plugin:dynamic-apps:data-write";
+    public const string DataDelete = "plugin:dynamic-apps:data-delete";
+
+    /// <summary>The app of <c>app.table</c>: a Dynamic Apps instance's slug.</summary>
+    public static string AppOf(string table) => table.Split('.')[0];
+
     /// <summary>What a trigger delivers is someone's data: the permission it takes to read it, if any.</summary>
     public static string? TriggerPermission(JsonObject trigger) => trigger["kind"]?.GetValue<string>() switch
     {
-        "row" or "relation" => "plugin:dynamic-apps:data-read",
+        "row" => PluginPermissions.ForInstance(DataRead, AppOf(trigger["table"]?.GetValue<string>() ?? "")),
+        "relation" => PluginPermissions.ForInstance(DataRead, AppOf(trigger["relationship"]?.GetValue<string>() ?? "")),
         // What a publish delivers is the revision's number and hash: the model, not its records.
-        "app" => "plugin:dynamic-apps:model-read",
+        "app" => PluginPermissions.ForInstance("plugin:dynamic-apps:model-read", trigger["app"]?.GetValue<string>() ?? ""),
         "event" => trigger["name"]?.GetValue<string>() switch
         {
             "form.submitted" => Dcms.Plugins.Forms.Api.FormsPermissions.SubmissionsRead,
@@ -194,7 +211,49 @@ public static partial class FunctionManifest
 
     /// <summary>Whether a live deployment was vouched for what <paramref name="trigger"/> delivers.</summary>
     public static bool MayReceive(JsonObject trigger, IReadOnlyCollection<string> vouched) =>
-        TriggerPermission(trigger) is not { } permission || vouched.Contains(permission);
+        TriggerPermission(trigger) is not { } permission || Covers(vouched, permission);
+
+    /// <summary>
+    /// Whether a vouched set covers a permission: as is, or a plugin-wide key on some instance
+    /// (an event's, an audience's: those are not about one instance).
+    /// </summary>
+    public static bool Covers(IReadOnlyCollection<string> vouched, string permission) =>
+        vouched.Contains(permission) || vouched.Any(k => Dcms.Shared.Security.PlatformPermissions.IsInstanceOf(k, permission));
+
+    /// <summary>
+    /// Definer's rights: what of <paramref name="required"/> the deployer holds, and what they lack.
+    /// A plugin-wide key is vouched on each instance (of <paramref name="instances"/>) they hold it
+    /// on, and lacking only when that is none.
+    /// </summary>
+    public static async Task<(List<string> Vouched, List<string> Missing)> Vouch(
+        IEnumerable<string> required, IEnumerable<(string PluginId, string Slug)> instances, Func<string, Task<bool>> holds)
+    {
+        var all = instances.ToList();
+        var (vouched, missing) = (new SortedSet<string>(StringComparer.Ordinal), new List<string>());
+        foreach (var permission in required)
+        {
+            if (PluginPermissions.TryParse(permission, out var pluginId, out var slug, out _) && slug is null)
+            {
+                var held = new List<string>();
+                foreach (var instance in all.Where(i => i.PluginId == pluginId))
+                {
+                    var key = PluginPermissions.ForInstance(permission, instance.Slug);
+                    if (await holds(key)) held.Add(key);
+                }
+                if (held.Count == 0) missing.Add(permission);
+                vouched.UnionWith(held);
+            }
+            else if (await holds(permission))
+            {
+                vouched.Add(permission);
+            }
+            else
+            {
+                missing.Add(permission);
+            }
+        }
+        return ([.. vouched], missing);
+    }
 
     public static string Serialize(IEnumerable<FunctionSpec> functions) =>
         JsonSerializer.Serialize(new { functions }, Json);

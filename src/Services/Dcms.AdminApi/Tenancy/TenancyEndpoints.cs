@@ -540,17 +540,15 @@ public static class TenancyEndpoints
         }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRemoved, "membership")
             .InWorkspaceRootOnly();
 
-        // Effective permission catalog: platform keys ∪ installed plugins' manifest
+        // Effective permission catalog: platform keys ∪ each plugin instance's
         // permissions ∪ per-site git repo permissions, each with a display name and
         // group — drives the role matrix.
         // Every entry says what it actually governs, so the role editor can show the
         // feature a permission belongs to and whether it is live in this tenant:
         //
         //  - platform keys link to the admin page they gate;
-        //  - plugin keys name the *enabled instances* of that plugin. A plugin that
-        //    ships in the binary but has no instance here has permissions that grant
-        //    access to nothing, and they were previously indistinguishable from real
-        //    ones — the catalog was built from manifests alone;
+        //  - plugin keys are per instance (plugin:{id}:{slug}:{action}), one group per
+        //    instance, linking to its app. A plugin with no instance here has none;
         //  - repo keys link to the site whose repository they cover.
         app.MapGet("/api/admin/permissions/catalog", async (
             IPluginCatalog catalog, SitesDbContext sites, CmsDbContext cms, CancellationToken ct) =>
@@ -559,27 +557,21 @@ public static class TenancyEndpoints
                 k, PlatformPermissionName(k), "Platform",
                 new PermissionFeature("platform", null, "Platform", PlatformPermissionRoute(k), true, [])));
 
-            // Instances the tenant has actually enabled, grouped by plugin.
+            // Plugin permissions are held per instance: one group per instance, its plugin's
+            // actions on it. A switched-off instance's are listed as not in use.
             var instances = await cms.PluginInstances
-                .Where(i => i.Enabled)
                 .OrderBy(i => i.Name)
-                .Select(i => new { i.PluginId, i.Id, i.Name, i.Slug })
+                .Select(i => new { i.PluginId, i.Id, i.Name, i.Slug, i.Enabled })
                 .ToListAsync(ct);
-            var byPlugin = instances
-                .GroupBy(i => i.PluginId)
-                .ToDictionary(
-                    g => g.Key,
-                    g => g.Select(i => new PermissionFeatureRef(i.Id.ToString(), string.IsNullOrWhiteSpace(i.Name) ? i.Slug : i.Name)).ToList());
-
-            var plugin = catalog.Manifests.SelectMany(m =>
+            var plugin = instances.SelectMany(i =>
             {
-                var used = byPlugin.TryGetValue(m.Id, out var list) ? list : [];
+                if (catalog.Find(i.PluginId) is not { } m) return [];
+                var name = string.IsNullOrWhiteSpace(i.Name) ? i.Slug : i.Name;
+                var group = name == m.Name ? m.Name : $"{m.Name}: {name}";
+                var feature = new PermissionFeature("plugin", i.Id.ToString(), name, $"/apps/{i.Slug}", i.Enabled,
+                    [new PermissionFeatureRef(i.Id.ToString(), name)]);
                 return m.Permissions.Select(p => new PermissionEntry(
-                    PlatformPermissions.ForPlugin(m.Id, p.Action),
-                    p.DisplayName,
-                    m.Name,
-                    new PermissionFeature("plugin", m.Id, m.Name, "/plugins", used.Count > 0, used),
-                    p.Description));
+                    PlatformPermissions.ForPlugin(m.Id, i.Slug, p.Action), p.DisplayName, group, feature, p.Description));
             });
 
             // Per-site repo perms (git-backed sites — every mode but the uploaded bundle):

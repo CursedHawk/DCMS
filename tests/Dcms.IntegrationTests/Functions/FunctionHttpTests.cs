@@ -13,6 +13,7 @@ using Dcms.Shared.Data.Functions;
 using Dcms.Shared.Data.Rls;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -310,7 +311,9 @@ public sealed class FunctionHttpTests(ContentFlowFixture fixture, DenoBinary den
             Status = FunctionDeploymentStatus.Active,
             Manifest = FunctionManifest.Serialize(specs),
             Bundles = JsonSerializer.Serialize(functions.ToDictionary(f => f!["name"]!.GetValue<string>(), f => f!["bundle"]!.GetValue<string>())),
-            VouchedPermissions = FunctionManifest.RequiredPermissions(specs),
+            VouchedPermissions = FunctionManifest.RequiredPermissions(specs,
+                await scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Cms.CmsDbContext>().PluginInstances.IgnoreQueryFilters()
+                    .Where(p => p.Id == instanceId).Select(p => p.Slug).SingleAsync(ct)),
             ActivatedAt = DateTimeOffset.UtcNow,
         });
         await db.SaveChangesAsync(ct);

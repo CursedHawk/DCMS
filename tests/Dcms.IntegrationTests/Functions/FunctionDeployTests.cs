@@ -461,6 +461,9 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var client = host.CreateClient();
         var (tenantId, slug) = await CreateTenantAsync(client, ct);
         var instanceId = await InstallAsync(client, slug, ct);
+        // The app its tables are in: Dynamic Apps permissions are held on it.
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", slug, Guid.Empty,
+            new { pluginId = "dynamic-apps", slug = "shop", name = "Shop" }, superAdmin: true), ct)).EnsureSuccessStatusCode();
         var owner = await SeedMemberAsync(tenantId, "Owner", ct);
         var member = await SeedMemberAsync(tenantId, "Member", ct);
         var api = "/api/admin/plugins/fn/_functions";
@@ -496,8 +499,8 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
 
         var detail = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{firstId}", slug, owner), ct), ct);
         detail.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().BeEquivalentTo(
-            "plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write", "plugin:functions:secrets", "plugin:functions:deploy",
-            "plugin:functions:egress");
+            "plugin:dynamic-apps:shop:data-read", "plugin:dynamic-apps:shop:data-write", "plugin:functions:fn:secrets", "plugin:functions:fn:deploy",
+            "plugin:functions:fn:egress");
         var spec = detail.GetProperty("functions").EnumerateArray().Single(f => f.GetProperty("name").GetString() == "orders");
         spec.GetProperty("uses").GetProperty("egress").EnumerateArray().Single().GetString().Should().Be("api.stripe.com");
 
@@ -506,7 +509,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var live = await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/deployments/{firstId}/activate", slug, owner), ct), ct);
         live.GetProperty("status").GetString().Should().Be("Active");
-        (await VouchedAsync(firstId, ct)).Should().Contain("plugin:functions:secrets");
+        (await VouchedAsync(firstId, ct)).Should().Contain("plugin:functions:fn:secrets");
 
         // A type error fails the build, saying where; nothing changes for what is live.
         var broken = await ShipAsync(client, slug, owner, at, new()
@@ -690,7 +693,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         unchanged.Headers.TryAddWithoutValidation("If-None-Match", sdk.Headers.ETag!.ToString());
         (await client.SendAsync(unchanged, ct)).StatusCode.Should().Be(HttpStatusCode.NotModified);
         // A reader of the functions who may not see the app's model does not see its tables.
-        var reader = await SeedRoleAsync(tenantId, ["plugin:functions:read"], ct);
+        var reader = await SeedRoleAsync(tenantId, ["plugin:functions:fn:read"], ct);
         var narrow = await (await client.SendAsync(Req(HttpMethod.Get, $"{api}/sdk.d.ts", slug, reader), ct)).Content.ReadAsStringAsync(ct);
         narrow.Should().Contain("export interface Database").And.NotContain("CrmCompaniesRow").And.NotContain("queryRecords");
 
@@ -748,7 +751,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var builtId = built.GetProperty("id").GetGuid();
         // Sending requests out is what deploying it takes too.
         (await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{builtId}", slug, owner), ct), ct))
-            .GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:functions:egress");
+            .GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:functions:fn:egress");
 
         // Nothing is live yet; the build can be tried, under the caller's permissions.
         (await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, owner, new { function = "double", input = new { n = 2 } }), ct))
@@ -793,10 +796,10 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
             "https://api.example.com/redirect", "https://api.example.com/ping", "https://api.example.com/json", "https://api.example.com/away");
 
         // Running it acts with what it was vouched for, which the deploy permission alone is not.
-        var deployer = await SeedRoleAsync(tenantId, ["plugin:functions:read", "plugin:functions:deploy"], ct);
+        var deployer = await SeedRoleAsync(tenantId, ["plugin:functions:fn:read", "plugin:functions:fn:deploy"], ct);
         var refused = await client.SendAsync(Req(HttpMethod.Post, $"{api}/run", slug, deployer, new { function = "double", input = new { n = 1 } }), ct);
         refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await refused.Content.ReadAsStringAsync(ct)).Should().Contain("plugin:dynamic-apps:data-read");
+        (await refused.Content.ReadAsStringAsync(ct)).Should().Contain("plugin:dynamic-apps:crm:data-read");
 
         // jobs.enqueue: a tracked run of the live deployment, once per dedupe key.
         await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
@@ -893,7 +896,7 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         built.GetProperty("status").GetString().Should().Be("Ready", built.ToString());
         // A row trigger hands its function the row: deploying it takes reading rows, though no function declares a read.
         var needs = await Json(await client.SendAsync(Req(HttpMethod.Get, $"{api}/deployments/{built.GetProperty("id").GetGuid()}", slug, owner), ct), ct);
-        needs.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:dynamic-apps:data-read");
+        needs.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:dynamic-apps:crm:data-read");
         await Json(await client.SendAsync(Req(HttpMethod.Post, $"{api}/deployments/{built.GetProperty("id").GetGuid()}/activate", slug, owner), ct), ct);
 
         // A row created: its function runs, and the message it emits starts another.
@@ -1113,12 +1116,12 @@ public sealed class FunctionDeployTests(AdminApiFixture fixture, DenoBinary deno
         var item = (await ExportAsync(tenantId)).Should().ContainSingle().Subject;
         item.Key.Should().Be("fn");
         item.Value.GetProperty("Live").GetString().Should().Be(sha);
-        item.Value.GetProperty("Permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:functions:secrets");
+        item.Value.GetProperty("Permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("plugin:functions:fn:secrets");
         (await ExportAsync(staging)).Should().BeEmpty("nothing is live there");
 
         // A deployer who lacks what it uses there is refused: built, but not live.
-        var refused = () => ApplyAsync(item.Value, new HashSet<string> { "plugin:functions:deploy" });
-        (await refused.Should().ThrowAsync<EnvironmentConfigException>()).Which.Message.Should().Contain("plugin:functions:secrets");
+        var refused = () => ApplyAsync(item.Value, new HashSet<string> { "plugin:functions:fn:deploy" });
+        (await refused.Should().ThrowAsync<EnvironmentConfigException>()).Which.Message.Should().Contain("plugin:functions:fn:secrets");
         (await StatusesAsync(stagingInstance, ct)).Should().Equal("Ready");
 
         await ApplyAsync(item.Value, held: null);

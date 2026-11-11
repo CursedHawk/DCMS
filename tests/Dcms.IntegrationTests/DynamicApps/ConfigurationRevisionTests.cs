@@ -134,11 +134,11 @@ public sealed class ConfigurationRevisionTests(ContentFlowFixture fixture)
         var app = await AppHarness.CreateAsync(fixture, ct);
         var hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct)).GetProperty("hash").GetString()!;
 
-        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:model-read"], ct);
+        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:crm:model-read"], ct);
         (await app.SendAsync(HttpMethod.Get, "/_model", null, ct, reader)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await app.SendAsync(HttpMethod.Post, "/_model/draft/changes", Changes(hash, Crm), ct, reader)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        var editor = await app.AddMemberAsync(["plugin:dynamic-apps:model-read", "plugin:dynamic-apps:model-write"], ct);
+        var editor = await app.AddMemberAsync(["plugin:dynamic-apps:crm:model-read", "plugin:dynamic-apps:crm:model-write"], ct);
         var draftHash = (await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, Changes(hash, Crm), @as: editor))
             .GetProperty("draft").GetProperty("hash").GetString();
         (await app.SendAsync(HttpMethod.Post, "/_model/draft/publish", new { expectedHash = draftHash }, ct, editor))

@@ -15,23 +15,37 @@ describe('permissions', () => {
   it('reads a bare action as the plugin’s own key', () => {
     expect(resolvePermission('guestbook', 'moderate')).toBe('plugin:guestbook:moderate');
     expect(resolvePermission('guestbook', 'content:read')).toBe('content:read');
+    expect(resolvePermission('guestbook', 'moderate', 'book')).toBe('plugin:guestbook:book:moderate');
+    expect(resolvePermission('guestbook', 'content:read', 'book')).toBe('content:read');
+    expect(resolvePermission('guestbook', 'plugin:other:read', 'book')).toBe('plugin:other:read');
   });
 
-  it('asks the host with the resolved key', () => {
+  it('asks the host about the screen’s instance, or any instance outside an app', () => {
     const asked: string[] = [];
-    const host = { can: (p: string) => (asked.push(p), p === 'plugin:guestbook:moderate') } as unknown as PluginHost;
+    const host = { can: (p: string) => (asked.push(p), p === 'plugin:guestbook:book:moderate') } as unknown as PluginHost;
+    const book = { id: '1', slug: 'book', name: 'Book', enabled: true, aiToolsEnabled: false };
+    const other = { ...book, id: '2', slug: 'other' };
     function Probe() {
       return <span>{useCan('moderate') ? 'yes' : 'no'}</span>;
     }
+    const { unmount } = render(
+      <PluginHostProvider host={host}>
+        <PluginScreenProvider screen={{ pluginId: 'guestbook', screenId: 's', instance: other, instances: [book, other] }}>
+          <Probe />
+        </PluginScreenProvider>
+      </PluginHostProvider>,
+    );
+    expect(screen.getByText('no')).toBeTruthy();
+    expect(asked).toEqual(['plugin:guestbook:other:moderate']);
+    unmount();
     render(
       <PluginHostProvider host={host}>
-        <PluginScreenProvider screen={{ pluginId: 'guestbook', screenId: 's', instance: null, instances: [] }}>
+        <PluginScreenProvider screen={{ pluginId: 'guestbook', screenId: 's', instance: null, instances: [other, book] }}>
           <Probe />
         </PluginScreenProvider>
       </PluginHostProvider>,
     );
     expect(screen.getByText('yes')).toBeTruthy();
-    expect(asked).toEqual(['plugin:guestbook:moderate']);
   });
 });
 

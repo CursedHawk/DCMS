@@ -42,6 +42,12 @@ public sealed class PermissionPolicyProvider(IOptions<AuthorizationOptions> opti
                 new PlatformPermissionRequirement(policyName[PlatformPrefix.Length..])));
         }
 
+        if (policyName.StartsWith(AnyInstancePrefix, StringComparison.Ordinal))
+        {
+            return Task.FromResult<AuthorizationPolicy?>(Build(
+                new PermissionRequirement(policyName[AnyInstancePrefix.Length..], anyInstance: true)));
+        }
+
         if (policyName.StartsWith(Prefix, StringComparison.Ordinal))
         {
             return Task.FromResult<AuthorizationPolicy?>(Build(
@@ -57,7 +63,12 @@ public sealed class PermissionPolicyProvider(IOptions<AuthorizationOptions> opti
             .AddRequirements(requirement)
             .Build();
 
+    /// <summary>A plugin-wide key held on any instance, for checks that know no instance.</summary>
+    public const string AnyInstancePrefix = "dcms.perm-any:";
+
     public static string PolicyName(string permission) => Prefix + permission;
+
+    public static string AnyInstancePolicyName(string permission) => AnyInstancePrefix + permission;
 
     public static string PlatformPolicyName(string permission) => PlatformPrefix + permission;
 }

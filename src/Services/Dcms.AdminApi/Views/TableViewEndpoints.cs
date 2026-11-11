@@ -290,14 +290,16 @@ public sealed class ViewContext(
         var parts = table.Split(':');
         if (parts[0] == "content") return PlatformPermissions.ContentRead;
 
-        var instance = await cms.PluginInstances.AsNoTracking()
-            .Where(p => p.Slug == parts[1]).Select(p => p.PluginId).FirstOrDefaultAsync(ct);
-        if (instance is null) return null;
+        var slug = parts[1];
+        var pluginId = await cms.PluginInstances.AsNoTracking()
+            .Where(p => p.Slug == slug).Select(p => p.PluginId).FirstOrDefaultAsync(ct);
+        if (pluginId is null) return null;
+        // Plugin permissions are held per instance: this table's.
         if (parts[0] == "apps")
         {
-            return instance == "dynamic-apps" ? PluginPermissions.Resolve(instance, "data-read") : null;
+            return pluginId == "dynamic-apps" ? PluginPermissions.Resolve(pluginId, slug, "data-read") : null;
         }
-        var set = catalog.Find(instance)?.DataSets?.FirstOrDefault(d => d.Id == parts[2]);
-        return PluginPermissions.Resolve(instance, set?.ReadPermission ?? PlatformPermissions.PluginsManage);
+        var set = catalog.Find(pluginId)?.DataSets?.FirstOrDefault(d => d.Id == parts[2]);
+        return PluginPermissions.Resolve(pluginId, slug, set?.ReadPermission ?? PlatformPermissions.PluginsManage);
     }
 }

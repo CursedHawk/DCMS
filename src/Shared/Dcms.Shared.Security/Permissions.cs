@@ -53,7 +53,20 @@ public static class PlatformPermissions
         EnvironmentsManage, EnvironmentsPromote,
     ];
 
+    /// <summary>A plugin-wide key: what manifests, routes and operations name. Never held by a role.</summary>
     public static string ForPlugin(string pluginId, string action) => $"plugin:{pluginId}:{action}";
+
+    /// <summary>A plugin permission as roles hold it: per instance, by its slug.</summary>
+    public static string ForPlugin(string pluginId, string slug, string action) => $"plugin:{pluginId}:{slug}:{action}";
+
+    /// <summary>Whether <paramref name="key"/> is the plugin-wide <paramref name="pluginWide"/> on some instance.</summary>
+    public static bool IsInstanceOf(string key, string pluginWide)
+    {
+        var wide = pluginWide.Split(':');
+        var parts = key.Split(':');
+        return wide.Length == 3 && wide[0] == "plugin" && parts.Length == 4 && parts[0] == "plugin"
+               && parts[1] == wide[1] && parts[2].Length > 0 && parts[3] == wide[2];
+    }
 
     // ---- Per-site git repository permissions (resource-scoped) ----
     // Each Mode B site has its own repo; access is granted per-site so a role can

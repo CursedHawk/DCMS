@@ -146,7 +146,7 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         preview.GetProperty("canPublish").GetBoolean().Should().BeFalse();
         preview.GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("required-without-data");
         // What the records hold is only told to someone who may read them.
-        var designer = await app.AddMemberAsync(["plugin:dynamic-apps:model-read"], ct);
+        var designer = await app.AddMemberAsync(["plugin:dynamic-apps:crm:model-read"], ct);
         (await app.JsonAsync(HttpMethod.Get, "/_model/draft/preview", ct, @as: designer)).GetProperty("issues").EnumerateArray()
             .Select(i => i.GetProperty("code").GetString()).Should().NotContain("required-without-data");
         var result = await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = refused }, HttpStatusCode.UnprocessableEntity);
@@ -175,12 +175,12 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         await app.PublishAsync(Crm, ct);
         var id = await Create(app, "companies", new { name = "Acme" }, ct);
 
-        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:data-read"], ct);
+        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:crm:data-read"], ct);
         (await app.SendAsync(HttpMethod.Get, $"/_records/companies/{id}", null, ct, reader)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await app.SendAsync(HttpMethod.Post, "/_records/companies", new { name = "X" }, ct, reader)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await app.SendAsync(HttpMethod.Get, "/_model", null, ct, reader)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write"], ct);
+        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:crm:data-read", "plugin:dynamic-apps:crm:data-write"], ct);
         (await app.SendAsync(HttpMethod.Patch, $"/_records/companies/{id}", new { name = "Acme 2" }, ct, writer)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await app.SendAsync(HttpMethod.Delete, $"/_records/companies/{id}", null, ct, writer)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
@@ -197,7 +197,7 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         var ct = TestContext.Current.CancellationToken;
         var app = await AppHarness.CreateAsync(fixture, ct);
         await app.PublishAsync(Crm, ct);
-        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:data-read"], ct);
+        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:crm:data-read"], ct);
 
         // The menu offers the app to the people who use it, under Apps, with its records under it
         // and not its configuration.

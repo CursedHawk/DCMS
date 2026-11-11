@@ -35,7 +35,8 @@ public sealed class AdminPluginRepos(
             throw new InvalidOperationException("The git backend is not configured.");
         }
         var (instanceId, environmentId) = await InstanceAsync(input.InstanceId, ct);
-        var (read, edit, publish) = (Own(input.ReadPermission), Own(input.EditPermission), Own(input.PublishPermission));
+        var slug = await SlugAsync(instanceId, environmentId, ct);
+        var (read, edit, publish) = (Own(input.ReadPermission, slug), Own(input.EditPermission, slug), Own(input.PublishPermission, slug));
 
         using var rls = RlsScope.Environment(caller.TenantId, environmentId);
         var binding = await Mine(instanceId).FirstOrDefaultAsync(ct);
@@ -231,13 +232,27 @@ public sealed class AdminPluginRepos(
         return owned is { } environment ? (id, environment) : throw new ContractValidationException("Unknown instance for this plugin.");
     }
 
-    /// <summary>A permission the caller may bind its repository to: one of its own, never another plugin's or the platform's.</summary>
-    private string Own(string permission)
+    /// <summary>
+    /// A permission the caller may bind its repository to: one of its own, never another plugin's or
+    /// the platform's — on the repository's instance, as plugin permissions are held per instance.
+    /// </summary>
+    private string Own(string permission, string slug)
     {
         var key = PluginPermissions.Resolve(caller.PluginId, permission ?? "");
-        return key.StartsWith($"plugin:{caller.PluginId}:", StringComparison.Ordinal) && key.Length > $"plugin:{caller.PluginId}:".Length
-            ? key
+        return PluginPermissions.TryParse(key, out var owner, out var keySlug, out _) && owner == caller.PluginId && keySlug is null
+            ? PluginPermissions.ForInstance(key, slug)
             : throw new ContractValidationException($"'{permission}' is not one of plugin '{caller.PluginId}''s permissions.");
+    }
+
+    private async Task<string> SlugAsync(Guid instanceId, Guid environmentId, CancellationToken ct)
+    {
+        if (caller.Instance is { } own && own.InstanceId == instanceId)
+        {
+            return own.Slug;
+        }
+        using var rls = RlsScope.Environment(caller.TenantId, environmentId);
+        return await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+            .Where(p => p.Id == instanceId && p.TenantId == caller.TenantId).Select(p => p.Slug).FirstAsync(ct);
     }
 
     private async Task<RepoInfo> InfoAsync(RepoBinding binding, CancellationToken ct)

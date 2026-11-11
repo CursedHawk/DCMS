@@ -384,13 +384,20 @@ permissions:
 ],
 ```
 
-The key is `plugin:{pluginId}:{action}` (actions are unique kebab-case). The role editor lists
-them under the plugin with their description; Owners hold every plugin permission (a startup
-backfill adds new ones); `GrantToMembers` gives the built-in Member role the permission once,
-when a tenant adds its first instance of the plugin — a default the tenant can take away. Use
-them anywhere a permission is named — routes (`RequirePluginPermission`), data sets, admin
-screens, contract operations (`[Operation(Permission = "plugin:…")]`, a full key there) — and
-in screens with `useCan("moderate")`.
+A plugin names its permissions plugin-wide, `plugin:{pluginId}:{action}` (actions are unique
+kebab-case), but roles hold them **per instance**: `plugin:{pluginId}:{slug}:{action}`, so two
+YouTube channels or two Dynamic Apps applications are granted separately (the slug never changes,
+so a key means the same instance in every environment). The role editor lists each instance as a
+group of its plugin's permissions, with their descriptions. A new instance gives the built-in
+Owner every action on it and the built-in Member those marked `GrantToMembers` — a default the
+tenant can take away.
+
+Use them anywhere a permission is named — routes (`RequirePluginPermission`), data sets, admin
+screens, contract operations (`[Operation(Permission = "plugin:…")]`, the plugin-wide key there)
+— and in screens with `useCan("moderate")`: the platform checks them on the instance the request,
+screen or operation is about. Where there is no instance (a host route, a plugin-wide key in a
+job, notification audience or Functions `uses.notifications`), holding the action on any instance
+counts.
 
 ## Apps, admin screens and menu entries
 

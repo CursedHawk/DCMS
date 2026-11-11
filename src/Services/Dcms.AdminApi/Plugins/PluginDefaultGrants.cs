@@ -1,44 +1,54 @@
 using Dcms.AdminApi.Tenancy;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Plugins;
 
 /// <summary>
-/// Gives the built-in Member role the permissions a plugin marks <see cref="PermissionDefinition.GrantToMembers"/>,
-/// once, when a tenant installs its first instance of that plugin. Only then: a tenant that later
-/// takes a permission away from Member has decided, and a second instance must not undo that.
+/// Plugin permissions are held per instance (<c>plugin:{pluginId}:{slug}:{action}</c>), so a new
+/// instance starts with nobody holding them but those given here: the built-in Owner every action
+/// on it, and the built-in Member those the plugin marks <see cref="PermissionDefinition.GrantToMembers"/>.
+/// A default, not a rule: the tenant can take Member's away again, instance by instance.
 /// </summary>
 public static class PluginDefaultGrants
 {
-    public static async Task<int> ApplyAsync(TenancyDbContext db, Guid tenantId, PluginManifest manifest, CancellationToken ct)
+    /// <param name="memberDefaults">
+    /// False where the roles come from elsewhere: an environment migration brings Member's
+    /// permissions on the instance along, and must not restore what was taken away there.
+    /// </param>
+    public static async Task<int> ApplyAsync(
+        TenancyDbContext db, ICacheService cache, Guid tenantId, PluginManifest manifest, string slug, bool memberDefaults, CancellationToken ct)
     {
-        var keys = manifest.Permissions.Where(p => p.GrantToMembers)
-            .Select(p => PluginPermissions.Resolve(manifest.Id, p.Action))
-            .ToList();
-        if (keys.Count == 0)
+        var roles = await db.TenantRoles.Include(r => r.Permissions)
+            .Where(r => r.TenantId == tenantId && r.IsSystem
+                        && (r.Name == TenantProvisioning.OwnerRole || r.Name == TenantProvisioning.MemberRoleName))
+            .ToListAsync(ct);
+        var added = 0;
+        foreach (var role in roles)
         {
-            return 0;
-        }
-        var member = await db.TenantRoles.Include(r => r.Permissions)
-            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.IsSystem && r.Name == TenantProvisioning.MemberRoleName, ct);
-        if (member is null)
-        {
-            return 0;
-        }
-        var missing = keys.Except(member.Permissions.Select(p => p.Permission)).ToList();
-        foreach (var key in missing)
-        {
-            db.TenantRolePermissions.Add(new TenantRolePermission
+            var keys = manifest.Permissions
+                .Where(p => role.Name == TenantProvisioning.OwnerRole || (memberDefaults && p.GrantToMembers))
+                .Select(p => PlatformPermissions.ForPlugin(manifest.Id, slug, p.Action))
+                .Except(role.Permissions.Select(p => p.Permission))
+                .ToList();
+            foreach (var key in keys)
             {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                TenantRoleId = member.Id,
-                Permission = key,
-            });
+                db.TenantRolePermissions.Add(new TenantRolePermission
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    EnvironmentId = role.EnvironmentId,
+                    TenantRoleId = role.Id,
+                    Permission = key,
+                });
+            }
+            added += keys.Count;
         }
         await db.SaveChangesAsync(ct);
-        return missing.Count;
+        await PermissionCache.ForgetRolesAsync(db, cache, roles.Select(r => r.Id), ct);
+        return added;
     }
 }

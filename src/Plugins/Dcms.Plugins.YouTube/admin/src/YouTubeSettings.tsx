@@ -4,8 +4,8 @@ import { Button, cn, toast, toastApiError } from '@dcms/ui';
 import {
   instancePath,
   SchemaSettings,
+  useCan,
   usePluginApi,
-  usePluginHost,
   usePluginT,
   type PluginScreenProps,
 } from '@dcms/plugin-ui';
@@ -17,7 +17,7 @@ import {
 export function YouTubeSettings(props: PluginScreenProps) {
   const { t } = usePluginT();
   const api = usePluginApi();
-  const canSync = usePluginHost().can('plugin:youtube:sync');
+  const canSync = useCan('sync');
   const slug = props.instance?.slug;
 
   const sync = useMutation({

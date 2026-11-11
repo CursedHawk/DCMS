@@ -34,7 +34,7 @@ public sealed class PermissionAuthorizationHandler(
         }
 
         var permissions = await resolver.GetPermissionsAsync(tenantId.Value, userId);
-        if (permissions.Contains(requirement.Permission))
+        if (requirement.IsMetBy(permissions))
         {
             context.Succeed(requirement);
         }

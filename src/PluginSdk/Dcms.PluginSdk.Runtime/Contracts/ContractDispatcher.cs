@@ -101,21 +101,34 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
                 continue;
             }
 
-            var operations = new List<CatalogOperation>();
-            foreach (var op in descriptor.Operations.Where(o => IsExposed(o, plane)))
+            // Plugin permissions are held per instance, so which operations a caller reaches can
+            // differ between instances: instances that allow the same operations share one entry.
+            var allowed = new List<(CatalogInstance? Instance, List<OperationDescriptor> Operations)>();
+            foreach (var instance in descriptor.IsPlatform ? [null] : instances.Cast<CatalogInstance?>())
             {
-                if (op.Permission is { } permission && !await hasPermission(permission))
+                var operations = new List<OperationDescriptor>();
+                foreach (var op in descriptor.Operations.Where(o => IsExposed(o, plane)))
                 {
-                    continue; // absent, not disabled: see ToolSpec.permission in the admin agent
+                    if (op.Permission is { } permission
+                        && !await hasPermission(instance is null ? permission : PluginPermissions.Resolve(instance.PluginId, instance.Slug, permission)))
+                    {
+                        continue; // absent, not disabled: see ToolSpec.permission in the admin agent
+                    }
+                    operations.Add(op);
                 }
-                operations.Add(new CatalogOperation(
-                    op.Name, op.Description, op.Risk, op.Permission, op.ReturnsExternalText,
-                    JsonSerializer.SerializeToElement(op.InputSchema),
-                    op.OutputSchema is null ? null : JsonSerializer.SerializeToElement(op.OutputSchema)));
+                if (operations.Count > 0)
+                {
+                    allowed.Add((instance, operations));
+                }
             }
-            if (operations.Count > 0)
+            foreach (var group in allowed.GroupBy(a => string.Join('\n', a.Operations.Select(o => o.Name))))
             {
-                result.Add(new CatalogContract(descriptor.Id, descriptor.Description, contract.ProviderPluginIds.ToList(), instances, operations));
+                result.Add(new CatalogContract(descriptor.Id, descriptor.Description, contract.ProviderPluginIds.ToList(),
+                    group.Select(a => a.Instance).OfType<CatalogInstance>().ToList(),
+                    group.First().Operations.Select(op => new CatalogOperation(
+                        op.Name, op.Description, op.Risk, op.Permission, op.ReturnsExternalText,
+                        JsonSerializer.SerializeToElement(op.InputSchema),
+                        op.OutputSchema is null ? null : JsonSerializer.SerializeToElement(op.OutputSchema))).ToList()));
             }
         }
         return result;
@@ -164,9 +177,13 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
         {
             return new ContractOutcome(StatusCodes.Status404NotFound);
         }
-        if (op.Permission is { } permission && (IsPublic(plane) || !await hasPermission(permission)))
+        if (op.Permission is not null && IsPublic(plane))
         {
-            return new ContractOutcome(StatusCodes.Status403Forbidden, Error: $"This operation requires the '{permission}' permission.");
+            return new ContractOutcome(StatusCodes.Status403Forbidden, Error: $"This operation requires the '{op.Permission}' permission.");
+        }
+        if (contract.Descriptor.IsPlatform && op.Permission is { } platformPermission && !await hasPermission(platformPermission))
+        {
+            return new ContractOutcome(StatusCodes.Status403Forbidden, Error: $"This operation requires the '{platformPermission}' permission.");
         }
 
         IPluginContext context;
@@ -193,6 +210,13 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
                 return candidates.Count > 1 && instance is null
                     ? new ContractOutcome(StatusCodes.Status400BadRequest, Error: "Several instances provide this contract; name one with ?instance=.")
                     : new ContractOutcome(StatusCodes.Status404NotFound);
+            }
+            // Checked once the instance is known: plugin permissions are held per instance.
+            if (op.Permission is { } permission
+                && PluginPermissions.Resolve(provider.PluginId, provider.Slug, permission) is var key
+                && !await hasPermission(key))
+            {
+                return new ContractOutcome(StatusCodes.Status403Forbidden, Error: $"This operation requires the '{key}' permission.");
             }
             context = await factory.CreateAsync(tenantId, provider.PluginId, provider, actor, ct);
             implementation = contract.ProvidedBy(provider.PluginId)!.Implementation;

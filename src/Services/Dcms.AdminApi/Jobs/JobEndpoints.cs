@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using System.Linq.Expressions;
 using System.Text.Json;
 using Dcms.AdminApi.Tenancy;
@@ -340,7 +341,10 @@ public static class JobEndpoints
         {
             return j => true;
         }
-        var held = (await resolver.GetPermissionsAsync(ctx.TenantId!.Value, userId, ct)).ToArray();
+        var permissions = await resolver.GetPermissionsAsync(ctx.TenantId!.Value, userId, ct);
+        // A plugin job without an instance (or from before plugin permissions were per instance)
+        // names a plugin-wide key: held on any instance.
+        var held = permissions.Concat(permissions.Select(PluginPermissions.WithoutInstance)).Distinct().ToArray();
         return j => j.RequiredPermission == null || held.Contains(j.RequiredPermission) || j.ActorUserId == userId;
     }
 

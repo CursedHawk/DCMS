@@ -80,3 +80,21 @@ public sealed class TenancyPermissionResolver(TenancyDbContext db, ICacheService
         return ids;
     }
 }
+
+/// <summary>Drops cached permissions after a role's keys change outside the roles screen (which does it itself).</summary>
+public static class PermissionCache
+{
+    /// <summary>Every member of these roles, in the role's own environment.</summary>
+    public static async Task ForgetRolesAsync(TenancyDbContext db, ICacheService cache, IEnumerable<Guid> roleIds, CancellationToken ct)
+    {
+        var ids = roleIds.ToList();
+        var members = await db.MemberRoles.IgnoreTenantFilter().AsNoTracking()
+            .Where(r => ids.Contains(r.TenantRoleId))
+            .Select(r => new { r.EnvironmentId, r.Membership!.UserId })
+            .ToListAsync(ct);
+        foreach (var m in members)
+        {
+            await cache.RemoveAsync(TenancyPermissionResolver.CacheKey(m.EnvironmentId, m.UserId), ct);
+        }
+    }
+}
