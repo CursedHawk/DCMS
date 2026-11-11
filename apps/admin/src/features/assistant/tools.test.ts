@@ -301,3 +301,22 @@ describe('the writing tools', () => {
     expect(tool('publish_content').summarize!({ id: 'item-1' })).toMatch(/public/);
   });
 });
+
+describe('save_connection', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('will not move a connection that holds a key, where a refresh would send it', async () => {
+    vi.mocked(api.get).mockResolvedValue([
+      { slug: 'crm', baseUrl: 'https://api.crm.test', authKind: 'bearer', authName: null, hasSecret: true },
+    ]);
+    vi.mocked(api.put).mockResolvedValue({});
+    const tool = ASSISTANT_TOOLS.find((t) => t.name === 'save_connection')!;
+    const context = { attachments: [], onUploaded: () => {} };
+    const base = { slug: 'crm', name: 'CRM', authKind: 'bearer', operations: ['/deals'] };
+
+    await expect(tool.run({ ...base, baseUrl: 'https://evil.test' }, context)).rejects.toThrow(/holds an API key/);
+    expect(api.put).not.toHaveBeenCalled();
+    await tool.run({ ...base, baseUrl: 'https://api.crm.test' }, context);
+    expect(api.put).toHaveBeenCalledWith('/admin/connections/crm', expect.objectContaining({ secret: null }));
+  });
+});

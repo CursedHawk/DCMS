@@ -424,7 +424,7 @@ export const CONSOLE_TOOLS: AssistantTool[] = [
   {
     name: 'save_connection',
     description:
-      'Add or change an external API connection. authKind: none, bearer, header or query (authName names the header or parameter). The key is set separately with set_connection_secret.',
+      'Add or change an external API connection. authKind: none, bearer, header or query (authName names the header or parameter). The key is set separately with set_connection_secret. A connection holding a key keeps its baseUrl and auth: only the operator moves it.',
     permission: Perm.PluginsManage,
     risk: 'safe',
     invalidates: ['api-connections'],
@@ -442,10 +442,27 @@ export const CONSOLE_TOOLS: AssistantTool[] = [
     ),
     summarize: (input) => `Save the API connection ${str(input, 'slug') ?? '?'} (${str(input, 'baseUrl') ?? '?'})`,
     describe: (input) => `Saved connection ${str(input, 'slug') ?? ''}`.trim(),
-    run: (input) => {
+    run: async (input) => {
       const { slug, ...body } = input;
+      const name = String(slug ?? '');
+      /*
+       * A stored key goes wherever the connection points, so the agent may not move a keyed
+       * connection: a new baseUrl (or a new place to put the key) and a refresh would hand the
+       * key to that address. Repointing it stays the operator's, in the console.
+       */
+      const current = (await api.get<{ slug: string; baseUrl: string; authKind: string; authName: string | null; hasSecret: boolean }[]>(
+        '/admin/connections',
+      )).find((c) => c.slug === name);
+      if (
+        current?.hasSecret &&
+        (body.baseUrl !== current.baseUrl || body.authKind !== current.authKind || (str(input, 'authName') ?? null) !== current.authName)
+      ) {
+        throw new Error(
+          `Connection "${name}" holds an API key: its address and how the key is sent are changed by the operator in Settings → Connections (or delete it and create a new one).`,
+        );
+      }
       // A null key keeps whatever is stored: keys only ever go in through set_connection_secret.
-      return json(api.put(`/admin/connections/${enc(String(slug ?? ''))}`, { ...body, secret: null }));
+      return json(api.put(`/admin/connections/${enc(name)}`, { ...body, secret: null }));
     },
   },
   {
