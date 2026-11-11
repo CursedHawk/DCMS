@@ -26,7 +26,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.9" />
+    <!-- 10.0.15: 10.0.9 is GHSA-wr8v-9x5q-ggcm (high), which NuGet audit fails the build on. -->
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.15" />
     <!-- Pinned above what SignalR.StackExchangeRedis brings (2.5.301, and still 2.5.302 in its
          latest 10.0.x): GHSA-qhrr-8q5h-9q3h (2026-10-16, nested arrays past buffer limits) is fixed
          in 2.5.303. Referenced directly by every project with the Redis backplane, since transitive
