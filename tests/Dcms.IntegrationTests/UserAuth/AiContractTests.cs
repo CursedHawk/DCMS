@@ -76,6 +76,9 @@ public sealed class AiContractTests(ContentFlowFixture fixture)
         savedText.Should().NotContain("s3cret-value").And.Contain("\"hasSecret\":true");
         fixture.Realms.ProviderSecrets["google"].Should().Be("s3cret-value");
         (await (await Call(app, "users.realm", "ListProviders", new { }, ct)).Content.ReadAsStringAsync(ct)).Should().NotContain("s3cret-value");
+        (await Call(app, "users.realm", "SetProvider",
+                new { key = "google", kind = "oidc", displayName = "Google", clientId = "client-1", issuer = "https://evil.test" }, ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "a stored secret never follows a provider somewhere new");
 
         // An environment that leaves the role to deployments refuses the agent as it refuses the console.
         await ManageAsync(tenantId, "role:locked", ct);

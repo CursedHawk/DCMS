@@ -86,6 +86,16 @@ public sealed class UserRealm(IPluginContext context, IServiceProvider services)
     public async Task<SignInProvider> SetProviderAsync(SignInProviderWrite input, CancellationToken ct)
     {
         var realm = await OwnRealmAsync(ct);
+        // A stored client secret goes wherever the provider points: moving one that holds a secret
+        // takes a new secret in the same call (which only the operator can give), never the old one.
+        var existing = (await UserDirectory.Call(() => Realms.CallAsync<List<RealmProviderInfo>>(realm, HttpMethod.Get, "/providers", null, ct)))
+            .FirstOrDefault(p => p.Key == input.Key);
+        if (existing is { HasSecret: true } && input.ClientSecret is null
+            && (existing.Kind != input.Kind || existing.Issuer != input.Issuer || existing.EntraTenant != input.EntraTenant))
+        {
+            throw new ContractValidationException(
+                $"Provider '{input.Key}' holds a client secret: changing where it signs in takes a new clientSecret from the operator in the same call.");
+        }
         var write = new RealmProviderWrite(input.Kind, input.DisplayName, input.Enabled, input.ClientId, input.ClientSecret, input.Issuer,
             input.EntraTenant, input.HostedDomain, input.Provisioning, input.AllowedDomains, input.DefaultGroups, input.GroupClaim, input.GroupMappings);
         return ToProvider(await UserDirectory.Call(() =>
