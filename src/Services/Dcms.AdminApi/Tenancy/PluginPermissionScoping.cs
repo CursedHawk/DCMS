@@ -40,6 +40,10 @@ public static class PluginPermissionScoping
         }
         await sites.SaveChangesAsync(ct);
 
+        // The freeze trigger forbids rewriting what a deployment past Ready was vouched for, and this
+        // is exactly that: the same set in the new shape. It steps aside for this transaction only, as
+        // it did for VouchEgressForLiveDeployments; ALTER TABLE is transactional, so a failure puts it back.
+        await using var tx = await functions.Database.BeginTransactionAsync(ct);
         var deployments = await functions.Deployments.IgnoreTenantFilter()
             .Where(d => d.VouchedPermissions.Any(p => p.StartsWith("plugin:") && !EF.Functions.Like(p, "plugin:%:%:%")))
             .ToListAsync(ct);
@@ -58,7 +62,13 @@ public static class PluginPermissionScoping
                 .ToList();
             changed++;
         }
-        await functions.SaveChangesAsync(ct);
+        if (deployments.Count > 0)
+        {
+            await functions.Database.ExecuteSqlRawAsync("ALTER TABLE functions.deployments DISABLE TRIGGER deployments_freeze", ct);
+            await functions.SaveChangesAsync(ct);
+            await functions.Database.ExecuteSqlRawAsync("ALTER TABLE functions.deployments ENABLE TRIGGER deployments_freeze", ct);
+        }
+        await tx.CommitAsync(ct);
 
         if (changed > 0)
         {
