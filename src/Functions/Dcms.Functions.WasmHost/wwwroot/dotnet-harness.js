@@ -54,6 +54,20 @@ const end = (reason) => {
   Deno.exit(0);
 };
 
+// An error nothing caught (a rejected promise inside the runtime, typically as it runs out of
+// memory) would end the process with Deno's exit 1 and no done line, so script-runner reported
+// "could not run (exit 1)" rather than the limit it was (CSharpFunctionTests, CI). In a browser
+// .NET installs handlers for these itself; under Deno it does not, so the harness does: during a
+// run it is the runtime stopping, as an abort is; between runs the process just goes.
+for (const type of ["error", "unhandledrejection"]) {
+  globalThis.addEventListener(type, (e) => {
+    e.preventDefault();
+    const reason = type === "error" ? e.error ?? e.message : e.reason;
+    if (!running) Deno.exit(1);
+    end(String(reason instanceof Error ? `${reason.name}: ${reason.message}` : reason ?? type));
+  });
+}
+
 async function boot() {
   const { getAssemblyExports, getConfig, setModuleImports } = await dotnet
     .withResourceLoader((_type, name) => {

@@ -23,7 +23,7 @@ namespace Dcms.ScriptRunner;
 /// </summary>
 public sealed partial class FunctionSession : IDisposable
 {
-    [GeneratedRegex(@"\b(?:[A-Z][A-Za-z]*Error|Aborted|OutOfMemoryException)\b")]
+    [GeneratedRegex(@"\b(?:[A-Z][A-Za-z]*Error|Error|Uncaught|ExitStatus|Aborted|OutOfMemoryException)\b")]
     private static partial Regex ErrorName();
 
     private readonly ScriptRunnerOptions _o;
