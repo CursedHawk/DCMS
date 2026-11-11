@@ -31,7 +31,7 @@ export const CONSOLE_TOOLS: AssistantTool[] = [
   // ---- Content and media, beyond the basics ----
   {
     name: 'delete_content',
-    description: 'Delete a content item for good, every version of it. Prefer unpublish_content when it should only stop being public.',
+    description: 'Delete a content item for good, every version of it (a published one also needs the publish permission). Prefer unpublish_content when it should only stop being public.',
     permission: Perm.ContentWrite,
     risk: 'dangerous',
     invalidates: ['content'],

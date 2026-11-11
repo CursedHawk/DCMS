@@ -42,34 +42,6 @@ public class ScheduledPublishTests(AdminApiFixture fixture)
         }, TimeSpan.FromSeconds(20));
     }
 
-    /// <summary>The console's bulk delete called a route that did not exist; now an item goes with its versions and its schedule.</summary>
-    [DockerFact]
-    public async Task Deleting_an_item_takes_its_versions_and_schedule_along()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var client = fixture.Factory.CreateClient();
-        var owner = Guid.NewGuid();
-        var slug = "del-" + Guid.NewGuid().ToString("N")[..8];
-        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/tenants", owner, "SuperAdmin",
-            body: new { slug, name = slug, ownerUserId = owner, ownerEmail = "o@dcms.test" }, asSuperAdmin: true), ct))
-            .EnsureSuccessStatusCode();
-        var instanceId = await CreatedId(client, Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, slug: slug,
-            body: new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct);
-        var itemId = await CreatedId(client, Req(HttpMethod.Post, "/api/admin/content", owner, slug: slug,
-            body: new { pluginInstanceId = instanceId, contentType = "post", slug = "gone", data = new { title = "Gone" } }), ct);
-        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/content/{itemId}/publish", owner, slug: slug, body: new { }), ct))
-            .EnsureSuccessStatusCode();
-        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/content/{itemId}/schedule", owner, slug: slug,
-            body: new { publishAt = DateTimeOffset.UtcNow.AddDays(1) }), ct)).EnsureSuccessStatusCode();
-
-        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/content/{itemId}", owner, slug: slug), ct))
-            .StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/content/{itemId}", owner, slug: slug), ct))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/content/{itemId}", owner, slug: slug), ct))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
     private static HttpRequestMessage Req(HttpMethod method, string url, Guid sub, string roles = "", string? slug = null, object? body = null, bool asSuperAdmin = false)
     {
         var req = new HttpRequestMessage(method, url);

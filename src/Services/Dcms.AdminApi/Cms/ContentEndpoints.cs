@@ -12,6 +12,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Cms;
@@ -422,14 +423,24 @@ public static class ContentEndpoints
 
         // Delete an item for good: its versions cascade, a pending schedule goes with it, and a
         // published one leaves the site first (search, caches) through the same event an
-        // unpublish sends. The console's bulk delete called this route before it existed.
+        // unpublish sends — so it needs the publish permission as well. The console's bulk
+        // delete called this route before it existed.
         app.MapDelete("/api/admin/content/{id:guid}", async (
-            Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope, CancellationToken ct) =>
+            Guid id, HttpContext http, IAuthorizationService authz, CmsDbContext db, ITenantContext tenant,
+            AuditScope scope, CancellationToken ct) =>
         {
             var item = await db.ContentItems.FirstOrDefaultAsync(c => c.Id == id, ct);
             if (item is null)
             {
                 return Results.NotFound();
+            }
+            // Deleting a live item takes it off the site: that is unpublishing, and takes its permission too.
+            if (item.PublishedVersionId is not null
+                && !(await authz.AuthorizeAsync(http.User, null,
+                    new Dcms.Shared.Security.Authorization.PermissionRequirement(PlatformPermissions.ContentPublish))).Succeeded)
+            {
+                return Results.Json(new { error = "This item is published: unpublishing it, or deleting it, needs the content:publish permission." },
+                    statusCode: StatusCodes.Status403Forbidden);
             }
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             await db.ScheduledPublishes.Where(sp => sp.ItemId == id).ExecuteDeleteAsync(ct);
