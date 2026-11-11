@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Dcms.Plugins.UserAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -36,11 +35,8 @@ public sealed record GateWrite(string Prefix, string Access, IReadOnlyList<Guid>
 /// said. Roles, grants and site rules are this plugin's own store; a change to site rules is
 /// published to the edge before the call returns.
 /// </summary>
-internal static partial class UserAuthAdminEndpoints
+internal static class UserAuthAdminEndpoints
 {
-    private const int MaxRules = 100;
-    private const int MaxPermissions = 500;
-
     public static void Map(IPluginEndpointBuilder endpoints)
     {
         // ---- realm ----
@@ -95,9 +91,9 @@ internal static partial class UserAuthAdminEndpoints
             .RequirePluginPermission("users-manage")
             .AuditAs("user.previewed");
         // Their direct grants go with them, once identity has let them go.
-        endpoints.MapDelete("/users/{userId:guid}", (Guid userId, RealmRelay relay, UserAuthDbContext db, CancellationToken ct) =>
+        endpoints.MapDelete("/users/{userId:guid}", (Guid userId, RealmRelay relay, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/users/{userId}", null, ct,
-                    then: _ => RemoveGrantsAsync(db, GrantSubject.User, userId, ct)))
+                    then: _ => new UserAccessAdmin(context, services).RemoveGrantsAsync(GrantSubject.User, userId, ct)))
             .RequirePluginPermission("users-manage")
             .AuditAs("user.deleted");
 
@@ -114,9 +110,9 @@ internal static partial class UserAuthAdminEndpoints
             .AuditAs("group.updated");
         // Grants to the group go with it. A site rule naming it keeps the id and admits nobody
         // through it: closed, rather than a rule silently changing what it lets in.
-        endpoints.MapDelete("/groups/{groupId:guid}", (Guid groupId, RealmRelay relay, UserAuthDbContext db, CancellationToken ct) =>
+        endpoints.MapDelete("/groups/{groupId:guid}", (Guid groupId, RealmRelay relay, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/groups/{groupId}", null, ct,
-                    then: _ => RemoveGrantsAsync(db, GrantSubject.Group, groupId, ct)))
+                    then: _ => new UserAccessAdmin(context, services).RemoveGrantsAsync(GrantSubject.Group, groupId, ct)))
             .RequirePluginPermission("users-manage")
             .AuditAs("group.deleted");
         endpoints.MapPut("/groups/{groupId:guid}/members/{userId:guid}", (Guid groupId, Guid userId, RealmRelay relay, CancellationToken ct) =>
@@ -141,204 +137,74 @@ internal static partial class UserAuthAdminEndpoints
             .RequirePluginPermission("providers-manage")
             .AuditAs("provider.deleted");
 
-        // ---- roles and grants: this plugin's ----
+        // ---- roles and grants: this plugin's (UserAccessAdmin, shared with users.roles@1) ----
 
-        endpoints.MapGet("/roles", async (UserAuthDbContext db, CancellationToken ct) =>
+        endpoints.MapGet("/roles", async (IPluginContext context, IServiceProvider services, CancellationToken ct) =>
             {
-                var roles = await db.Roles.AsNoTracking().OrderBy(r => r.Name).ToListAsync(ct);
-                var grants = await db.Grants.AsNoTracking().ToListAsync(ct);
+                var (roles, grants) = await new UserAccessAdmin(context, services).RolesAsync(ct);
                 return Results.Ok(roles.Select(r => new
                 {
                     r.Id, r.Key, r.Name, r.Description, r.Permissions, r.BypassRowAccess, r.UpdatedAt,
                     grants = grants.Where(g => g.RoleId == r.Id)
-                        .Select(g => new { g.Id, subjectType = Camel(g.SubjectType), g.SubjectId, g.CreatedAt }),
+                        .Select(g => new { g.Id, subjectType = UserAccessAdmin.Camel(g.SubjectType), g.SubjectId, g.CreatedAt }),
                 }));
             })
             .RequirePluginPermission("users-read");
 
-        endpoints.MapPost("/roles", async (RoleWrite body, IPluginContext context, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                if (Invalid(body) is { } error)
+        endpoints.MapPost("/roles", (RoleWrite body, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+                Run(async () =>
                 {
-                    return error;
-                }
-                if (await db.Roles.AnyAsync(r => r.Key == body.Key, ct))
-                {
-                    return Results.Conflict(new { error = $"A role with the key '{body.Key}' already exists." });
-                }
-                var role = new UserRole
-                {
-                    Id = Guid.NewGuid(), TenantId = context.TenantId, Key = body.Key, Name = body.Name.Trim(),
-                    Description = body.Description?.Trim(), Permissions = Permissions(body), BypassRowAccess = body.BypassRowAccess ?? false,
-                };
-                db.Roles.Add(role);
-                await db.SaveChangesAsync(ct);
-                return Results.Created($"roles/{role.Id}", new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
-            })
+                    var role = await new UserAccessAdmin(context, services).CreateRoleAsync(body, ct);
+                    return Results.Created($"roles/{role.Id}", new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
+                }))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.created")
             .ManagedByDeployments("user-auth");
 
-        endpoints.MapPut("/roles/{roleId:guid}", async (Guid roleId, RoleWrite body, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                if (Invalid(body) is { } error)
-                {
-                    return error;
-                }
-                var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == roleId, ct);
-                if (role is null)
-                {
-                    return Results.NotFound();
-                }
-                if (role.Key != body.Key && await db.Roles.AnyAsync(r => r.Key == body.Key, ct))
-                {
-                    return Results.Conflict(new { error = $"A role with the key '{body.Key}' already exists." });
-                }
-                (role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess, role.UpdatedAt) =
-                    (body.Key, body.Name.Trim(), body.Description?.Trim(), Permissions(body), body.BypassRowAccess ?? role.BypassRowAccess, DateTimeOffset.UtcNow);
-                await db.SaveChangesAsync(ct);
-                return Results.Ok(new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
-            })
+        endpoints.MapPut("/roles/{roleId:guid}", (Guid roleId, RoleWrite body, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+                Run(async () => await new UserAccessAdmin(context, services).UpdateRoleAsync(roleId, body, ct) is { } role
+                    ? Results.Ok(new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess })
+                    : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.updated")
             .ManagedByDeployments("user-auth");
 
-        endpoints.MapDelete("/roles/{roleId:guid}", async (Guid roleId, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == roleId, ct);
-                if (role is null)
-                {
-                    return Results.NotFound();
-                }
-                // Its grants cascade.
-                db.Roles.Remove(role);
-                await db.SaveChangesAsync(ct);
-                return Results.NoContent();
-            })
+        endpoints.MapDelete("/roles/{roleId:guid}", (Guid roleId, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+                Run(async () => await new UserAccessAdmin(context, services).DeleteRoleAsync(roleId, ct) ? Results.NoContent() : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.deleted")
             .ManagedByDeployments("user-auth");
 
-        endpoints.MapPost("/roles/{roleId:guid}/grants", async (Guid roleId, GrantWrite body, IPluginContext context, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                if (!Enum.TryParse<GrantSubject>(body.SubjectType, ignoreCase: true, out var subject) || body.SubjectId == Guid.Empty)
+        endpoints.MapPost("/roles/{roleId:guid}/grants", (Guid roleId, GrantWrite body, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+                Run(async () => await new UserAccessAdmin(context, services).GrantAsync(roleId, body, ct) switch
                 {
-                    return Results.BadRequest(new { error = "A grant names a group or a user by id." });
-                }
-                if (!await db.Roles.AnyAsync(r => r.Id == roleId, ct))
-                {
-                    return Results.NotFound();
-                }
-                var existing = await db.Grants.FirstOrDefaultAsync(g => g.RoleId == roleId && g.SubjectType == subject && g.SubjectId == body.SubjectId, ct);
-                if (existing is not null)
-                {
-                    return Results.Ok(new { existing.Id });
-                }
-                var grant = new UserGrant
-                {
-                    Id = Guid.NewGuid(), TenantId = context.TenantId, RoleId = roleId, SubjectType = subject, SubjectId = body.SubjectId,
-                    CreatedBy = context.Actor.Id?.ToString() ?? context.Actor.Key,
-                };
-                db.Grants.Add(grant);
-                await db.SaveChangesAsync(ct);
-                return Results.Created($"roles/{roleId}/grants/{grant.Id}", new { grant.Id });
-            })
+                    null => Results.NotFound(),
+                    ({ } grant, true) => Results.Created($"roles/{roleId}/grants/{grant.Id}", new { grant.Id }),
+                    ({ } grant, false) => Results.Ok(new { grant.Id }),
+                }))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.granted");
 
-        endpoints.MapDelete("/roles/{roleId:guid}/grants/{grantId:guid}", async (Guid roleId, Guid grantId, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                var grant = await db.Grants.FirstOrDefaultAsync(g => g.Id == grantId && g.RoleId == roleId, ct);
-                if (grant is null)
-                {
-                    return Results.NotFound();
-                }
-                db.Grants.Remove(grant);
-                await db.SaveChangesAsync(ct);
-                return Results.NoContent();
-            })
+        endpoints.MapDelete("/roles/{roleId:guid}/grants/{grantId:guid}", (Guid roleId, Guid grantId, IPluginContext context, IServiceProvider services,
+                CancellationToken ct) =>
+                Run(async () => await new UserAccessAdmin(context, services).RevokeAsync(roleId, grantId, ct) ? Results.NoContent() : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.revoked");
 
         // What roles can hold: every enabled plugin's gateable resources (users.resources@1).
-        endpoints.MapGet("/resources", async (IPluginContext context, PluginContextFactory plugins, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                var catalogs = new List<UserResourceCatalog>();
-                foreach (var provider in context.Contracts.GetAll<IUserResources>())
-                {
-                    catalogs.Add(await provider.ListAsync(ct));
-                }
-                // And the site API of every instance whose API access asks for a permission.
-                var byPermission = await db.ApiRules.Where(r => r.Access == ApiAccess.Permission).Select(r => r.InstanceId).ToListAsync(ct);
-                foreach (var instance in (await plugins.EnabledInstancesAsync(context.TenantId, ct)).Where(i => byPermission.Contains(i.InstanceId)))
-                {
-                    var api = new UserResource("api", "Site API", [new UserResourceAction("read", "Read"), new UserResourceAction("write", "Write")]);
-                    var index = catalogs.FindIndex(c => c.Plugin == instance.PluginId && c.Instance == instance.Slug);
-                    if (index >= 0)
-                    {
-                        catalogs[index] = catalogs[index] with { Resources = [.. catalogs[index].Resources, api] };
-                    }
-                    else
-                    {
-                        catalogs.Add(new UserResourceCatalog(instance.PluginId, instance.Slug, instance.Name, [api]));
-                    }
-                }
-                return Results.Ok(catalogs.OrderBy(c => c.Label, StringComparer.CurrentCultureIgnoreCase));
-            })
+        endpoints.MapGet("/resources", async (IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+                Results.Ok(await new UserAccessAdmin(context, services).ResourcesAsync(ct)))
             .RequirePluginPermission("users-read");
 
         // ---- API access: who may call each instance's /api/{slug} ----
 
-        endpoints.MapGet("/api-access", async (IPluginContext context, PluginContextFactory plugins, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                var rules = await db.ApiRules.AsNoTracking().ToDictionaryAsync(r => r.InstanceId, r => r.Access, ct);
-                return Results.Ok((await plugins.EnabledInstancesAsync(context.TenantId, ct))
-                    .Where(i => i.PluginId != UserAuthPlugin.PluginId)
-                    .OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase)
-                    .Select(i => new
-                    {
-                        instanceId = i.InstanceId, i.Slug, i.Name, plugin = i.PluginId,
-                        access = rules.TryGetValue(i.InstanceId, out var access) ? Camel(access) : "public",
-                        readPermission = UserApiAccess.Permission(i.PluginId, i.Slug, write: false),
-                        writePermission = UserApiAccess.Permission(i.PluginId, i.Slug, write: true),
-                    }));
-            })
+        endpoints.MapGet("/api-access", async (IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+                Results.Ok(await new UserAccessAdmin(context, services).ApiAccessAsync(ct)))
             .RequirePluginPermission("users-read");
 
-        endpoints.MapPut("/api-access/{instanceId:guid}", async (Guid instanceId, ApiAccessWrite body, IPluginContext context,
-                PluginContextFactory plugins, UserAuthDbContext db, CancellationToken ct) =>
-            {
-                var instance = (await plugins.EnabledInstancesAsync(context.TenantId, ct)).FirstOrDefault(i => i.InstanceId == instanceId);
-                if (instance is null || instance.PluginId == UserAuthPlugin.PluginId)
-                {
-                    return Results.NotFound();
-                }
-                var isPublic = string.Equals(body.Access, "public", StringComparison.OrdinalIgnoreCase);
-                var access = ApiAccess.SignedIn;
-                if (!isPublic && (!Enum.TryParse(body.Access, ignoreCase: true, out access) || !Enum.IsDefined(access)))
-                {
-                    return Results.BadRequest(new { error = $"'{body.Access}' is not an API access level (public, signedIn, permission)." });
-                }
-                var rule = await db.ApiRules.FirstOrDefaultAsync(r => r.InstanceId == instanceId, ct);
-                if (isPublic)
-                {
-                    if (rule is not null)
-                    {
-                        db.ApiRules.Remove(rule);
-                    }
-                }
-                else if (rule is null)
-                {
-                    db.ApiRules.Add(new ApiRule { Id = Guid.NewGuid(), TenantId = context.TenantId, InstanceId = instanceId, Access = access });
-                }
-                else
-                {
-                    rule.Access = access;
-                    rule.UpdatedAt = DateTimeOffset.UtcNow;
-                }
-                await db.SaveChangesAsync(ct);
-                return Results.NoContent();
-            })
+        endpoints.MapPut("/api-access/{instanceId:guid}", (Guid instanceId, ApiAccessWrite body, IPluginContext context, IServiceProvider services,
+                CancellationToken ct) =>
+                Run(async () => await new UserAccessAdmin(context, services).SetApiAccessAsync(instanceId, body, ct) ? Results.NoContent() : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("api_access.updated")
             .ManagedByDeployments("user-auth");
@@ -358,47 +224,38 @@ internal static partial class UserAuthAdminEndpoints
                     // A single-page app: its route changes never reach the edge, so its rules guard direct loads only.
                     spa = s.RenderMode.IsViteApp(),
                     hosts = domains.Where(d => d.SiteId == s.Id).Select(d => new { d.Hostname, d.verified }),
-                    rules = gates.Where(g => g.SiteId == s.Id).Select(g => new { prefix = g.PathPrefix, access = Camel(g.Access), g.Groups }),
+                    rules = gates.Where(g => g.SiteId == s.Id).Select(g => new { prefix = g.PathPrefix, access = UserAccessAdmin.Camel(g.Access), g.Groups }),
                 }));
             })
             .RequirePluginPermission("users-read");
 
-        // A site's rules, replaced as a whole and in order: the order is the meaning.
-        endpoints.MapPut("/sites/{siteId:guid}/rules", async (Guid siteId, List<GateWrite> body, IPluginContext context, UserAuthDbContext db,
-                SitesDbContext sites, SiteGatePublisher publisher, CancellationToken ct) =>
-            {
-                if (!await sites.Sites.AnyAsync(s => s.Id == siteId, ct))
-                {
-                    return Results.NotFound();
-                }
-                if (InvalidRules(body) is { } error)
-                {
-                    return error;
-                }
-                await using (var tx = await db.Database.BeginTransactionAsync(ct))
-                {
-                    db.Gates.RemoveRange(await db.Gates.Where(g => g.SiteId == siteId).ToListAsync(ct));
-                    // Deleted first: the new rules may reuse a prefix, which is unique per site.
-                    await db.SaveChangesAsync(ct);
-                    db.Gates.AddRange(body.Select((rule, i) => new SiteGate
-                    {
-                        Id = Guid.NewGuid(), TenantId = context.TenantId, SiteId = siteId, Position = i,
-                        PathPrefix = Prefix(rule.Prefix), Access = Enum.Parse<GateAccess>(rule.Access, ignoreCase: true),
-                        Groups = rule.Groups?.Distinct().ToList() ?? [],
-                    }));
-                    await db.SaveChangesAsync(ct);
-                    await tx.CommitAsync(ct);
-                }
-                // Saved either way; if the edge or identity cannot be told now, the reconciler
-                // tells them within minutes, and the console says so.
-                return await Guarded(async () =>
-                {
-                    await publisher.PublishAsync(context.TenantId, ct);
-                    return Results.NoContent();
-                }, savedAnyway: true);
-            })
+        // A site's rules, replaced as a whole and in order: the order is the meaning. Saved either
+        // way; if the edge or identity cannot be told now, the reconciler tells them within
+        // minutes, and the console says so.
+        endpoints.MapPut("/sites/{siteId:guid}/rules", (Guid siteId, List<GateWrite> body, IPluginContext context, IServiceProvider services,
+                CancellationToken ct) =>
+                Run(() => Guarded(async () =>
+                    await new UserAccessAdmin(context, services).SetSiteRulesAsync(siteId, body, ct) ? Results.NoContent() : Results.NotFound(),
+                    savedAnyway: true)))
             .RequirePluginPermission("access-manage")
             .AuditAs("site_rules.updated");
+    }
+
+    /// <summary>The service's refusals as the console has always had them: 400 for input to fix, 409 for a clash.</summary>
+    private static async Task<IResult> Run(Func<Task<IResult>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (ContractValidationException e)
+        {
+            return Results.BadRequest(new { error = e.Message });
+        }
+        catch (ContractConflictException e)
+        {
+            return Results.Conflict(new { error = e.Message });
+        }
     }
 
     private static async Task<IResult> Guarded(Func<Task<IResult>> call, bool savedAnyway = false)
@@ -419,72 +276,6 @@ internal static partial class UserAuthAdminEndpoints
                 statusCode: savedAnyway ? StatusCodes.Status202Accepted : StatusCodes.Status502BadGateway);
         }
     }
-
-    private static async Task RemoveGrantsAsync(UserAuthDbContext db, GrantSubject subject, Guid subjectId, CancellationToken ct)
-    {
-        db.Grants.RemoveRange(await db.Grants.Where(g => g.SubjectType == subject && g.SubjectId == subjectId).ToListAsync(ct));
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static IResult? Invalid(RoleWrite body)
-    {
-        if (!RoleKey().IsMatch(body.Key ?? "") || string.IsNullOrWhiteSpace(body.Name) || body.Name.Length > 120
-            || body.Description?.Length > 1000)
-        {
-            return Results.BadRequest(new { error = "A role needs a key (lowercase letters, digits and _, up to 64) and a name of up to 120 characters." });
-        }
-        var permissions = body.Permissions ?? [];
-        if (permissions.Count > MaxPermissions)
-        {
-            return Results.BadRequest(new { error = $"A role holds at most {MaxPermissions} permissions." });
-        }
-        return permissions.FirstOrDefault(p => !SitePermission.IsValid(p)) is { } bad
-            ? Results.BadRequest(new { error = $"'{bad}' is not a site permission ({{plugin}}:{{instance}}:{{resource}}:{{action}})." })
-            : null;
-    }
-
-    private static List<string> Permissions(RoleWrite body) =>
-        (body.Permissions ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
-
-    private static IResult? InvalidRules(List<GateWrite> rules)
-    {
-        if (rules.Count > MaxRules)
-        {
-            return Results.BadRequest(new { error = $"A site has at most {MaxRules} rules." });
-        }
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var rule in rules)
-        {
-            // What the edge will match against: no encodings or backslashes (it refuses those paths outright).
-            if (string.IsNullOrWhiteSpace(rule.Prefix) || !rule.Prefix.StartsWith('/') || rule.Prefix.Length > 512
-                || rule.Prefix.Contains('%') || rule.Prefix.Contains('\\') || rule.Prefix.Contains("//") || rule.Prefix.Any(char.IsControl)
-                || rule.Prefix.Split('/').Any(s => s is "." or ".."))
-            {
-                return Results.BadRequest(new { error = $"'{rule.Prefix}' is not a path: it must start with / and contain no %, \\, // or dot segments." });
-            }
-            if (!seen.Add(Prefix(rule.Prefix)))
-            {
-                return Results.BadRequest(new { error = $"Two rules for '{rule.Prefix}': only the first would ever apply." });
-            }
-            if (!Enum.TryParse<GateAccess>(rule.Access, ignoreCase: true, out var access) || !Enum.IsDefined(access))
-            {
-                return Results.BadRequest(new { error = $"'{rule.Access}' is not an access level (public, signedIn, groups)." });
-            }
-            if (access == GateAccess.Groups && (rule.Groups is not { Count: > 0 } || rule.Groups.Count > 50))
-            {
-                return Results.BadRequest(new { error = $"The rule for '{rule.Prefix}' admits groups, so it needs between 1 and 50 of them." });
-            }
-        }
-        return null;
-    }
-
-    /// <summary>"/portal/" and "/portal" are one rule; "/" stays "/".</summary>
-    private static string Prefix(string prefix) => prefix.Length > 1 ? prefix.TrimEnd('/') : prefix;
-
-    private static string Camel<T>(T value) where T : struct, Enum => JsonNamingPolicy.CamelCase.ConvertName(value.ToString());
-
-    [GeneratedRegex("^[a-z][a-z0-9_]{0,63}$")]
-    private static partial Regex RoleKey();
 }
 
 /// <summary>

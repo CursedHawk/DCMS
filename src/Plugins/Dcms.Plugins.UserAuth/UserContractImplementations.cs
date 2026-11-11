@@ -112,7 +112,7 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
     {
         var realm = await RealmAsync(ct);
         var groups = await Call(() => Realms.CallAsync<List<RealmGroupInfo>>(realm, HttpMethod.Get, "/groups", null, ct));
-        return new DirectoryGroupList(groups.Select(g => new DirectoryGroup(g.Id, g.Name, g.Description, g.Members)).ToList());
+        return new DirectoryGroupList(groups.Select(ToGroup).ToList());
     }
 
     public async Task<DirectoryUser> InviteAsync(UserInvite input, CancellationToken ct)
@@ -143,21 +143,66 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
         await Call(() => Realms.CallAsync(realm, HttpMethod.Delete, $"/groups/{input.GroupId}/members/{input.UserId}", null, ct));
     }
 
-    /// <summary>Whose users these are: another environment's, when this one's sites sign in through it (ADR 0026).</summary>
-    private Task<Guid> RealmAsync(CancellationToken ct) =>
-        EnvironmentRealm.OfAsync(services.GetRequiredService<TenancyDbContext>(), context.TenantId, ct);
+    public async Task<DirectoryUser> GetUserAsync(UserRef input, CancellationToken ct)
+    {
+        var realm = await RealmAsync(ct);
+        return ToUser(await Call(() => Realms.CallAsync<RealmUserInfo>(realm, HttpMethod.Get, $"/users/{input.UserId}", null, ct)));
+    }
 
-    /// <summary>The realm to change: only this environment's own. Another's people are managed there.</summary>
-    private async Task<Guid> OwnRealmAsync(CancellationToken ct) =>
-        await RealmAsync(ct) == context.EnvironmentId
-            ? context.EnvironmentId
-            : throw new ContractValidationException("This environment's users are another environment's; manage them there.");
+    // Identity answers with the invitation link; it stays here, as on InviteAsync.
+    public async Task ResendInviteAsync(UserRef input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        await Call(() => Realms.CallAsync(realm, HttpMethod.Post, $"/users/{input.UserId}/invite", null, ct));
+    }
+
+    public async Task SignOutUserAsync(UserRef input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        await Call(() => Realms.CallAsync(realm, HttpMethod.Post, $"/users/{input.UserId}/sign-out", null, ct));
+    }
+
+    public async Task DeleteUserAsync(UserRef input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        await Call(() => Realms.CallAsync(realm, HttpMethod.Delete, $"/users/{input.UserId}", null, ct));
+        // Their direct grants go with them, once identity has let them go.
+        await new UserAccessAdmin(context, services).RemoveGrantsAsync(GrantSubject.User, input.UserId, ct);
+    }
+
+    public async Task<DirectoryGroup> CreateGroupAsync(GroupWrite input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        return ToGroup(await Call(() => Realms.CallAsync<RealmGroupInfo>(realm, HttpMethod.Post, "/groups",
+            new RealmGroupWrite(input.Name, input.Description), ct)));
+    }
+
+    public async Task<DirectoryGroup> UpdateGroupAsync(GroupUpdate input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        return ToGroup(await Call(() => Realms.CallAsync<RealmGroupInfo>(realm, HttpMethod.Put, $"/groups/{input.GroupId}",
+            new RealmGroupWrite(input.Name, input.Description), ct)));
+    }
+
+    public async Task DeleteGroupAsync(GroupRef input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        await Call(() => Realms.CallAsync(realm, HttpMethod.Delete, $"/groups/{input.GroupId}", null, ct));
+        // Grants to the group go with it; a site rule naming it admits nobody through it.
+        await new UserAccessAdmin(context, services).RemoveGrantsAsync(GrantSubject.Group, input.GroupId, ct);
+    }
+
+    private static DirectoryGroup ToGroup(RealmGroupInfo g) => new(g.Id, g.Name, g.Description, g.Members);
+
+    private Task<Guid> RealmAsync(CancellationToken ct) => AdminRealm.OfAsync(context, services, ct);
+
+    private Task<Guid> OwnRealmAsync(CancellationToken ct) => AdminRealm.OwnAsync(context, services, ct);
 
     private static DirectoryUser ToUser(RealmUserInfo u) =>
         new(u.Id, u.Email, u.DisplayName, u.Status, u.Groups, u.CreatedAt, u.LastSignInAt);
 
     /// <summary>Identity's refusal of the input (a 4xx) is the caller's to fix, so it surfaces as a validation error.</summary>
-    private static async Task<T> Call<T>(Func<Task<T>> call)
+    internal static async Task<T> Call<T>(Func<Task<T>> call)
     {
         try
         {
@@ -169,7 +214,7 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
         }
     }
 
-    private static Task Call(Func<Task> call) => Call(async () =>
+    internal static Task Call(Func<Task> call) => Call(async () =>
     {
         await call();
         return true;
@@ -209,6 +254,30 @@ public sealed class UserPeople(IHttpContextAccessor http, IServiceProvider servi
             : null;
 
     private static Person ToPerson(RealmPerson p) => new(p.Id, p.Email, p.DisplayName);
+}
+
+/// <summary>The realm the admin-plane contracts work on, made on first use as the console's relay makes it.</summary>
+internal static class AdminRealm
+{
+    /// <summary>Whose users these are: another environment's, when this one's sites sign in through it (ADR 0026).</summary>
+    public static async Task<Guid> OfAsync(IPluginContext context, IServiceProvider services, CancellationToken ct)
+    {
+        var realm = await EnvironmentRealm.OfAsync(services.GetRequiredService<TenancyDbContext>(), context.TenantId, ct);
+        var realms = services.GetService<RealmAdminClient>()
+                     ?? throw new InvalidOperationException("The realm is available on the admin plane only.");
+        // The plugin was just enabled and nothing has asked for the realm yet: identity makes it now.
+        if (await realms.GetRealmAsync(realm, ct) is null)
+        {
+            await services.GetRequiredService<SiteGatePublisher>().SyncRealmAsync(realm, null, ct);
+        }
+        return realm;
+    }
+
+    /// <summary>The realm to change: only this environment's own. Another's people are managed there.</summary>
+    public static async Task<Guid> OwnAsync(IPluginContext context, IServiceProvider services, CancellationToken ct) =>
+        await OfAsync(context, services, ct) == context.EnvironmentId
+            ? context.EnvironmentId
+            : throw new ContractConflictException("This environment's sites sign people in through another environment's users. Manage them there.");
 }
 
 /// <summary>The plugin's events (ADR 0022). Published after the fact and best effort: an invitation is sent whether or not a flow hears of it.</summary>

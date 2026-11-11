@@ -290,9 +290,18 @@ not, name, email, group ids.
   invitation stands whether or not a flow hears of it. Dynamic Apps flows trigger on both.
 - **Not built:** `user.signed-in`. Every sign-in as an event is volume with little a flow would
   do with it; the audit log already has sign-ins.
-- **The assistant** reaches `users.directory@1` (list, invite, enable or disable, group
-  membership; disabling is dangerous) on instances with AI tools on. Provider secrets and site
-  rules are not contract operations, so no tool can read a secret or change who reaches a page.
+- **The assistant** reaches the whole console on instances with AI tools on, through three
+  admin-plane contracts (2026-11, epic #624; this replaces the earlier "no site rules, no
+  providers" line): `users.directory@1` (users and groups: list, get, invite and re-invite,
+  enable or disable, sign out, delete, group create/rename/delete and membership),
+  `users.roles@1` (the grantable permission catalog, roles, grants) and `users.realm@1`
+  (password sign-in, identity providers, site path rules, site API access). The routes and the
+  contracts share one service, `UserAccessAdmin`, so validation and the deployment-managed check
+  are one code path. **Anything that changes who reaches what is `Dangerous`** (a role's
+  permissions, grants, site rules, API access, providers, passwords) and asks the operator
+  first; creating a group or an ungranted role is `Safe`. **Provider client secrets are
+  write-only:** `SetProvider` takes one, and no operation returns it — identity answers
+  `hasSecret` only.
 
 ### Acceptance (UA8)
 

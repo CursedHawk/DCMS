@@ -44,6 +44,9 @@ public sealed class UserAuthPlugin : IPlugin
             ContractProvision.Of<IUserIdentity, UserIdentity>(),
             ContractProvision.Of<IUserAccess, UserAccess>(),
             ContractProvision.Of<IUserDirectory, UserDirectory>(),
+            // Roles, grants, sign-in and site rules for the console and the assistant (admin plane).
+            ContractProvision.Of<IUserRoles, UserRoles>(),
+            ContractProvision.Of<IUserRealm, UserRealm>(),
             // The same directory, narrowed, for a signed-in site user to share with (#297).
             ContractProvision.Of<IUserPeople, UserPeople>(),
             // The same signed-in user, to plugins that only know visitors (own records, prefilled forms).

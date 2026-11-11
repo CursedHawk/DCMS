@@ -33,7 +33,11 @@ public sealed class FakeRealmApi : HttpMessageHandler
         public Dictionary<Guid, RealmUserInfo> Users { get; } = [];
         public Dictionary<Guid, RealmGroupInfo> Groups { get; } = [];
         public HashSet<(Guid Group, Guid User)> Members { get; } = [];
+        public Dictionary<string, RealmProviderInfo> Providers { get; } = [];
     }
+
+    /// <summary>Every client secret identity was given, by provider key: write-only, so never in an answer.</summary>
+    public ConcurrentDictionary<string, string> ProviderSecrets { get; } = new();
 
     /// <summary>Someone in a realm's directory, as an accepted invitation would leave them.</summary>
     public Guid AddUser(Guid tenantId, string email, string status = "active", params Guid[] groups)
@@ -163,6 +167,12 @@ public sealed class FakeRealmApi : HttpMessageHandler
                 var asked = (await Body<RealmPreviewTokenRequest>(request, ct))!;
                 PreviewRequests.Enqueue((Guid.Parse(id), asked.RequestedBy));
                 return Ok(new RealmPreviewToken($"preview:{id}", DateTimeOffset.UtcNow.AddMinutes(15)));
+            case ("GET", ["users", var id]) when realm.Users.TryGetValue(Guid.Parse(id), out var one):
+                return Ok(WithGroups(realm, one));
+            case ("POST", ["users", var id, "invite"]) when realm.Users.ContainsKey(Guid.Parse(id)):
+                return Ok(new { inviteUrl = "https://identity.test/realm/invite?token=y" });
+            case ("POST", ["users", var id, "sign-out"]) when realm.Users.ContainsKey(Guid.Parse(id)):
+                return Status(HttpStatusCode.NoContent);
             case ("DELETE", ["users", var id]):
                 return realm.Users.Remove(Guid.Parse(id)) ? Status(HttpStatusCode.NoContent) : Status(HttpStatusCode.NotFound);
             case ("GET", ["groups"]):
@@ -172,6 +182,10 @@ public sealed class FakeRealmApi : HttpMessageHandler
                 var created = new RealmGroupInfo(Guid.NewGuid(), write.Name, write.Description, 0);
                 realm.Groups[created.Id] = created;
                 return Ok(created, HttpStatusCode.Created);
+            case ("PUT", ["groups", var id]) when realm.Groups.TryGetValue(Guid.Parse(id), out var renamed):
+                var change = (await Body<RealmGroupWrite>(request, ct))!;
+                realm.Groups[renamed.Id] = renamed = renamed with { Name = change.Name, Description = change.Description };
+                return Ok(renamed);
             case ("DELETE", ["groups", var id]):
                 return realm.Groups.Remove(Guid.Parse(id)) ? Status(HttpStatusCode.NoContent) : Status(HttpStatusCode.NotFound);
             case ("PUT", ["groups", var group, "members", var member]):
@@ -181,7 +195,21 @@ public sealed class FakeRealmApi : HttpMessageHandler
                 realm.Members.Remove((Guid.Parse(group), Guid.Parse(member)));
                 return Status(HttpStatusCode.NoContent);
             case ("GET", ["providers"]):
-                return Ok(Array.Empty<RealmProviderInfo>());
+                return Ok(realm.Providers.Values.OrderBy(p => p.Key).ToList());
+            case ("PUT", ["providers", var key]):
+                var provider = (await Body<RealmProviderWrite>(request, ct))!;
+                if (provider.ClientSecret is { } secret)
+                {
+                    ProviderSecrets[key] = secret;
+                }
+                var info = new RealmProviderInfo(key, provider.Kind, provider.DisplayName, provider.Enabled, provider.ClientId,
+                    ProviderSecrets.ContainsKey(key), provider.Issuer, provider.EntraTenant, provider.HostedDomain, provider.Provisioning ?? "inviteOnly",
+                    provider.AllowedDomains ?? [], provider.DefaultGroups ?? [], provider.GroupClaim, provider.GroupMappings ?? new Dictionary<string, Guid>(),
+                    $"https://identity.test/realm/callback/{key}");
+                realm.Providers[key] = info;
+                return Ok(info);
+            case ("DELETE", ["providers", var key]):
+                return realm.Providers.Remove(key) ? Status(HttpStatusCode.NoContent) : Status(HttpStatusCode.NotFound);
             default:
                 return Status(HttpStatusCode.NotFound);
         }
