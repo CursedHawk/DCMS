@@ -420,6 +420,39 @@ public static class ContentEndpoints
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentUnpublished, "content_item")
             .ManagedByDeployments("content");
 
+        // Delete an item for good: its versions cascade, a pending schedule goes with it, and a
+        // published one leaves the site first (search, caches) through the same event an
+        // unpublish sends. The console's bulk delete called this route before it existed.
+        app.MapDelete("/api/admin/content/{id:guid}", async (
+            Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope, CancellationToken ct) =>
+        {
+            var item = await db.ContentItems.FirstOrDefaultAsync(c => c.Id == id, ct);
+            if (item is null)
+            {
+                return Results.NotFound();
+            }
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await db.ScheduledPublishes.Where(sp => sp.ItemId == id).ExecuteDeleteAsync(ct);
+            if (item.PublishedVersionId is not null)
+            {
+                var evt = new ContentUnpublished(Guid.NewGuid(), DateTimeOffset.UtcNow,
+                    tenant.TenantId!.Value, item.PluginInstanceId, item.Id, item.ContentType, item.Slug);
+                db.Outbox.Add(new ContentOutboxMessage
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenant.TenantId!.Value,
+                    Subject = Subjects.ContentUnpublished,
+                    PayloadJson = JsonSerializer.Serialize(evt),
+                    ContextJson = AuditPropagation.CaptureJson(scope),
+                });
+            }
+            db.ContentItems.Remove(item);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentDeleted, "content_item")
+            .ManagedByDeployments("content");
+
         return app;
     }
 

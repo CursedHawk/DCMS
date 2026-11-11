@@ -43,7 +43,8 @@ describe('toolsFor', () => {
   });
 
   it('offers nothing to a member holding no relevant permission', () => {
-    expect(toolsFor(holder('audit:read'))).toEqual([]);
+    // audit:read reaches search_audit; exporting the log is no tool's business.
+    expect(toolsFor(holder('audit:export'))).toEqual([]);
   });
 });
 
@@ -74,12 +75,26 @@ describe('the tool catalogue', () => {
     }
   });
 
-  it('treats publishing, scheduling and deleting as the dangerous ones', () => {
+  it('treats publishing, deleting, repointing, deploying and secrets as the dangerous ones', () => {
     const dangerous = ASSISTANT_TOOLS.filter((t) => t.risk === 'dangerous').map((t) => t.name);
     expect(dangerous.sort()).toEqual([
+      'activate_site_build',
+      'apply_pending_deployments',
+      'assign_domain_site',
+      'cancel_job',
+      'delete_connection',
+      'delete_content',
+      'delete_environment',
       'delete_media',
+      'delete_media_folder',
+      'delete_site',
       'publish_content',
+      'publish_site',
+      'remove_domain',
       'schedule_content',
+      'set_connection_secret',
+      'set_environment_locks',
+      'set_primary_domain',
       'unpublish_content',
     ]);
   });

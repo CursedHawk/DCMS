@@ -34,6 +34,8 @@ describe('classification', () => {
   it('counts calling the site API as reaching the workspace', () => {
     // A preview writes the environment's live data (ADR 0026), so it is no longer harmless.
     expect(isTenantTool('preview_request')).toBe(true);
+    // Every console tool, the ones added later included, without a hand-kept list.
+    expect(isTenantTool('set_connection_secret')).toBe(true);
   });
 });
 

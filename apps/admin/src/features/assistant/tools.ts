@@ -4,6 +4,8 @@ import { api } from '../../lib/api';
 import type { Attachment } from './attachments';
 import type { ToolSpec } from '../agent/contracts';
 import { type AiMode, decide } from '../agent/modes';
+import { CONSOLE_TOOLS } from './consoleTools';
+import { ids, obj, required, str } from './toolArgs';
 
 export type { ToolRisk } from '../agent/modes';
 
@@ -35,30 +37,6 @@ export interface ToolContext {
  */
 export type AssistantTool = Omit<ToolSpec<ToolContext>, 'run'> & {
   run: (input: Record<string, unknown>, context: ToolContext) => Promise<string>;
-};
-
-const str = (input: Record<string, unknown>, key: string): string | undefined => {
-  const value = input[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-};
-
-const obj = (input: Record<string, unknown>, key: string): Record<string, unknown> => {
-  const value = input[key];
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-};
-
-const ids = (input: Record<string, unknown>, key: string): string[] => {
-  const value = input[key];
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
-};
-
-/** Required-argument accessor: a missing id must fail loudly rather than hit `/content/undefined`. */
-const required = (input: Record<string, unknown>, key: string): string => {
-  const value = str(input, key);
-  if (!value) throw new Error(`The "${key}" argument is required.`);
-  return value;
 };
 
 /**
@@ -543,6 +521,9 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     run: async (input) =>
       JSON.stringify(await api.post('/admin/media/delete', { ids: ids(input, 'ids') })),
   },
+
+  // ---- The rest of the console: sites, domains, environments, connections, operations. ----
+  ...CONSOLE_TOOLS,
 ];
 
 /**

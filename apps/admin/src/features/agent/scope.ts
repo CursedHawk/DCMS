@@ -1,4 +1,5 @@
 import { can, type MyPermissions } from '@dcms/core';
+import { ASSISTANT_TOOLS } from '../assistant/tools';
 import type { ToolSpec } from './contracts';
 
 /**
@@ -16,30 +17,16 @@ export const AGENT_SCOPES: readonly AgentScope[] = ['site', 'site+tenant'];
 /** The default: the agent edits code and nothing else. */
 export const DEFAULT_SCOPE: AgentScope = 'site';
 
-/** Tool-name prefixes that reach the tenant's real content rather than the site's files. */
-const TENANT_PREFIXES = [
-  'list_content',
-  'get_content',
-  'describe_content',
-  'create_content',
-  'update_content',
-  'publish_content',
-  'unpublish_content',
-  'schedule_content',
-  'list_plugins',
-  'get_analytics',
-  'list_sites',
-  'search_media',
-  'list_media_folders',
-  'upload_media',
-  'create_media_folder',
-  'move_media',
-  'delete_media',
-  'preview_request',
-];
+/**
+ * Tool names that reach the tenant's real content and configuration rather than the site's
+ * files: every console assistant tool (the IDE agent offers them as TENANT_TOOLS), and the
+ * preview's requests. Derived, so a tool added to the console is never offered in the narrow
+ * site scope by default.
+ */
+const TENANT_NAMES = new Set([...ASSISTANT_TOOLS.map((tool) => tool.name), 'preview_request']);
 
 export function isTenantTool(name: string): boolean {
-  return TENANT_PREFIXES.includes(name);
+  return TENANT_NAMES.has(name);
 }
 
 /**
