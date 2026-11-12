@@ -28,6 +28,12 @@ internal sealed class TestForgejo : IAsyncDisposable
         var container = new ContainerBuilder(Image)
             .WithEnvironment("FORGEJO__security__INSTALL_LOCK", "true")
             .WithEnvironment("FORGEJO__database__DB_TYPE", "sqlite3")
+            // The CLI (user creation, tokens) opens the same SQLite file the running server writes to.
+            // With SQLite's defaults — a 500 ms lock wait and a rollback journal — a CLI call that lands
+            // while the server is writing fails with "database is locked" (pipeline, 2026-11-12). WAL
+            // lets readers and the writer through together; the timeout makes a second writer wait.
+            .WithEnvironment("FORGEJO__database__SQLITE_JOURNAL_MODE", "WAL")
+            .WithEnvironment("FORGEJO__database__SQLITE_TIMEOUT", "10000")
             .WithEnvironment("FORGEJO__service__DISABLE_REGISTRATION", "true")
             .WithPortBinding(3000, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(3000).ForPath("/api/healthz")))
