@@ -8,10 +8,11 @@ import {
 } from '../assistant/conversations';
 import { formatProblems } from '../ide/agent/checkTools';
 import { type Message, NoApiKeyError, streamAssistantTurn } from '../ide/agent/client';
-import { finishRun, recordToolCall, recordTurn, startRun } from '../ide/agent/runMetrics';
+import { type AgentRunMetrics, finishRun, recordToolCall, recordTurn, startRun } from '../ide/agent/runMetrics';
 import { buildSystemPrompt } from '../ide/agent/systemPrompt';
 import type { TenantToolContext } from '../ide/agent/tenantTools';
 import { combineVerdict, isCheckable, newProblems, problemKey } from '../ide/diagnostics/typeCheck';
+import { clientId } from '../site-source/clientId';
 import { languageOf } from '../site-source/paths';
 import type { Classification } from './classify';
 import type { AgentEvent, ApprovalDecision, ToolSpec } from './contracts';
@@ -36,7 +37,7 @@ import { runAgent } from './runtime';
 import { toolsFor } from './scope';
 import { openSiteDraft, type SiteDraft } from './siteDraft';
 import { kindOfRenderMode, kitFor } from './siteKits';
-import { createTransaction, type AgentTransaction } from './transaction';
+import { createTransaction, type AgentTransaction, type FileChange } from './transaction';
 
 /**
  * Running site agents: the part of the host that does the work (ADR 0033).
@@ -152,9 +153,64 @@ function promptFor(queued: QueuedTask): string {
   return `The workspace assistant asked for this change on behalf of the user:\n\n${queued.task}\n\nDo it, verify it, and end with a short summary of what you changed — the assistant reads that summary back to the user.`;
 }
 
+/** Why a run did not start because another agent holds the site, in this browser or elsewhere. */
+const OTHER_TAB = 'Another tab in this browser already has an agent working on this site. Let it finish, or stop it there, then ask again.';
+const ELSEWHERE = 'You already have an agent working on this site — in another tab or on another device. Let it finish, or stop it there, then ask again.';
+
+/** Thrown inside a run when the server refuses its lease. */
+class SiteBusyError extends Error {}
+
+/** How often a running run tells the server it is alive (the lease lasts 60 s). */
+const HEARTBEAT_MS = 20_000;
+
+/**
+ * Start a run, if no other tab of this browser is running one on the site.
+ *
+ * <p>The tab's own rule — one run per site — is the session's `running` flag, claimed here
+ * before anything is awaited. Other tabs of the same browser are kept out by a Web Lock on the
+ * site, held for the whole run and released by the browser when the tab goes; other devices by
+ * the server's lease (see `runHeld`). A browser without Web Locks relies on the lease alone.</p>
+ */
 async function run(key: string, queued: QueuedTask): Promise<void> {
   const session = sessionOf(key);
   if (!session || session.running) return;
+  patch(key, { running: true });
+
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (!locks) {
+    await runHeld(key, queued);
+  } else {
+    const started = await locks.request(`dcms-site-agent:${key}`, { ifAvailable: true }, async (lock) => {
+      if (!lock) return false;
+      await runHeld(key, queued);
+      return true;
+    });
+    if (!started) {
+      refuse(key, queued, OTHER_TAB);
+      return;
+    }
+  }
+
+  // Only now: the lock is released once `request` settles, and the next run takes it afresh.
+  const next = sessionOf(key)?.queue[0];
+  if (next) {
+    patch(key, (s) => ({ queue: s.queue.slice(1) }));
+    void run(key, next);
+  }
+}
+
+/** A run that could not start: say so, and let whatever was queued behind it go too. */
+function refuse(key: string, queued: QueuedTask, message: string): void {
+  push(key, { id: uid(), kind: 'user', text: queued.task });
+  push(key, { id: uid(), kind: 'error', text: message });
+  patchRequest(queued.requestId, { status: 'stopped', summary: message });
+  for (const waiting of sessionOf(key)?.queue ?? []) patchRequest(waiting.requestId, { status: 'stopped', summary: message });
+  patch(key, { running: false, queue: [], outcome: 'stopped' });
+}
+
+async function runHeld(key: string, queued: QueuedTask): Promise<void> {
+  const session = sessionOf(key);
+  if (!session) return;
   const i = inner(key);
   const prompt = promptFor(queued);
 
@@ -236,6 +292,11 @@ async function run(key: string, queued: QueuedTask): Promise<void> {
   let thinkingText = '';
   let checkId: string | null = null;
   let runFromSeq = 0;
+  /** Set when the server refused the lease: no run row exists, so nothing is closed. */
+  let refused = false;
+  /** Whether this run opened the conversation, so a refused one can take it away again. */
+  let createdHere = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   /** The entry id for each in-flight tool call, so its result lands on its own card. */
   const toolEntries = new Map<string, string>();
   let tx: AgentTransaction | null = null;
@@ -434,6 +495,7 @@ async function run(key: string, queued: QueuedTask): Promise<void> {
     // Open the conversation before the first model call: a run whose first call fails is
     // exactly the one worth keeping.
     if (!sessionOf(key)?.conversationId) {
+      createdHere = true;
       const created = await api.post<{ id: string }>('/admin/ai/conversations', {
         title: titleFrom(queued.task),
         mode: current.mode,
@@ -449,8 +511,17 @@ async function run(key: string, queued: QueuedTask): Promise<void> {
 
     runFromSeq = i.lastSeq + 1;
     // The opening half of the run record, with no `finishedAt` until the closing half: a tab
-    // closed mid-run leaves a row saying what was asked.
-    void recordRun(conversationId, runId, { task: queued.task, fromSeq: runFromSeq, outcome: 'stopped', changes: [] });
+    // closed mid-run leaves a row saying what was asked. It is also the site agent lease: the
+    // server refuses it while another tab or device of this member has an agent on this site.
+    const opened = await recordRun(conversationId, runId, {
+      task: queued.task,
+      fromSeq: runFromSeq,
+      outcome: 'stopped',
+      changes: [],
+      clientId: clientId(),
+    });
+    if (opened === 'busy') throw new SiteBusyError(ELSEWHERE);
+    heartbeat = setInterval(() => void recordRun(conversationId, runId, { clientId: clientId() }), HEARTBEAT_MS);
 
     const tools = withDraftNotes(toolsFor(kit.tools, current.scope, agentPermissions()), draft);
 
@@ -493,7 +564,17 @@ async function run(key: string, queued: QueuedTask): Promise<void> {
       applyEvent(event);
     }
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (error instanceof SiteBusyError) {
+      refused = true;
+      outcome = 'stopped';
+      push(key, { id: uid(), kind: 'error', text: error.message });
+      // A conversation opened for nothing would sit empty in the site's history.
+      const id = sessionOf(key)?.conversationId;
+      if (createdHere && id) {
+        void api.del(`/admin/ai/conversations/${id}`).catch(() => undefined);
+        patch(key, { conversationId: null });
+      }
+    } else if (controller.signal.aborted) {
       outcome = 'stopped';
     } else {
       outcome = 'failed';
@@ -501,6 +582,7 @@ async function run(key: string, queued: QueuedTask): Promise<void> {
       push(key, { id: uid(), kind: 'error', text: (error as Error)?.message ?? 'The agent failed.' });
     }
   } finally {
+    clearInterval(heartbeat);
     await i.draft?.flush().catch(() => undefined);
     checks?.dispose();
     const fileChanges = tx?.changes() ?? [];
@@ -519,33 +601,34 @@ async function run(key: string, queued: QueuedTask): Promise<void> {
       status: outcome,
       changes: fileChanges.map((c) => c.path),
       validation,
-      summary: lastAssistantText(i.messages),
+      summary: refused ? ELSEWHERE : lastAssistantText(i.messages),
     });
-
-    // The last turns, then the closing half of the run record — in that order, so the seq
-    // range the run claims is one the transcript actually contains.
-    void flush(firstTurn ? titleFrom(queued.task) : undefined).then(() => {
-      const id = sessionOf(key)?.conversationId;
-      if (!id) return;
-      void recordRun(id, runId, {
-        fromSeq: runFromSeq,
-        toSeq: i.lastSeq,
-        // The server knows completed/failed/stopped. A paused run did not finish: stopped.
-        outcome: outcome === 'paused' ? 'stopped' : outcome,
-        complexity: classification?.complexity ?? null,
-        changes: fileChanges.map((c) => ({ path: c.path, kind: c.kind })),
-        validation,
-        metrics: { ...finished },
-        finished: true,
-      });
-    });
-
-    // Whatever was waiting goes next — unless this run was stopped, which cleared the queue.
-    const next = sessionOf(key)?.queue[0];
-    if (next) {
-      patch(key, (s) => ({ queue: s.queue.slice(1) }));
-      void run(key, next);
+    if (refused) {
+      // What was queued behind it would be refused the same way.
+      for (const waiting of sessionOf(key)?.queue ?? []) patchRequest(waiting.requestId, { status: 'stopped', summary: ELSEWHERE });
+      patch(key, { queue: [] });
+    } else {
+      // The last turns, then the closing half of the run record — in that order, so the seq
+      // range the run claims is one the transcript actually contains.
+      void closeRun(fileChanges, finished);
     }
+  }
+
+  async function closeRun(fileChanges: readonly FileChange[], finished: AgentRunMetrics): Promise<void> {
+    await flush(firstTurn ? titleFrom(queued.task) : undefined);
+    const id = sessionOf(key)?.conversationId;
+    if (!id) return;
+    await recordRun(id, runId, {
+      fromSeq: runFromSeq,
+      toSeq: i.lastSeq,
+      // The server knows completed/failed/stopped. A paused run did not finish: stopped.
+      outcome: outcome === 'paused' ? 'stopped' : outcome,
+      complexity: classification?.complexity ?? null,
+      changes: fileChanges.map((c) => ({ path: c.path, kind: c.kind })),
+      validation,
+      metrics: { ...finished },
+      finished: true,
+    });
   }
 }
 

@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
-import { test, expect } from '../fixtures/test';
+import { test, expect, data } from '../fixtures/test';
+import { useBffMode } from '../fixtures/bff';
 import { anthropicStream, type ScriptedTurn } from '../fixtures/aiStream';
 
 /**
@@ -173,4 +174,37 @@ test("the assistant hands a site change to that site's agent", async ({ page }) 
   await expect(dock.getByText('Acme site')).toBeVisible();
   await expect(dock.getByText('Asked by the assistant')).toBeVisible();
   await expect(dock.getByText('Finished')).toBeVisible({ timeout: 30000 });
+});
+
+test('a second tab of the same browser cannot start another agent on the same site', async ({ page, api }) => {
+  const model = scriptModel(page, {
+    'Acme site': [
+      {
+        hold: true,
+        tool: { id: 't1', name: 'edit_file', input: { path: 'src/App.tsx', old_text: 'Hello', new_text: 'Get started' } },
+      } as ScriptedTurn,
+      { text: 'Done.' },
+    ],
+  });
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto(`/sites/${A}`);
+  await openAgent(page);
+  await ask(page, 'Change the heading');
+  await expect.poll(() => model.seen.includes('Acme site'), { timeout: 15000 }).toBe(true);
+
+  // The same browser, so the same Web Locks: the site is held by the first tab.
+  const second = await page.context().newPage();
+  await api.install(second);
+  await useBffMode(second, { tenantSlug: data.TENANT.slug, dismissStorageNotice: true, toursSeen: true });
+  await second.setViewportSize({ width: 1600, height: 950 });
+  await second.goto(`/sites/${A}`);
+  await openAgent(second);
+  await ask(second, 'Change the footer');
+  await expect(second.getByText(/Another tab in this browser already has an agent working on this site/)).toBeVisible({
+    timeout: 15000,
+  });
+
+  model.release();
+  await expect(page.getByText('Done.')).toBeVisible({ timeout: 30000 });
+  await second.close();
 });

@@ -115,6 +115,7 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
             e.Property(r => r.ChangesJson).HasColumnType("jsonb").IsRequired();
             e.Property(r => r.ValidationJson).HasColumnType("jsonb");
             e.Property(r => r.MetricsJson).HasColumnType("jsonb");
+            e.Property(r => r.ClientId).HasMaxLength(100);
 
             e.HasIndex(r => new { r.ConversationId, r.StartedAt });
 

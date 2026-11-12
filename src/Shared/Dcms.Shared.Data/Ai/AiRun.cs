@@ -66,5 +66,17 @@ public sealed class AiRun
 
     public DateTimeOffset? FinishedAt { get; set; }
 
+    /// <summary>
+    /// The browser tab running it (the site-source client id, which survives a reload). A run
+    /// never competes with an earlier run from its own tab: that page is gone — ADR 0033.
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// When the tab last said the run was alive. An unfinished run whose heartbeat is recent
+    /// holds its site's agent lease for its owner; one whose tab died lets go by going quiet.
+    /// </summary>
+    public DateTimeOffset? HeartbeatAt { get; set; }
+
     public AiConversation? Conversation { get; set; }
 }

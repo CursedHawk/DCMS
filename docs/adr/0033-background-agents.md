@@ -59,7 +59,16 @@ Separately, the person wanted the opposite of "abort on unmount". They wanted ag
    - These tools are deliberately not in `ASSISTANT_TOOLS`, which site agents also receive: an agent able to delegate to agents is a loop.
 8. **The assistant has one session per tab** (`features/assistant/session.tsx`).
    - The dock and the full page are views of it. "Open full view" used to start a second loop on the same conversation, and leaving the full page orphaned its loop.
-9. **Visibility:**
+9. **One working agent per member, site and branch, across tabs and devices** (added 2026-11-12).
+   - **Same browser:** a Web Lock `dcms-site-agent:<site>` is held for the whole run, and the browser frees it when the tab goes. A second tab is refused before anything is written: "Another tab in this browser already has an agent working on this site."
+   - **Any device:** the run record's opening upsert is the lease.
+     - admin-api refuses it with `409 agent-busy` while another unfinished run of the same member, on the same site and branch, has a heartbeat younger than 60 s. The browser beats every 20 s with an empty run upsert.
+     - The check runs under a `pg_advisory_xact_lock` on (tenant, member, site, branch), so two devices starting together cannot both win.
+     - `ai.runs` gained `ClientId` and `HeartbeatAt`.
+   - **Reloads:** a run from the same tab id (sessionStorage survives a reload) never blocks, so reloading mid-run does not lock you out. A tab that died lets go once its heartbeats stop.
+   - **Refused runs:** a run the server refuses deletes the conversation it had just opened, and tells the assistant if the assistant asked for it.
+   - **Other members:** they are never held up. Drafts are per member and their collisions surface as git conflicts at commit (`branch-moved`).
+10. **Visibility:**
    - The assistant button (topbar and focus-mode header) carries a spinning ring while the assistant or any site agent works, and a dot while one waits for a decision.
    - The dock has an Agents tab listing every site agent in the tab: site, kind, task, status, transcript, its pending approval, Stop, and Open in editor.
    - Each editor's agent rail icon shows its own site's state.
@@ -73,4 +82,4 @@ Separately, the person wanted the opposite of "abort on unmount". They wanted ag
   - a port of the runtime.
 - Delegated requests live in the tab: `site_change_status` cannot see a request from before a reload.
 - The type-check worker is about 6.6 MB (TypeScript plus its lib files). It loads only when a run type-checks, and Monaco's own TS worker is the same size.
-- Two agents on one draft are prevented in one tab, not across tabs. Per-file base hashes still keep two tabs from overwriting each other's text.
+- Two agents on one member's draft are prevented in a tab (the session), across tabs (Web Locks) and across devices (the server lease). The browser lock is per site and the lease per site and branch. Per-file base hashes remain the last line against overwrites.

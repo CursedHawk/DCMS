@@ -136,6 +136,10 @@ namespace Dcms.Shared.Data.Migrations.Ai
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Complexity")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
@@ -148,6 +152,9 @@ namespace Dcms.Shared.Data.Migrations.Ai
 
                     b.Property<int>("FromSeq")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("HeartbeatAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("MetricsJson")
                         .HasColumnType("jsonb");

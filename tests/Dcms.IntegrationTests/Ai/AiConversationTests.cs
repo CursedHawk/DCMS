@@ -226,6 +226,100 @@ public class AiConversationTests(AdminApiFixture fixture)
         remaining.Should().Be(0, "the cascade is the database's, not EF's change tracker's");
     }
 
+    // ---- the site agent lease (ADR 0033) ------------------------------------
+
+    [DockerFact]
+    public async Task A_second_agent_on_the_same_site_is_refused_from_another_tab_or_device()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (owner, slug, _) = await NewTenantAsync(client, ct);
+        var site = Guid.NewGuid();
+        var first = await CreateSiteConversationAsync(client, owner, slug, site, "main", ct);
+        var second = await CreateSiteConversationAsync(client, owner, slug, site, "main", ct);
+
+        (await OpenRunAsync(client, owner, slug, first, Guid.NewGuid(), "tab-1", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var refused = await OpenRunAsync(client, owner, slug, second, Guid.NewGuid(), "tab-2", ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await refused.Content.ReadFromJsonAsync<JsonElement>(ct);
+        body.GetProperty("error").GetString().Should().Be("agent-busy");
+        body.GetProperty("conversationId").GetGuid().Should().Be(first);
+    }
+
+    [DockerFact]
+    public async Task The_same_tab_after_a_reload_is_not_in_its_own_way()
+    {
+        // A reload keeps the tab's id; the run the old page left unfinished is gone with it.
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (owner, slug, _) = await NewTenantAsync(client, ct);
+        var conversation = await CreateSiteConversationAsync(client, owner, slug, Guid.NewGuid(), "main", ct);
+
+        (await OpenRunAsync(client, owner, slug, conversation, Guid.NewGuid(), "tab-1", ct)).EnsureSuccessStatusCode();
+        (await OpenRunAsync(client, owner, slug, conversation, Guid.NewGuid(), "tab-1", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [DockerFact]
+    public async Task A_finished_or_silent_run_frees_the_site()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (owner, slug, _) = await NewTenantAsync(client, ct);
+        var conversation = await CreateSiteConversationAsync(client, owner, slug, Guid.NewGuid(), "main", ct);
+
+        var finished = Guid.NewGuid();
+        (await OpenRunAsync(client, owner, slug, conversation, finished, "tab-1", ct)).EnsureSuccessStatusCode();
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/ai/conversations/{conversation}/runs/{finished}", owner, slug,
+            new { outcome = "completed", finished = true }), ct)).EnsureSuccessStatusCode();
+        (await OpenRunAsync(client, owner, slug, conversation, Guid.NewGuid(), "tab-2", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // tab-2's run is now open, and its tab dies: no more heartbeats.
+        await using (var conn = new NpgsqlConnection(fixture.PostgresConnectionString))
+        {
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """UPDATE ai.runs SET "HeartbeatAt" = now() - interval '5 minutes' WHERE "ConversationId" = @id""";
+            cmd.Parameters.AddWithValue("id", conversation);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        (await OpenRunAsync(client, owner, slug, conversation, Guid.NewGuid(), "tab-3", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [DockerFact]
+    public async Task A_colleague_or_another_branch_is_never_held_up()
+    {
+        // Drafts are per member and per branch: their agents never share a draft.
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (owner, slug, tenantId) = await NewTenantAsync(client, ct);
+        var colleague = await AddMemberAsync(client, owner, slug, tenantId, ct);
+        var site = Guid.NewGuid();
+
+        var mine = await CreateSiteConversationAsync(client, owner, slug, site, "main", ct);
+        (await OpenRunAsync(client, owner, slug, mine, Guid.NewGuid(), "tab-1", ct)).EnsureSuccessStatusCode();
+
+        var theirs = await CreateSiteConversationAsync(client, colleague, slug, site, "main", ct);
+        (await OpenRunAsync(client, colleague, slug, theirs, Guid.NewGuid(), "their-tab", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var otherBranch = await CreateSiteConversationAsync(client, owner, slug, site, "feature", ct);
+        (await OpenRunAsync(client, owner, slug, otherBranch, Guid.NewGuid(), "tab-2", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private static async Task<Guid> CreateSiteConversationAsync(
+        HttpClient client, Guid sub, string slug, Guid siteId, string branch, CancellationToken ct)
+    {
+        var res = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/ai/conversations", sub, slug,
+            new { title = "site work", mode = "agent", surface = "ide", siteId, branch }), ct);
+        res.EnsureSuccessStatusCode();
+        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+    }
+
+    private static Task<HttpResponseMessage> OpenRunAsync(
+        HttpClient client, Guid sub, string slug, Guid conversation, Guid runId, string clientId, CancellationToken ct) =>
+        client.SendAsync(Req(HttpMethod.Put, $"/api/admin/ai/conversations/{conversation}/runs/{runId}", sub, slug,
+            new { task = "work", fromSeq = 1, outcome = "stopped", clientId }), ct);
+
     // ---- helpers ----------------------------------------------------------
 
     private static HttpRequestMessage Req(

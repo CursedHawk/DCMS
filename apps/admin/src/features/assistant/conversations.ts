@@ -213,17 +213,26 @@ export async function recordRun(
     validation?: { ok: boolean; report: string } | null;
     metrics?: Record<string, unknown> | null;
     finished?: boolean;
+    /** The tab running it, for the site agent lease (ADR 0033). */
+    clientId?: string;
   },
-): Promise<void> {
+): Promise<'busy' | undefined> {
   try {
     await api.put<{ id: string }>(
       `/admin/ai/conversations/${conversationId}/runs/${runId}`,
       body,
     );
-  } catch {
-    // Deliberately silent. The transcript is the record that matters and it is written
-    // separately; losing the summary on top of it is not worth an error in the operator's face.
+  } catch (error) {
+    // The one refusal that matters: this member already has an agent working on this site and
+    // branch, in another tab or on another device (ADR 0033).
+    const refusal = error as { status?: number; detail?: { error?: string } } | null;
+    if (refusal?.status === 409 && refusal.detail?.error === 'agent-busy') {
+      return 'busy';
+    }
+    // Otherwise deliberately silent. The transcript is the record that matters and it is
+    // written separately; losing the summary is not worth an error in the operator's face.
   }
+  return undefined;
 }
 
 export const conversationsKey = KEY;

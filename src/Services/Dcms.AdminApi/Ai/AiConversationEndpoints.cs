@@ -54,6 +54,12 @@ public static class AiConversationEndpoints
     /// </summary>
     private const int MaxRunBytes = 64 * 1024;
 
+    /// <summary>
+    /// How long a site agent run holds its lease without a heartbeat. The browser beats every
+    /// 20 seconds; three missed beats is a tab that is gone, not one that is slow.
+    /// </summary>
+    internal static readonly TimeSpan SiteAgentLease = TimeSpan.FromSeconds(60);
+
     private const int MaxRunTask = 2000;
 
     public static IEndpointRouteBuilder MapAiConversationEndpoints(this IEndpointRouteBuilder app)
@@ -315,6 +321,51 @@ public static class AiConversationEndpoints
             var run = await db.Runs.FirstOrDefaultAsync(
                 r => r.Id == runId && r.TenantId == tenantId && r.ConversationId == id, ct);
 
+            /*
+             * The site agent lease (ADR 0033): one working agent per member, site and branch.
+             *
+             * <p>A tab keeps its own site agents to one per site, and the browser's lock keeps two
+             * tabs of one browser apart. Neither sees another device. Two agents on one draft step
+             * on each other's design even where per-file hashes stop them overwriting each other's
+             * text, so opening a run is refused while another of this member's runs on the same
+             * site and branch is unfinished and still beating. A run from the same tab is never
+             * in the way — that page is gone (a reload keeps the tab's id) — and a run whose tab
+             * died stops beating and lets go by itself.</p>
+             *
+             * <p>Under an advisory lock, so two devices starting at the same instant cannot both
+             * read "free" and both insert.</p>
+             */
+            var opening = run is null && body.Finished is not true
+                && conversation.Surface == AiSurfaces.Ide && conversation.SiteId is not null;
+            await using var lease = opening ? await db.Database.BeginTransactionAsync(ct) : null;
+            if (opening)
+            {
+                var key = $"ai-site-agent:{tenantId}:{userId}:{conversation.SiteId}:{conversation.Branch}";
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0))", ct);
+
+                var since = DateTimeOffset.UtcNow - SiteAgentLease;
+                var holder = await db.Runs
+                    .Where(r => r.TenantId == tenantId && r.Id != runId && r.FinishedAt == null
+                                && r.HeartbeatAt > since
+                                && (body.ClientId == null || r.ClientId == null || r.ClientId != body.ClientId))
+                    .Join(
+                        db.Conversations.Where(c => c.TenantId == tenantId && c.OwnerUserId == userId
+                                                    && c.Surface == AiSurfaces.Ide
+                                                    && c.SiteId == conversation.SiteId
+                                                    && c.Branch == conversation.Branch),
+                        r => r.ConversationId, c => c.Id,
+                        (r, c) => new { r.ConversationId, r.StartedAt, r.Task })
+                    .OrderByDescending(r => r.StartedAt)
+                    .FirstOrDefaultAsync(ct);
+                if (holder is not null)
+                {
+                    return Results.Json(
+                        new { error = "agent-busy", holder.ConversationId, startedAt = holder.StartedAt, task = holder.Task },
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             if (run is null)
             {
                 run = new AiRun
@@ -338,8 +389,12 @@ public static class AiConversationEndpoints
             if (body.Validation is not null) run.ValidationJson = validation;
             if (body.Metrics is not null) run.MetricsJson = metricsJson;
             if (body.Finished is true) run.FinishedAt = DateTimeOffset.UtcNow;
+            if (body.ClientId is not null && run.ClientId is null) run.ClientId = Clamp(body.ClientId, 100, null);
+            // Every call is a sign of life; an empty body is the browser's heartbeat.
+            run.HeartbeatAt = DateTimeOffset.UtcNow;
 
             await db.SaveChangesAsync(ct);
+            if (lease is not null) await lease.CommitAsync(ct);
 
             /*
              * The run becomes a metric here, on its closing call, because this is the only place
@@ -512,7 +567,8 @@ public static class AiConversationEndpoints
     /// </summary>
     private sealed record RunRequest(
         string? Task, int? FromSeq, int? ToSeq, string? Outcome, string? Complexity,
-        JsonNode? Changes, JsonNode? Validation, JsonNode? Metrics, bool? Finished);
+        JsonNode? Changes, JsonNode? Validation, JsonNode? Metrics, bool? Finished,
+        string? ClientId = null);
 
     private sealed record AppendMessage(string Role, JsonArray? Content);
 }

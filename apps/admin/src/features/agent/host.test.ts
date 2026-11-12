@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../../lib/api';
+import { afterEach } from 'vitest';
+import { api, ApiError } from '../../lib/api';
 import { streamAssistantTurn } from '../ide/agent/client';
 import { requestSiteChange, sendToSite } from './host';
 import { configureSite, resetAgentHost, sessionOf, stopSite, useAgentHost } from './hostStore';
@@ -57,6 +58,7 @@ beforeEach(() => {
     return { id: `conv-${++seq}` } as never;
   });
   vi.mocked(api.put).mockResolvedValue({} as never);
+  vi.mocked(api.del).mockResolvedValue(undefined as never);
 });
 
 describe('agent host', () => {
@@ -150,5 +152,82 @@ describe('agent host', () => {
     model.release();
     await until(() => sessionOf('site-a')?.running === false);
     expect(closing()).toBe(false);
+  });
+
+});
+
+/** Web Locks with real exclusivity, as two tabs of one browser see them. */
+function installLocks(heldElsewhere: string[] = []) {
+  const held = new Set<string>(heldElsewhere);
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: async (name: string, _opts: unknown, callback: (lock: unknown) => Promise<unknown>) => {
+        if (held.has(name)) return callback(null);
+        held.add(name);
+        try {
+          return await callback({ name });
+        } finally {
+          held.delete(name);
+        }
+      },
+    },
+  });
+}
+
+describe('one agent per site across tabs and devices', () => {
+  afterEach(() => {
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
+  });
+
+  it('refuses when another tab of this browser holds the site', async () => {
+    installLocks(['dcms-site-agent:site-a']);
+    configureSite('site-a', { kind: 'react' });
+    sendToSite('site-a', 'work');
+
+    await until(() => sessionOf('site-a')?.outcome === 'stopped');
+    expect(sessionOf('site-a')?.running).toBe(false);
+    expect(JSON.stringify(sessionOf('site-a')?.entries)).toMatch(/Another tab in this browser/);
+    expect(streamAssistantTurn).not.toHaveBeenCalled();
+  });
+
+  it('still starts what was queued once the first run lets go of the lock', async () => {
+    // The next task must not find the finishing run's own lock and refuse itself.
+    installLocks();
+    const model = gatedModel();
+    configureSite('site-a', { kind: 'react' });
+    sendToSite('site-a', 'first');
+    await until(() => model.pending() === 1);
+    sendToSite('site-a', 'second');
+
+    model.release();
+    await until(() => model.pending() === 1 && sessionOf('site-a')?.task === 'second');
+    model.release();
+    await until(() => sessionOf('site-a')?.running === false);
+    expect(JSON.stringify(sessionOf('site-a')?.entries)).not.toMatch(/Another tab/);
+  });
+
+  it('stops before the first model call when the server says another device has the site', async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new ApiError(409, 'busy', { error: 'agent-busy' }));
+    const request = await requestSiteChange({ siteId: 'site-a', task: 'make it blue', requestedBy: 'chat-1' });
+
+    await until(() => useAgentHost.getState().requests[request.id].status === 'stopped');
+    expect(streamAssistantTurn).not.toHaveBeenCalled();
+    expect(useAgentHost.getState().requests[request.id].summary).toMatch(/another tab or on another device/);
+    // The conversation it opened for nothing is taken away again.
+    expect(api.del).toHaveBeenCalledWith(expect.stringMatching(/^\/admin\/ai\/conversations\/conv-/));
+    expect(sessionOf('site-a')?.conversationId).toBeNull();
+  });
+
+  it('opens its run record as this tab, which is what the lease is held by', async () => {
+    const model = gatedModel();
+    configureSite('site-a', { kind: 'react' });
+    sendToSite('site-a', 'work');
+    await until(() => model.pending() === 1);
+
+    const opening = vi.mocked(api.put).mock.calls.find(([path]) => String(path).includes('/runs/'));
+    expect(opening?.[1]).toMatchObject({ task: 'work', clientId: expect.any(String) });
+    model.release();
+    await until(() => sessionOf('site-a')?.running === false);
   });
 });
