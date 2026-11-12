@@ -25,16 +25,18 @@ public sealed class UserAuthSiteTests(ContentFlowFixture fixture)
         var direct = Guid.NewGuid();
         var role = await RoleAsync(app, "sales", [Deals], ct);
         await GrantAsync(app, role, "group", staff, ct);
-        var lead = await RoleAsync(app, "lead", ["dynamic-apps:crm:flow:approve:run"], ct);
+        const string Validate = "functions:hr:fn:approvals/validate:invoke"; // a function in a folder
+        var lead = await RoleAsync(app, "lead", ["dynamic-apps:crm:flow:approve:run", Validate], ct);
         await GrantAsync(app, lead, "user", direct, ct);
 
         (await CheckAsync(app, RealmTokens.Mint(tenantId, Guid.NewGuid(), [staff]), Deals, ct)).Should().BeTrue("through the group");
         (await CheckAsync(app, RealmTokens.Mint(tenantId, Guid.NewGuid()), Deals, ct)).Should().BeFalse("not in the group");
         (await CheckAsync(app, null, Deals, ct)).Should().BeFalse("nobody signed in");
+        (await CheckAsync(app, RealmTokens.Mint(tenantId, direct), Validate, ct)).Should().BeTrue("granted to the user");
 
         var permissions = await CallAsync(app, RealmTokens.Mint(tenantId, direct, [staff]), "users.access@1/ListPermissions", null, ct);
         permissions.GetProperty("permissions").EnumerateArray().Select(p => p.GetString())
-            .Should().Equal("dynamic-apps:crm:flow:approve:run", Deals);
+            .Should().Equal("dynamic-apps:crm:flow:approve:run", Deals, Validate);
     }
 
     [DockerFact]

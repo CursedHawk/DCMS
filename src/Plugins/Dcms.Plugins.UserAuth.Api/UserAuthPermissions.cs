@@ -24,7 +24,8 @@ public static class UserAuthPermissions
 /// <summary>
 /// A permission an enterprise user can hold on a tenant's sites:
 /// <c>{plugin}:{instance}:{resource}:{action}</c>, e.g. <c>dynamic-apps:crm:table:deals:read</c>.
-/// The resource may itself have parts (<c>table:deals</c>); the plugin and instance never do.
+/// The resource may itself have parts (<c>table:deals</c>), and a part may be a path
+/// (<c>fn:approvals/validate</c>, a function in a folder); the plugin and instance never do.
 /// </summary>
 public static partial class SitePermission
 {
@@ -36,7 +37,7 @@ public static partial class SitePermission
     public static string Of(string plugin, string instance, string resource, string action) =>
         $"{plugin}:{instance}:{resource}:{action}";
 
-    // plugin and instance: lowercase slugs; resource: one or more slug parts; action: a slug.
-    [GeneratedRegex("^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*(:[a-z0-9][a-z0-9_.-]*){2,4}$")]
+    // plugin and instance: lowercase slugs; resource: one or more slug or path parts; action: a slug.
+    [GeneratedRegex("^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*(:[a-z0-9][a-z0-9_./-]*){2,4}$")]
     private static partial Regex Shape();
 }

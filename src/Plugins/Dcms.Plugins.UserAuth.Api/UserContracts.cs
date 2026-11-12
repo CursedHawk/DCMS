@@ -200,9 +200,14 @@ public sealed record GrantResult(Guid GrantId);
 [DcmsContract("users.roles", 1, Description = "Roles of site permissions for the tenant's site users, and who holds them.")]
 public interface IUserRoles
 {
+    private const string RefusedPermission =
+        "If a permission is refused, tell the operator which one and why; never put a broader permission (such as a whole " +
+        "instance's api:read/api:write) in its place.";
+
     [Operation(OpRisk.Read, Permission = UserAuthPermissions.UsersRead, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Every permission a role can hold, by plugin instance: each is {plugin}:{instance}:{resource}:{action}, " +
-                      "e.g. dynamic-apps:crm:table:deals:read. Read this before writing a role.")]
+                      "e.g. dynamic-apps:crm:table:deals:read or functions:hr:fn:approvals/validate:invoke. Read this before writing a role, " +
+                      "and use the keys exactly as listed.")]
     Task<UserResourceCatalogList> ListResourcesAsync(CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = UserAuthPermissions.UsersRead, Expose = OpExposure.Admin | OpExposure.Ai,
@@ -211,11 +216,13 @@ public interface IUserRoles
 
     [Operation(OpRisk.Safe, Permission = UserAuthPermissions.AccessManage, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Create a role with a list of site permissions. It reaches nobody until granted. Least privilege: only what the role needs. " +
-                      "Dynamic Apps row rules still narrow a table permission to matching rows unless bypassRowAccess is true; leave it false unless asked.")]
+                      "Dynamic Apps row rules still narrow a table permission to matching rows unless bypassRowAccess is true; leave it false unless asked. " +
+                      RefusedPermission)]
     Task<SiteRole> CreateRoleAsync(RoleCreate input, CancellationToken ct);
 
     [Operation(OpRisk.Dangerous, Permission = UserAuthPermissions.AccessManage, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "Change a role: its permissions are replaced by the list given, for everyone who holds it, on their next request.")]
+        Description = "Change a role: its permissions are replaced by the list given, for everyone who holds it, on their next request. " +
+                      RefusedPermission)]
     Task<SiteRole> UpdateRoleAsync(RoleUpdate input, CancellationToken ct);
 
     [Operation(OpRisk.Dangerous, Permission = UserAuthPermissions.AccessManage, Expose = OpExposure.Admin | OpExposure.Ai,
