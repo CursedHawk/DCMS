@@ -6,6 +6,7 @@ import { streamAssistantTurn } from './client';
 import { api } from '../../../lib/api';
 import { useVfs } from '../../site-source/vfs';
 import { useAgentSession } from './useAgentSession';
+import { resetAgentHost } from '../../agent/hostStore';
 
 vi.mock('./client', async (original) => ({
   ...(await original<typeof import('./client')>()),
@@ -13,11 +14,6 @@ vi.mock('./client', async (original) => ({
 }));
 vi.mock('../../../lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), del: vi.fn(), upload: vi.fn() },
-}));
-// The preview lives in another pane and owns an esbuild worker; a session test has neither.
-vi.mock('../preview/buildBroker', () => ({
-  previewAvailable: () => false,
-  requestBuild: async () => null,
 }));
 
 /**
@@ -65,7 +61,9 @@ let seq = 0;
 beforeEach(() => {
   vi.clearAllMocks();
   seq = 0;
-  useVfs.setState({ files: { 'src/App.tsx': 'x' }, branch: 'main' });
+  resetAgentHost();
+  // The editor holds this site, so the run seeds its own copy from it rather than loading.
+  useVfs.setState({ files: { 'src/App.tsx': 'x' }, branch: 'main', siteId: 'site-1', loaded: true, baseHashes: {}, version: 1 });
 
   vi.mocked(api.post).mockImplementation(async (path: string) => {
     if (path.endsWith('/messages')) return { messageCount: ++seq, lastSeq: ++seq } as never;

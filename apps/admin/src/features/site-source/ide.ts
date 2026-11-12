@@ -35,10 +35,21 @@ export const ideApi = {
    * whether a person or the agent wrote it, so the editor can present a run's edits as a change
    * set instead of as files mutating on their own.</p>
    */
-  saveFiles: (siteId: string, branch: string, delta: Delta, origin: 'user' | 'agent' = 'user') =>
+  /**
+   * `client` defaults to this tab's id. An agent run passes its own (`agentClientId`), so its
+   * saves are told apart from the author's: the run merges them into the store itself, and the
+   * echo it gets back over the hub must not be mistaken for another tab's work.
+   */
+  saveFiles: (
+    siteId: string,
+    branch: string,
+    delta: Delta,
+    origin: 'user' | 'agent' = 'user',
+    client: string = clientId(),
+  ) =>
     api.patch<{ version: number; hashes: Record<string, string> }>(
       `${workspacePath(siteId)}/ide/files${branchQuery(branch)}`,
-      { put: delta.put, delete: delta.delete, clientId: clientId(), origin },
+      { put: delta.put, delete: delta.delete, clientId: client, origin },
     ),
 
   /**

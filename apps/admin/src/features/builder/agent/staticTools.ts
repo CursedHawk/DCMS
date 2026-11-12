@@ -10,7 +10,6 @@ import {
 } from '@dcms/gjs-schema';
 import { DESIGN_KITS, applyKit, findKit, matchKit } from '@dcms/gjs-blocks';
 import type { ToolSpec } from '../../agent/contracts';
-import { useVfs } from '../../site-source/vfs';
 import type { CheckToolContext } from '../../ide/agent/checkTools';
 
 /**
@@ -201,7 +200,7 @@ export const STATIC_TOOLS: ToolSpec<CheckToolContext>[] = [
         };
       }
 
-      const raw = useVfs.getState().files[SITE_JSON];
+      const raw = ctx.files()[SITE_JSON];
       if (raw === undefined) return { content: `${SITE_JSON} does not exist.`, isError: true };
 
       let manifest;
@@ -236,10 +235,9 @@ export const STATIC_TOOLS: ToolSpec<CheckToolContext>[] = [
       'Check this site for the mistakes that stop it opening or publishing: a page in site.json with no pages/<slug>.html (or the reverse), no page at "/", nav pointing nowhere, a page file carrying <html> or <script>, inline styles, images with no alt. Free and certain — call it after writing files rather than reasoning about whether your own output was consistent.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'check site',
-    // Read from the live store rather than the run's pinned snapshot: the point of the check is
-    // the state the files are in *now*, after this turn's writes.
-    run: async () => {
-      const report = checkStaticSite(useVfs.getState().files);
+    // The run's files as they are *now*, after this turn's writes.
+    run: async (_input, ctx) => {
+      const report = checkStaticSite(ctx.files());
       return { content: formatStaticReport(report), isError: report.errors.length > 0 };
     },
   },
@@ -252,7 +250,9 @@ export const STATIC_TOOLS: ToolSpec<CheckToolContext>[] = [
  * a file map is always readable. A Mode A run is therefore always verified, which is the one
  * thing this mode has easier.</p>
  */
-export async function validateStaticSite(): Promise<{ ok: boolean; report: string }> {
-  const report = checkStaticSite(useVfs.getState().files);
+export async function validateStaticSite(
+  files: Readonly<Record<string, string>>,
+): Promise<{ ok: boolean; report: string }> {
+  const report = checkStaticSite(files);
   return { ok: report.errors.length === 0, report: formatStaticReport(report) };
 }

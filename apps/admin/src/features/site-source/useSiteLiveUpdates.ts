@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
-import { clientId } from './clientId';
+import { isOwnSave } from './clientId';
 import type { GitBuild } from './git';
 
 export interface BuildUpdate extends GitBuild {
@@ -202,7 +202,7 @@ export function useSiteLiveUpdates({
          * the fallback for an admin-api old enough not to echo one.
          */
         if (draft.clientId) {
-          if (draft.clientId === clientId()) return;
+          if (isOwnSave(draft.clientId)) return;
         } else if (
           draftVersionRef.current !== undefined &&
           draft.version <= draftVersionRef.current

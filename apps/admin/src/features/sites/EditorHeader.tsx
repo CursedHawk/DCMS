@@ -1,8 +1,7 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Bot } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@dcms/ui';
-import { useAi } from '../assistant/context';
+import { AssistantButton } from '../assistant/AssistantButton';
 import { JobsIndicator } from '../jobs/JobsIndicator';
 import { NotificationBell } from '../notifications/NotificationBell';
 
@@ -32,7 +31,6 @@ export function EditorHeader({
   children?: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const ai = useAi();
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
@@ -55,14 +53,7 @@ export function EditorHeader({
       {children}
 
       <div className="ml-auto flex shrink-0 items-center gap-1 border-l pl-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t('assistant.open')}
-          onClick={() => ai.setOpen(true)}
-        >
-          <Bot className="h-4 w-4" aria-hidden />
-        </Button>
+        <AssistantButton />
         <JobsIndicator enabled />
         <NotificationBell enabled />
       </div>

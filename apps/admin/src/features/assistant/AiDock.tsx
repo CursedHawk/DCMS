@@ -12,6 +12,9 @@ import {
   SheetHeader,
   SheetTitle,
   Callout,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '@dcms/ui';
 import { useAi } from './context';
 import { ApprovalCard } from './ApprovalCard';
@@ -19,7 +22,9 @@ import { Composer } from './Composer';
 import { ConversationRail } from './ConversationRail';
 import { type ConversationScope } from './conversations';
 import { Transcript } from './Transcript';
-import { useAssistantSession } from './useAssistantSession';
+import { AgentsTab } from './AgentsTab';
+import { useSharedAssistant } from './session';
+import { useAgentActivity } from '../agent/hostStore';
 
 /**
  * The assistant, on every page.
@@ -36,17 +41,17 @@ export function AiDock() {
   const { t } = useTranslation();
   const { open, setOpen, page, prefill, takePrefill } = useAi();
   const navigate = useNavigate();
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [scope, setScope] = useState<ConversationScope>('mine');
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const session = useAssistantSession(page, {
-    conversationId,
-    onConversationChange: setConversationId,
-  });
+  // The tab's one assistant session, shared with the full page (ADR 0033).
+  const session = useSharedAssistant();
+  const { conversationId } = session;
+  const [tab, setTab] = useState<'chat' | 'agents'>('chat');
+  const agents = useAgentActivity();
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -87,8 +92,9 @@ export function AiDock() {
             title={t('assistant.newChat')}
             onClick={() => {
               session.reset();
-              setConversationId(null);
+              session.select(null);
               setShowHistory(false);
+              setTab('chat');
             }}
           >
             <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
@@ -117,6 +123,24 @@ export function AiDock() {
           </Button>
         </SheetHeader>
 
+        {/* The assistant's own chat, and every site agent in this tab — including the ones it
+            asked for. */}
+        {showHistory ? null : (
+          <Tabs value={tab} onValueChange={(v) => setTab(v as 'chat' | 'agents')} className="px-4 pt-2">
+            <TabsList>
+              <TabsTrigger value="chat">{t('assistant.agents.chatTab')}</TabsTrigger>
+              <TabsTrigger value="agents">
+                {t('assistant.agents.tab')}
+                {agents.working > 0 ? (
+                  <Badge tone={agents.waiting ? 'warning' : 'default'} className="ml-1.5">
+                    {agents.working}
+                  </Badge>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
         {showHistory ? (
           <div className="min-h-0 flex-1">
             <ConversationRail
@@ -124,16 +148,20 @@ export function AiDock() {
               onScopeChange={setScope}
               selectedId={conversationId}
               onSelect={(id) => {
-                setConversationId(id);
+                session.select(id);
                 setShowHistory(false);
               }}
               onNew={() => {
                 session.reset();
-                setConversationId(null);
+                session.select(null);
                 setShowHistory(false);
               }}
             />
           </div>
+        ) : tab === 'agents' ? (
+          <SheetBody>
+            <AgentsTab onLeave={() => setOpen(false)} />
+          </SheetBody>
         ) : (
           <SheetBody className="space-y-3">
             {session.steps.length === 0 ? (
@@ -189,7 +217,7 @@ export function AiDock() {
           </SheetBody>
         )}
 
-        {showHistory ? null : (
+        {showHistory || tab === 'agents' ? null : (
           <SheetFooter className="flex-col items-stretch gap-2">
             {session.readOnly ? (
               <p className="text-xs text-muted-foreground">{t('assistant.readOnlyChat')}</p>

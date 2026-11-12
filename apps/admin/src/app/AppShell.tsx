@@ -1,7 +1,7 @@
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AppFrame,
@@ -16,6 +16,8 @@ import {
 } from '@dcms/ui';
 import { AiDock } from '../features/assistant/AiDock';
 import { AiProvider } from '../features/assistant/context';
+import { AssistantSessionProvider } from '../features/assistant/session';
+import { setAgentPermissions } from '../features/agent/hostStore';
 import { LIVE_KEYS } from '../features/notifications/liveMap';
 import { NOTIFICATION_HUB, useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
@@ -43,6 +45,9 @@ export function AppShell() {
   // rule compares against a notification's actor to avoid toasting your own actions back.
   useNotificationHub(!!user, user?.profile.sub);
 
+  // Site agents run outside React (ADR 0033) and filter their tools by the same permissions.
+  useEffect(() => setAgentPermissions(me.data), [me.data]);
+
   // What replaced the polling that used to live in the media, chat and deployment
   // queries. The hub carries the news while it is up; this refetches at the three moments it
   // cannot have — when the connection returns, when the tab becomes visible again, and when
@@ -61,6 +66,7 @@ export function AppShell() {
     <PermissionProvider value={me.data}>
       <ConfirmProvider>
         <AiProvider>
+          <AssistantSessionProvider>
           <TourProvider
             labels={{
               next: t('tour.next'),
@@ -115,6 +121,7 @@ export function AppShell() {
             <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
             <AiDock />
           </TourProvider>
+          </AssistantSessionProvider>
         </AiProvider>
       </ConfirmProvider>
       <StorageNotice />

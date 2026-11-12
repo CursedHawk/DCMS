@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bot, Languages, Moon, Search, Sun, UserCog } from 'lucide-react';
+import { ArrowLeftRight, Languages, Moon, Search, Sun, UserCog } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -19,7 +19,7 @@ import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
 import { logout, switchAccount } from '../auth';
 import { useAuth } from '../useAuth';
-import { useAi } from '../features/assistant/context';
+import { AssistantButton } from '../features/assistant/AssistantButton';
 import { modifierLabel } from '../features/ide/commands';
 import { EnvironmentSwitcher } from './EnvironmentSwitcher';
 import { TenantSwitcher } from './TenantSwitcher';
@@ -34,7 +34,6 @@ export function Topbar({
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const ai = useAi();
   const { resolved, setTheme } = useTheme();
 
   /*
@@ -97,14 +96,7 @@ export function Topbar({
               both need a token and a tenant. */}
           {/* ⌘J, alongside ⌘K for navigation. The two get used in the same breath and
               stealing the shortcut people already know is how a new feature earns resentment. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t('assistant.open')}
-            onClick={() => ai.setOpen(true)}
-          >
-            <Bot className="h-4 w-4" aria-hidden />
-          </Button>
+          <AssistantButton />
 
           {/* Only appears on a page that has declared a tour. */}
           <TourButton />

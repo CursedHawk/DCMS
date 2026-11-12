@@ -894,7 +894,10 @@
       "moreLines_few": "… a {{count}} další řádky",
       "moreLines_other": "… a {{count}} dalších řádků",
       "scope": "Dosah",
-      "scopeHint": "Jak daleko za tento web agent dosáhne. Obsah pracovního prostoru mu dovolí zjistit, které instance pluginů a typy obsahu existují."
+      "scopeHint": "Jak daleko za tento web agent dosáhne. Obsah pracovního prostoru mu dovolí zjistit, které instance pluginů a typy obsahu existují.",
+      "queued_one": "Na tento běh čeká ještě {{count}} požadavek; spustí se, až skončí.",
+      "queued_few": "Na tento běh čekají ještě {{count}} požadavky; spustí se, až skončí.",
+      "queued_other": "Na tento běh čeká ještě {{count}} požadavků; spustí se, až skončí."
     },
     "starter": {
       "title": "Začněte svůj web",
@@ -1693,6 +1696,40 @@
       "agentHint": "Sám píše, upravuje a nahrává. Před publikováním, naplánováním a mazáním se zeptá.",
       "auto": "Plná automatika",
       "autoHint": "Udělá vše, oč požádáte, bez zastavení — včetně publikování a mazání. Po zavření prohlížeče se nepamatuje."
+    },
+    "agents": {
+      "chatTab": "Chat",
+      "tab": "Agenti",
+      "empty": "V této záložce zatím žádný agent webu nepracoval. Požádejte o změnu webu, nebo ho spusťte v editoru webu.",
+      "buttonWorking_one": "Asistent — pracuje {{count}} agent",
+      "buttonWorking_few": "Asistent — pracují {{count}} agenti",
+      "buttonWorking_other": "Asistent — pracuje {{count}} agentů",
+      "buttonWaiting": "Asistent — agent čeká na vaše rozhodnutí",
+      "kind": {
+        "react": "IDE",
+        "static": "Builder",
+        "visual": "Vizuální builder",
+        "functions": "Funkce"
+      },
+      "delegated": "Na žádost asistenta",
+      "openEditor": "Otevřít v editoru",
+      "queued_one": "{{count}} ve frontě",
+      "queued_few": "{{count}} ve frontě",
+      "queued_other": "{{count}} ve frontě",
+      "waiting": "Čeká na vaše rozhodnutí",
+      "working": "Pracuje",
+      "turn_one": "{{count}}. krok",
+      "turn_few": "{{count}}. krok",
+      "turn_other": "{{count}}. krok",
+      "files_one": "{{count}} změněný soubor",
+      "files_few": "{{count}} změněné soubory",
+      "files_other": "{{count}} změněných souborů",
+      "outcome": {
+        "completed": "Dokončeno",
+        "paused": "Pozastaveno — došly kroky",
+        "failed": "Selhalo",
+        "stopped": "Zastaveno"
+      }
     }
   },
   "settings": {

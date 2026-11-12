@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import { ideApi, useVfs } from '../site-source';
 import { planGeneratedUpdate, readManifest } from '../ide/generated/generatedLayer';
+import { useSiteAgentRunning } from '../agent/hostStore';
 
 export const RUNTIME_MANIFEST = 'src/dcms/runtime/manifest.json';
 
@@ -18,7 +19,7 @@ export const RUNTIME_MANIFEST = 'src/dcms/runtime/manifest.json';
 export function useSiteRuntime({ settled }: { settled: boolean }): void {
   const branch = useVfs((s) => s.branch);
   const manifestRaw = useVfs((s) => s.files[RUNTIME_MANIFEST]);
-  const agentRunning = useVfs((s) => s.agentRuns > 0);
+  const agentRunning = useSiteAgentRunning(useVfs((s) => s.siteId));
   const siteFingerprint = useMemo(() => readManifest(manifestRaw)?.fingerprint ?? null, [manifestRaw]);
 
   const server = useQuery({

@@ -74,17 +74,13 @@ interface VfsState {
   conflict: string[] | null;
 
   /**
-   * How many agent runs are currently writing.
+   * The site whose draft this store holds, or null before the first load.
    *
-   * <p>Autosave holds while this is above zero, and flushes once when it returns to zero. A run
-   * that touches five files would otherwise produce five draft deltas, five `DraftChanged`
-   * messages and five entries in the author's history — the debounce coalesces writes that land
-   * within 1.2s of each other, which a run doing real work between edits routinely does not.</p>
-   *
-   * <p>A counter rather than a flag because runs can overlap (the dock and the IDE panel are two
-   * surfaces over one workspace), and the hold must last until the last of them finishes.</p>
+   * <p>The store holds exactly one site at a time, and an agent run outlives the page that
+   * started it (ADR 0033). The run keeps its own copy of its site's files and merges what it saves
+   * back in here — but only while this store still holds that site, which is what this answers.</p>
    */
-  agentRuns: number;
+  siteId: string | null;
 
   /**
    * A pending "put the caret here". `token` increments on every request so clicking the same
@@ -166,10 +162,22 @@ interface VfsState {
   ) => string[];
   snapshot: () => Record<string, string>;
 
-  /** Hold autosave for the duration of an agent run. See {@link VfsState.agentRuns}. */
-  beginAgentRun: () => void;
-  /** Release the hold. The draft session flushes when the count reaches zero. */
-  endAgentRun: () => void;
+  /** Say which site the next load is for. Called by the draft session, never by an editor. */
+  setSite: (siteId: string) => void;
+
+  /**
+   * Adopt files an agent run has just saved to the server, without a round trip.
+   *
+   * <p>A partial {@link mergeRemote}: only the paths named, and a `null` content is a delete.
+   * The same rule decides what is a conflict — the author's unsaved edit to a path the server
+   * has since moved — so an agent writing the file somebody is typing in is shown to them,
+   * never silently swapped under their cursor.</p>
+   */
+  applyAgentWrites: (
+    writes: Readonly<Record<string, string | null>>,
+    version: number,
+    hashes: Readonly<Record<string, string>>,
+  ) => string[];
 }
 
 /**
@@ -212,9 +220,7 @@ export const useVfs = create<VfsState>((set, get) => ({
   deletedPaths: new Set(),
   conflict: null,
   reveal: null,
-  // Deliberately not reset by load() or seedStarter(): a run in flight survives a branch load,
-  // and zeroing the counter underneath it would release a hold the run still owns.
-  agentRuns: 0,
+  siteId: null,
 
   load: (files, version, hashes) => {
     const first = firstFile(files);
@@ -680,10 +686,54 @@ export const useVfs = create<VfsState>((set, get) => ({
       return conflicts;
     }
   },
-  beginAgentRun: () => set((s) => ({ agentRuns: s.agentRuns + 1 })),
-  // Floored at zero: an endAgentRun without a matching begin (a run torn down twice by a
-  // reload, say) must not leave the counter negative, which would hold autosave forever.
-  endAgentRun: () => set((s) => ({ agentRuns: Math.max(0, s.agentRuns - 1) })),
+  applyAgentWrites: (writes, version, hashes) => {
+    const s = get();
+    const files = { ...s.files };
+    const baseHashes = { ...s.baseHashes };
+    const dirtyPaths = new Set(s.dirtyPaths);
+    const deletedPaths = new Set(s.deletedPaths);
+    const conflicts: string[] = [];
+
+    for (const [path, content] of Object.entries(writes)) {
+      const authorEdited = dirtyPaths.has(path) || deletedPaths.has(path);
+      if (authorEdited && files[path] !== content) {
+        // Both moved: the author's unsaved edit and the agent's saved one. ConflictResolver.
+        conflicts.push(path);
+        continue;
+      }
+      dirtyPaths.delete(path);
+      deletedPaths.delete(path);
+      if (content === null) {
+        delete files[path];
+        delete baseHashes[path];
+      } else {
+        files[path] = content;
+        if (hashes[path] !== undefined) baseHashes[path] = hashes[path];
+      }
+    }
+
+    const conflict = [...new Set([...(s.conflict ?? []), ...conflicts])];
+    // Written files open as tabs, as an agent edit always has: the author sees the tab appear
+    // and the change in it, instead of discovering it at review time.
+    const opened = Object.entries(writes)
+      .filter(([path, content]) => content !== null && !conflicts.includes(path) && !s.openTabs.includes(path))
+      .map(([path]) => path);
+    set({
+      files,
+      baseHashes,
+      dirtyPaths,
+      deletedPaths,
+      version: Math.max(s.version, version),
+      conflict: conflict.length > 0 ? conflict : null,
+      dirty: dirtyPaths.size > 0 || deletedPaths.size > 0,
+      rev: s.rev + 1,
+      openTabs: opened.length > 0 ? [...s.openTabs, ...opened] : s.openTabs,
+      activePath: opened.length > 0 ? opened[opened.length - 1] : s.activePath,
+      activeDiff: opened.length > 0 ? null : s.activeDiff,
+    });
+    return conflicts;
+  },
+  setSite: (siteId) => set({ siteId }),
   setBranch: (branch) => set({ branch }),
   snapshot: () => get().files,
 }));

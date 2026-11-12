@@ -161,7 +161,7 @@ describe('apply_design_kit', () => {
         return { content: `Patched ${path}`, paths: [path] };
       },
     };
-    return { ctx: { tx } as never, patches };
+    return { ctx: { tx, files: () => useVfs.getState().files } as never, patches };
   }
 
   function seed(siteJson: string) {

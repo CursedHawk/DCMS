@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ideApi } from '../../site-source/ide';
 import { useVfs } from '../../site-source/vfs';
+import { useSiteAgentRunning } from '../../agent/hostStore';
 import { appendOutput } from '../panel/output';
 import { MANIFEST_PATH, planGeneratedUpdate, readManifest, usesGeneratedLayer } from './generatedLayer';
 
@@ -42,7 +43,7 @@ export function useGeneratedApi({ siteId, settled }: { siteId: string; settled: 
   const branch = useVfs((s) => s.branch);
   const manifestRaw = useVfs((s) => s.files[MANIFEST_PATH]);
   const eligible = useVfs((s) => usesGeneratedLayer(s.files));
-  const agentRunning = useVfs((s) => s.agentRuns > 0);
+  const agentRunning = useSiteAgentRunning(siteId);
   const siteFingerprint = useMemo(() => readManifest(manifestRaw)?.fingerprint ?? null, [manifestRaw]);
 
   const server = useQuery({

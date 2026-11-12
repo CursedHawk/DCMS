@@ -14,9 +14,14 @@ session all read from it. A server-side loop would have to ship the workspace up
 mutate it there, and ship it back — at which point the human's own unsaved typing
 is either lost or has to be merged against an edit nobody watched happen.
 
-Running in the tab means the agent edits **the same store the user edits**, at a
-pinned revision, and every change appears in their open tabs and their preview as
-it happens. It is also what makes stopping work: closing the tab ends the run.
+Running in the tab means the agent works on **the user's own draft**, and every
+change it saves appears in their open tabs and their preview. Since
+[ADR 0033](adr/0033-background-agents.md) a run lives in the **agent host**, not
+in the panel: it keeps working while the user goes anywhere else in the console,
+agents on different sites run side by side, and each run has its own copy of its
+site (`siteDraft.ts`) that it saves through the draft API and merges into the
+editor only while the editor holds that site. Closing the tab still ends every
+run — the tab asks first.
 
 What that costs is durability, which is why transcripts are persisted server-side
 at every turn boundary (below), and why a run record is written *before* the first
@@ -25,9 +30,11 @@ model call rather than after the last one.
 | Module | What it is |
 | --- | --- |
 | `apps/admin/src/features/agent/` | the shared runtime — contracts, loop, modes, scope, context budget |
-| `apps/admin/src/features/ide/agent/` | the IDE surface — workspace/check/tenant tools, panel, session hook |
-| `apps/admin/src/features/ide/diagnostics/` | TypeScript diagnostics off Monaco's worker, and the gate's verdict |
-| `apps/admin/src/features/assistant/` | the console surface — tools, conversation rail |
+| `apps/admin/src/features/agent/hostStore.ts`, `host.ts` | the agent host: one session per site, queue, delegation, the run (ADR 0033) |
+| `apps/admin/src/features/agent/siteDraft.ts`, `runChecks.ts`, `siteKits.ts` | a run's own copy of its site, its own bundler and type checker, each kind's tools |
+| `apps/admin/src/features/ide/agent/` | the IDE surface — workspace/check/tenant tools, panel, session view |
+| `apps/admin/src/features/ide/diagnostics/` | TypeScript diagnostics: Monaco's worker for the editor, `typecheck.worker.ts` for runs |
+| `apps/admin/src/features/assistant/` | the console surface — tools, delegation, the tab's one session, Agents tab |
 | `src/Services/Dcms.AiGateway/` | provider translation, BYOK key injection, quota |
 | `src/Services/Dcms.AdminApi/Ai/` | conversations, runs, retention |
 
@@ -60,7 +67,10 @@ iteration is one model turn:
    actually wrote something, and only up to 3 times.
 
 Ceilings: 25 iterations, 3 build repairs. A model that cannot fix a build in
-three attempts is usually making it worse, and each attempt is billed.
+three attempts is usually making it worse, and each attempt is billed. A run that
+reaches the iteration ceiling while still asking for tools ends **paused**, not
+completed: it validates what it wrote first, leaves a failing build in the
+transcript, and the panel says to continue.
 
 ### The build gate
 
@@ -95,13 +105,18 @@ Every check is bounded in time. A worker that never answers used to park the run
 on "Checking the build" until somebody pressed Stop; a check that cannot finish
 becomes "unknown", the same as one that fails to start.
 
-#### Type checking costs nothing
+#### Where the checks run
 
-Monaco is already loaded, its TypeScript worker is already running for the
-editor's own IntelliSense, a model already exists for every non-binary file in the
-VFS, and `setEagerModelSync(true)` already pushes all of them into that worker.
-The whole project has been type-checked continuously all along — nothing was
-reading the answers. There is no second copy of `tsc` and no extra bundle.
+Each run owns its checks (`agent/runChecks.ts`, ADR 0033): a bundler worker for
+`check_build` and the gate, and `ide/diagnostics/typecheck.worker.ts` — a TypeScript
+language service over the run's own files, with the editor's compiler options and
+palette types. They used to borrow Monaco's worker and the open preview pane,
+which only know the site on screen: a run that outlived its page, or worked on
+another site, got an empty program from one and "the preview is closed" from the
+other. The worker is a second copy of TypeScript (~6.6 MB), loaded only when a run
+type-checks. Monaco's worker still serves the editor's own IntelliSense, and C#
+files still go to Roslyn there. A bundler that cannot start reports itself
+unavailable, which the gate reads as "not checked".
 
 `diagnostics/checkTypes.ts` imports Monaco **lazily**, inside the call, so the
 editor does not become a static dependency of the agent runtime's module graph.
@@ -260,8 +275,9 @@ Things that are easy to get wrong:
 
 ### Edits are refusable
 
-Every run is pinned to a `WorkspaceRevision` — the VFS `rev` plus a path→hash map.
-`edit_file` takes an `expected_hash` from the read that produced it. If the human
+Every tool call sees the run's files as they are at that moment — including the
+run's own writes. (A run used to be pinned to one revision for its whole length,
+so it never saw what it had written; ADR 0033.) `edit_file` takes an `expected_hash` from the read that produced it. If the human
 typed into the same file meanwhile, the hash no longer matches and the edit is
 **refused** rather than silently overwriting them — unless it can be **rebased**.
 
@@ -415,12 +431,14 @@ Settled during the rework; not up for re-litigation without a new ADR.
 
 - **D1 — The agent loop runs in the browser.** A shared `AgentRuntime` module, not a server
   service. Consequence: a closed tab ends the run; the transcript survives (Phase 8), the run
-  does not. Accepted.
+  does not. Accepted. *Amended by ADR 0033:* a run lives as long as the tab, not the page.
 - **D2 — Two surfaces, one runtime.** The assistant dock and the IDE agent panel stay distinct
   UIs backed by one runtime, one tool registry, one mode/risk model.
 - **D3 — `AgentWorkspace` is the only door to site files.** No tool touches the zustand store,
   the draft REST API or git directly.
-- **D4 — One agent, not a swarm.**
+- **D4 — One agent, not a swarm.** *Amended by ADR 0033:* one agent per site at a time; agents
+  on different sites run independently; the console assistant delegates site changes to them
+  and never edits a site itself.
 - **D5 — Anthropic Messages stays the wire format**; `ai-gateway` keeps translating
   ([`AnthropicOpenAiBridge`](../src/Services/Dcms.AiGateway/Providers/AnthropicOpenAiBridge.cs)).
 - **D6 — Patch-first editing.** Whole-file writes only for new files and genuine rewrites.

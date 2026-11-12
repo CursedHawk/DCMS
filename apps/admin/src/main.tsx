@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -7,6 +7,7 @@ import './lib/i18n';
 import { routeTree } from './routes';
 import { adoptTenantFromUrl } from './tenants';
 import { exposeSharedModules } from './pluginHost/shared';
+import { queryClient } from './lib/queryClient';
 import './index.css';
 
 // Installed plugins' admin UIs use the console's React, design system and caches rather than
@@ -18,9 +19,6 @@ exposeSharedModules();
 // or the page loads the previously selected workspace and looks perfectly fine doing it.
 adoptTenantFromUrl();
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
-});
 const router = createRouter({ routeTree });
 
 declare module '@tanstack/react-router' {

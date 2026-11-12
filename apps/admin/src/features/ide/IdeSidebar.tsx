@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch, History, Package, Rocket, Search, Sparkles, Zap } from 'lucide-react';
+import { Files, GitBranch, History, Package, Rocket, Search, Zap } from 'lucide-react';
+import { AgentRailIcon } from '../agent/AgentRailIcon';
+import { useAgentFocus } from '../agent/hostStore';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
-import { checkDraft, functionsTools } from './agent/functionsTools';
 import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 import { FunctionsView } from './functions/FunctionsView';
@@ -65,6 +66,7 @@ export function IdeSidebar({
   const [newFunction, setNewFunction] = useState(false);
   const onNewFunction = functionsApi ? () => setNewFunction(true) : undefined;
   if (view === 'agent' && !agentOpened) setAgentOpened(true);
+  useAgentFocus(siteId, () => onViewChange('agent'));
   const { t } = useTranslation();
   const changes = useQuery({
     queryKey: ['git-changes', siteId, branch],
@@ -148,7 +150,7 @@ export function IdeSidebar({
           label={t('ide.agent.title')}
           onClick={() => onViewChange('agent')}
         >
-          <Sparkles className="h-5 w-5" />
+          <AgentRailIcon siteId={siteId} />
         </RailButton>
         )}
       </div>
@@ -175,19 +177,12 @@ export function IdeSidebar({
         {view === 'runs' && functionsApi && (
           <RunsView functionsApi={functionsApi} initialFunction={runsFunction} onReplay={(r) => onReplay?.(r)} />
         )}
-        {/* Kept mounted once opened, so the conversation (and a run in progress) survives switching
-            views; it ends with the page. */}
+        {/* Kept mounted once opened, so the conversation stays on screen across views. The run
+            itself lives in the agent host and outlives the page (ADR 0033). */}
         {agentOpened && (
           <div className={view === 'agent' ? 'h-full' : 'hidden'}>
             {functionsApi ? (
-              <AgentPanel
-                key={siteId}
-                siteId={siteId}
-                siteName={siteName}
-                kind="functions"
-                tools={functionsTools(functionsApi)}
-                validate={() => checkDraft(functionsApi)}
-              />
+              <AgentPanel key={siteId} siteId={siteId} siteName={siteName} kind="functions" functionsApi={functionsApi} />
             ) : (
               <AgentPanel key={siteId} siteId={siteId} siteName={siteName} />
             )}

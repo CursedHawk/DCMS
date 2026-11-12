@@ -44,3 +44,20 @@ export function clientId(): string {
   }
   return generated;
 }
+
+/**
+ * The client id an agent run in this tab saves under: this tab's id, qualified by the run.
+ *
+ * <p>Prefixed by the tab's own id on purpose, so `isOwnSave` recognises it: the run has already
+ * merged what it saved into this tab's store, and treating the echo as somebody else's change
+ * would raise "your draft changed elsewhere" for the agent this tab is running.</p>
+ */
+export function agentClientId(runId: string): string {
+  return `${clientId()}:agent:${runId}`;
+}
+
+/** True for a save this tab made — by the author or by one of its agent runs. */
+export function isOwnSave(id: string): boolean {
+  const own = clientId();
+  return id === own || id.startsWith(`${own}:agent:`);
+}

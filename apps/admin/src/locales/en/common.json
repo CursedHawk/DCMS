@@ -868,7 +868,9 @@
       "moreLines_one": "… and {{count}} more line",
       "moreLines_other": "… and {{count}} more lines",
       "scope": "Reach",
-      "scopeHint": "How far outside this site the agent may reach. Workspace content lets it see which plugin instances and content types exist."
+      "scopeHint": "How far outside this site the agent may reach. Workspace content lets it see which plugin instances and content types exist.",
+      "queued_one": "{{count}} more request is waiting for this run and starts when it ends.",
+      "queued_other": "{{count}} more requests are waiting for this run and start when it ends."
     },
     "starter": {
       "title": "Start your site",
@@ -1658,6 +1660,36 @@
       "agentHint": "Writes, edits and uploads on its own. Asks before publishing, scheduling or deleting.",
       "auto": "Full auto",
       "autoHint": "Does everything you ask without stopping, publishing and deleting included. Not remembered after you close the browser."
+    },
+    "agents": {
+      "chatTab": "Chat",
+      "tab": "Agents",
+      "empty": "No site agents have worked in this tab yet. Ask for a change to a site, or start one in a site's editor.",
+      "buttonWorking_one": "Assistant — {{count}} agent working",
+      "buttonWorking_other": "Assistant — {{count}} agents working",
+      "buttonWaiting": "Assistant — an agent is waiting for your decision",
+      "kind": {
+        "react": "IDE",
+        "static": "Builder",
+        "visual": "Visual builder",
+        "functions": "Functions"
+      },
+      "delegated": "Asked by the assistant",
+      "openEditor": "Open in editor",
+      "queued_one": "{{count}} queued",
+      "queued_other": "{{count}} queued",
+      "waiting": "Waiting for your decision",
+      "working": "Working",
+      "turn_one": "turn {{count}}",
+      "turn_other": "turn {{count}}",
+      "files_one": "{{count}} file changed",
+      "files_other": "{{count}} files changed",
+      "outcome": {
+        "completed": "Finished",
+        "paused": "Paused — ran out of turns",
+        "failed": "Failed",
+        "stopped": "Stopped"
+      }
     }
   },
   "settings": {

@@ -1,6 +1,8 @@
 import type { ToolSpec } from '../../agent/contracts';
 import { gitApi } from '../../site-source/git';
-import { latestBuild, previewAvailable, requestBuild } from '../preview/buildBroker';
+import type { RunChecks } from '../../agent/runChecks';
+import { languageOf } from '../../site-source/paths';
+import { useVfs } from '../../site-source/vfs';
 import { previewAttached, previewMessages, queryPreview } from '../preview/previewBridge';
 import { checkTypes } from '../diagnostics/checkTypes';
 import { isCheckable } from '../diagnostics/typeCheck';
@@ -19,6 +21,12 @@ import { IDE_TOOLS, type IdeToolContext } from './workspaceTools';
 export interface CheckToolContext extends IdeToolContext {
   siteId: string;
   branch: string;
+  /** Every file as the run sees it now — its own copy of the site, not the editor's (ADR 0033). */
+  files: () => Readonly<Record<string, string>>;
+  /** The run's own bundler and type checker. */
+  checks: RunChecks;
+  /** Save the run's pending writes, so what the server says about the draft is current. */
+  flushDraft: () => Promise<void>;
 }
 
 type CheckTool = ToolSpec<CheckToolContext>;
@@ -77,7 +85,14 @@ export const CHECK_TOOLS: CheckTool[] = [
         };
       }
 
-      const problems = await checkTypes(paths);
+      // TypeScript in the run's own checker; C# in Roslyn, which only the open editor has.
+      const csharp = paths.filter((p) => languageOf(p) === 'csharp');
+      const script = paths.filter((p) => languageOf(p) !== 'csharp');
+      const [forScript, forCsharp] = await Promise.all([
+        script.length > 0 ? ctx.checks.types(script) : Promise.resolve([]),
+        csharp.length > 0 ? checkTypes(csharp) : Promise.resolve([]),
+      ]);
+      const problems = forScript === null || forCsharp === null ? null : [...forScript, ...forCsharp];
       if (problems === null) {
         // Never "clean". A check that did not run must not read as one that passed.
         return {
@@ -100,30 +115,14 @@ export const CHECK_TOOLS: CheckTool[] = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'check build',
     run: async (_input, ctx) => {
-      if (!previewAvailable()) {
-        // Deliberately an error, not an empty success. A validation tool that reports "no
-        // problems" when it did not run is worse than none at all, because the model trusts it.
-        return {
-          content:
-            'Cannot check: the preview pane is closed, so there is no compiler attached. Ask the user to open the preview, or proceed without build verification and say so.',
-          isError: true,
-        };
-      }
-
-      const snapshot = await requestBuild(ctx.workspace.revision.revision);
-      if (!snapshot || snapshot.revision === -1) {
+      const result = await ctx.checks.build();
+      if (!result) {
         return {
           content: 'The build did not complete in time. Nothing can be concluded about it.',
           isError: true,
         };
       }
-
-      const body = formatProblems(snapshot.problems);
-      const stale =
-        snapshot.revision !== ctx.workspace.revision.revision
-          ? '\n\nNote: this build is from an earlier revision than your current workspace.'
-          : '';
-      return { content: `${body}${stale}`, isError: !snapshot.ok };
+      return { content: formatProblems(result.problems), isError: !result.ok };
     },
   },
 
@@ -133,10 +132,10 @@ export const CHECK_TOOLS: CheckTool[] = [
       'The most recent build result without triggering a new one. Use when you only want to know whether the project was already broken before you touched it.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'read last build',
-    run: async () => {
-      const snapshot = latestBuild();
-      if (!snapshot) return { content: 'No build has completed yet in this session.' };
-      return { content: formatProblems(snapshot.problems), isError: !snapshot.ok };
+    run: async (_input, ctx) => {
+      const last = ctx.checks.lastBuild();
+      if (!last) return { content: 'No build has run yet in this run. Use check_build.' };
+      return { content: formatProblems(last.problems), isError: !last.ok };
     },
   },
 
@@ -165,6 +164,8 @@ export const CHECK_TOOLS: CheckTool[] = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'git status',
     run: async (_input, ctx) => {
+      // The draft on the server is what this answers about; the run's last writes must be in it.
+      await ctx.flushDraft();
       const changes = await gitApi.changes(ctx.siteId, ctx.branch);
       if (changes.length === 0) return { content: `No changes on ${ctx.branch}.` };
       return {
@@ -192,6 +193,7 @@ export const CHECK_TOOLS: CheckTool[] = [
     maxResultChars: 12_000,
     run: async (input, ctx) => {
       const path = String(input.path ?? '');
+      await ctx.flushDraft();
       const changes = await gitApi.changes(ctx.siteId, ctx.branch);
       const change = changes.find((c) => c.path === path);
       if (!change) return { content: `${path} has no pending changes.`, isError: true };
@@ -258,6 +260,20 @@ export const CHECK_TOOLS: CheckTool[] = [
  * importantly this is the order a human reads when debugging a run. Inspection first, then
  * edits, then verification — which is also the sequence the system prompt asks for.</p>
  */
+/**
+ * Why the preview cannot answer for this run's site, or null when it can.
+ *
+ * <p>There is one preview pane, and it shows whichever site the editor has open. A run working
+ * on another site (ADR 0033) reading it would report that site's console as its own.</p>
+ */
+function previewUnavailable(ctx: CheckToolContext): string | null {
+  if (!previewAttached()) return 'The preview is not running, so there is nothing to read. Use check_build to verify the code.';
+  if (useVfs.getState().siteId !== ctx.siteId) {
+    return 'The open preview shows a different site. Use check_build to verify this site, or ask the user to open its preview.';
+  }
+  return null;
+}
+
 const PREVIEW_TOOLS: CheckTool[] = [
   {
     name: 'preview_console',
@@ -271,13 +287,9 @@ const PREVIEW_TOOLS: CheckTool[] = [
      * visitor submitted that the site chose to display. See `markUntrusted` in the runtime.
      */
     untrustedSource: 'the running preview page',
-    run: async () => {
-      if (!previewAttached()) {
-        return {
-          content: 'The preview is not running, so there is no console to read.',
-          isError: true,
-        };
-      }
+    run: async (_input, ctx) => {
+      const unavailable = previewUnavailable(ctx);
+      if (unavailable) return { content: unavailable, isError: true };
       const messages = previewMessages();
       if (messages.length === 0) {
         return { content: 'The preview reported no errors, warnings or failed requests.' };
@@ -308,7 +320,9 @@ const PREVIEW_TOOLS: CheckTool[] = [
      * visitor submitted that the site chose to display. See `markUntrusted` in the runtime.
      */
     untrustedSource: 'the running preview page',
-    run: async (input) => {
+    run: async (input, ctx) => {
+      const unavailable = previewUnavailable(ctx);
+      if (unavailable) return { content: unavailable, isError: true };
       const selector = typeof input.selector === 'string' ? input.selector : undefined;
       const html = await queryPreview('dom', selector);
       if (html === null) {
@@ -339,7 +353,9 @@ const PREVIEW_TOOLS: CheckTool[] = [
      * visitor submitted that the site chose to display. See `markUntrusted` in the runtime.
      */
     untrustedSource: 'the running preview page',
-    run: async (input) => {
+    run: async (input, ctx) => {
+      const unavailable = previewUnavailable(ctx);
+      if (unavailable) return { content: unavailable, isError: true };
       const selector = typeof input.selector === 'string' ? input.selector : undefined;
       const text = await queryPreview('text', selector);
       if (text === null) {

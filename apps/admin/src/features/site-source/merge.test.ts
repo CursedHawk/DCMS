@@ -26,7 +26,7 @@ beforeEach(() => {
     conflict: null,
     dirty: false,
     version: 0,
-    agentRuns: 0,
+    siteId: null,
     openTabs: [],
     activePath: null,
   });
@@ -188,17 +188,37 @@ describe('conflict quarantine', () => {
   });
 });
 
-describe('agent run hold', () => {
-  it('counts nested runs and floors at zero', () => {
-    const vfs = useVfs.getState();
-    vfs.beginAgentRun();
-    vfs.beginAgentRun();
-    expect(useVfs.getState().agentRuns).toBe(2);
-    useVfs.getState().endAgentRun();
-    expect(useVfs.getState().agentRuns).toBe(1);
-    useVfs.getState().endAgentRun();
-    useVfs.getState().endAgentRun();
-    // An unmatched end must not go negative, which would hold autosave forever.
-    expect(useVfs.getState().agentRuns).toBe(0);
+describe('applyAgentWrites', () => {
+  it('adopts what an agent saved, with its hash, as a clean file', () => {
+    loadServer({ 'a.ts': 'A', 'b.ts': 'B' });
+    const conflicts = useVfs.getState().applyAgentWrites({ 'a.ts': 'A2', 'c.ts': 'C' }, 2, { 'a.ts': 'h-a2', 'c.ts': 'h-c' });
+    const s = useVfs.getState();
+    expect(conflicts).toEqual([]);
+    expect(s.files).toEqual({ 'a.ts': 'A2', 'b.ts': 'B', 'c.ts': 'C' });
+    expect(s.baseHashes['a.ts']).toBe('h-a2');
+    // Already on the server: nothing for the author's autosave to send again.
+    expect(s.dirty).toBe(false);
+    expect(s.openTabs).toEqual(expect.arrayContaining(['a.ts', 'c.ts']));
+  });
+
+  it('leaves files it was not given alone — it is not a whole-draft merge', () => {
+    loadServer({ 'a.ts': 'A', 'b.ts': 'B' });
+    useVfs.getState().applyAgentWrites({ 'a.ts': 'A2' }, 2, { 'a.ts': 'h' });
+    expect(useVfs.getState().files['b.ts']).toBe('B');
+  });
+
+  it('deletes on null', () => {
+    loadServer({ 'a.ts': 'A', 'b.ts': 'B' });
+    useVfs.getState().applyAgentWrites({ 'b.ts': null }, 2, {});
+    expect(useVfs.getState().files).toEqual({ 'a.ts': 'A' });
+  });
+
+  it('never swaps text under an author with an unsaved edit to the same file', () => {
+    loadServer({ 'a.ts': 'A' });
+    useVfs.getState().writeFile('a.ts', 'typed');
+    const conflicts = useVfs.getState().applyAgentWrites({ 'a.ts': 'agent' }, 2, { 'a.ts': 'h' });
+    expect(conflicts).toEqual(['a.ts']);
+    expect(useVfs.getState().files['a.ts']).toBe('typed');
+    expect(useVfs.getState().conflict).toEqual(['a.ts']);
   });
 });

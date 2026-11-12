@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Editor } from 'grapesjs';
-import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket, Sparkles } from 'lucide-react';
+import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket } from 'lucide-react';
+import { AgentRailIcon } from '../agent/AgentRailIcon';
+import { useAgentFocus } from '../agent/hostStore';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { DeploymentsView, SourceControlView, gitApi, useVfs } from '../site-source';
 import { AgentPanel } from '../ide/agent/AgentPanel';
-import { STATIC_TOOLS, validateStaticSite } from './agent/staticTools';
 import { BlocksPanel } from './panels/BlocksPanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { ComponentsPanel } from './panels/ComponentsPanel';
@@ -49,6 +50,7 @@ export function BuilderSidebar({
 }) {
   const [agentOpened, setAgentOpened] = useState(false);
   if (view === 'agent' && !agentOpened) setAgentOpened(true);
+  useAgentFocus(siteId, () => onViewChange('agent'));
   const { t } = useTranslation();
   const branch = useVfs((s) => s.branch);
   const changes = useQuery({
@@ -98,7 +100,7 @@ export function BuilderSidebar({
           label={t('ide.agent.title')}
           onClick={() => onViewChange('agent')}
         >
-          <Sparkles className="h-5 w-5" />
+          <AgentRailIcon siteId={siteId} />
         </RailButton>
       </div>
 
@@ -122,18 +124,11 @@ export function BuilderSidebar({
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
-        {/* Kept mounted once opened, so the conversation (and a run in progress) survives switching
-            views; it ends with the page. */}
+        {/* Kept mounted once opened, so the conversation stays on screen across views. The run
+            itself lives in the agent host and outlives the page (ADR 0033). */}
         {agentOpened && (
           <div className={view === 'agent' ? 'h-full' : 'hidden'}>
-            <AgentPanel
-              key={siteId}
-              siteId={siteId}
-              siteName={siteName}
-              kind="static"
-              tools={STATIC_TOOLS}
-              validate={validateStaticSite}
-            />
+            <AgentPanel key={siteId} siteId={siteId} siteName={siteName} kind="static" />
           </div>
         )}
       </div>

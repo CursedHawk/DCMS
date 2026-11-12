@@ -1,6 +1,6 @@
 import { languageOf, uriOf } from '../../site-source/paths';
 import type { BuildProblem } from '../preview/problems';
-import { isCheckable, positionAt, problemKey, toTypeProblems, type TsDiagnostic } from './typeCheck';
+import { isCheckable, positionAt, toTypeProblems, type TsDiagnostic } from './typeCheck';
 
 /**
  * The half that talks to Monaco's TypeScript worker.
@@ -113,28 +113,4 @@ async function collect(checkable: readonly string[]): Promise<BuildProblem[] | n
     // The worker failed or was torn down mid-question. Say "unknown", never "clean".
     return null;
   }
-}
-
-/**
- * A snapshot of what was already wrong, for `newProblems` to subtract.
- *
- * <p>Taken over the whole project rather than the changed files, because at the moment it has to
- * be taken nobody knows yet which files the run will touch.</p>
- *
- * <p>Started but <b>not awaited</b> by the caller: it runs while the first model turn is in
- * flight, so on any run that does real work it costs nothing. Past `maxFiles` it gives up and
- * returns null — the gate then reports types as unchecked rather than drowning the run in a
- * project's existing debt.</p>
- */
-export async function baselineTypeProblems(
-  paths: readonly string[],
-  maxFiles = 400,
-): Promise<ReadonlySet<string> | null> {
-  const checkable = paths.filter(isCheckable);
-  if (checkable.length > maxFiles) return null;
-  // A longer leash than a scoped check: this is the whole project, and it runs while the first
-  // model turn is in flight rather than while anyone is waiting on it.
-  const problems = await checkTypes(checkable, 20_000);
-  if (problems === null) return null;
-  return new Set(problems.map(problemKey));
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTransaction } from '../../agent/transaction';
-import { vfsPort } from '../../agent/vfsPort';
+import { createTransaction, type WorkspacePort } from '../../agent/transaction';
+import { normalizePath } from '../../site-source/paths';
 import { useVfs } from '../../site-source/vfs';
 import { useVisual } from '../store';
 import { VISUAL_TOOLS, validateVisualSite } from './visualTools';
@@ -32,9 +32,19 @@ function tool(name: string) {
 }
 
 let ctx: never;
+
+/** The editor's store as the run's files: these tests read what the tools wrote back from it. */
+const editorPort: WorkspacePort = {
+  read: (path) => useVfs.getState().files[path],
+  exists: (path) => useVfs.getState().files[path] !== undefined,
+  normalize: normalizePath,
+  write: (path, content) => useVfs.getState().writeFile(path, content),
+  remove: (path) => useVfs.getState().deleteFile(path),
+};
 beforeEach(() => {
   seed();
-  ctx = { tx: createTransaction(vfsPort()) } as never;
+  useVfs.getState().setSite('site-1');
+  ctx = { tx: createTransaction(editorPort), files: () => useVfs.getState().files, siteId: 'site-1' } as never;
 });
 
 const run = (name: string, input: Record<string, unknown>) => tool(name).run(input, ctx);
@@ -56,7 +66,7 @@ describe('Mode D agent tools', () => {
     const section = page('home').root.slots.default[0];
     expect(section.type).toBe('dcms.section');
     expect(section.slots.default.map((n: { id: string }) => n.id)).toEqual([expect.stringMatching(/^n[a-z0-9]{8}$/), expect.stringMatching(/^n[a-z0-9]{8}$/)]);
-    expect((await validateVisualSite()).ok).toBe(true);
+    expect((await validateVisualSite(useVfs.getState().files)).ok).toBe(true);
   });
 
   it('inserts a section template as a band of the page, and the site stays valid', async () => {
@@ -65,7 +75,7 @@ describe('Mode D agent tools', () => {
     const out = await run('insert_section', { doc: 'page:home', template: 'faq', index: 0 });
     expect(out.content).toMatch(/^Inserted the FAQ section as n[a-z0-9]{8}\.$/);
     expect(page('home').root.slots.default[0].type).toBe('dcms.section');
-    expect((await validateVisualSite()).ok).toBe(true);
+    expect((await validateVisualSite(useVfs.getState().files)).ok).toBe(true);
     expect((await run('insert_section', { doc: 'page:home', template: 'nope' })).isError).toBe(true);
   });
 
@@ -94,7 +104,7 @@ describe('Mode D agent tools', () => {
     await run('insert_node', { doc: 'page:event', parent: root, slot: 'default', node: { id: 'h', type: 'dcms.heading' } });
     await run('bind_props', { doc: 'page:event', node: 'h', bind: { text: 'title' } });
     expect(page('event').root.slots.default[0].bind).toEqual({ text: 'title' });
-    expect((await validateVisualSite()).ok).toBe(true);
+    expect((await validateVisualSite(useVfs.getState().files)).ok).toBe(true);
   });
 
   it('builds a component, exposes a setting, and will not edit a version pages use', async () => {
@@ -133,7 +143,7 @@ describe('Mode D agent tools', () => {
     expect((await run('set_when', { doc: 'page:home', node: 'p', when: { state: 'nope' } })).content).toBe('This page declares no state “nope”.');
     expect(page('home').state).toEqual({ tab: 'dates' });
     expect(page('home').root.slots.default[1].when).toEqual({ state: 'tab', equals: 'venues' });
-    expect((await validateVisualSite()).ok).toBe(true);
+    expect((await validateVisualSite(useVfs.getState().files)).ok).toBe(true);
   });
 
   it('inspect_selected names the node the author means by “this”, and where it sits', async () => {

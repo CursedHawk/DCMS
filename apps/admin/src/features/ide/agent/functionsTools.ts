@@ -1,6 +1,5 @@
 import { api } from '../../../lib/api';
 import type { ToolSpec } from '../../agent/contracts';
-import { useVfs } from '../../site-source';
 import type { TenantToolContext } from './tenantTools';
 
 /**
@@ -22,10 +21,12 @@ interface Check {
   permissions: string[];
 }
 
-const draft = () => useVfs.getState().files;
 
-export async function checkDraft(base: string): Promise<{ ok: boolean; report: string }> {
-  const check = await api.post<Check>(`${base}/check`, { files: draft() });
+export async function checkDraft(
+  base: string,
+  files: Readonly<Record<string, string>>,
+): Promise<{ ok: boolean; report: string }> {
+  const check = await api.post<Check>(`${base}/check`, { files });
   if (check.ok) {
     return {
       ok: true,
@@ -44,8 +45,8 @@ export function functionsTools(base: string): ToolSpec<TenantToolContext>[] {
         'Type-check and build the whole draft on the server exactly as a deployment is built: every problem with its file and line, which functions it defines and what deploying it would take. Run it after every change; the compiler is never wrong about whether it builds.',
       input_schema: { type: 'object', properties: {}, additionalProperties: false },
       describe: () => 'check functions',
-      run: async () => {
-        const { ok, report } = await checkDraft(base);
+      run: async (_input, ctx) => {
+        const { ok, report } = await checkDraft(base, ctx.files());
         return { content: report, isError: !ok };
       },
     },
@@ -64,9 +65,9 @@ export function functionsTools(base: string): ToolSpec<TenantToolContext>[] {
       },
       risk: 'dangerous',
       describe: (input) => `run ${String(input.function ?? '')}`,
-      run: async (input) => {
+      run: async (input, ctx) => {
         const result = await api.post<{ status: string; result?: unknown; error?: string | null; logs: string }>(`${base}/test`, {
-          files: draft(),
+          files: ctx.files(),
           function: String(input.function ?? ''),
           input: input.input ?? null,
         });

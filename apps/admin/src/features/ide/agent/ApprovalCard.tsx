@@ -5,7 +5,6 @@ import { Button, cn } from '@dcms/ui';
 import type { ApprovalDecision, ToolCall, ToolSpec } from '../../agent/contracts';
 import { ALL_TOOLS } from './checkTools';
 import { PREVIEW_TOOLS, SKILL_TOOLS, TENANT_TOOLS } from './tenantTools';
-import { useVfs } from '../../site-source/vfs';
 import { countLines, previewOf, previewTitle, PREVIEW_LINES, type ChangePreview } from './approval';
 
 /**
@@ -41,12 +40,17 @@ const SPECS = new Map<string, ToolSpec<unknown>>(
 export function ApprovalCard({
   calls,
   onDecide,
+  files,
 }: {
   calls: readonly ToolCall[];
   onDecide: (decision: ApprovalDecision) => void;
+  /**
+   * The files the run sees, for previewing its edits — the run's own copy (ADR 0033), which is
+   * not the editor's when the run works on another site than the one on screen.
+   */
+  files: Readonly<Record<string, string>>;
 }) {
   const { t } = useTranslation();
-  const files = useVfs((s) => s.files);
   const cardRef = useRef<HTMLDivElement>(null);
   // Bound once, so it must not close over a stale `onDecide`.
   const onDecideRef = useRef(onDecide);

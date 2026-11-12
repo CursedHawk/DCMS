@@ -6,7 +6,7 @@ vi.mock('../../../lib/api', () => ({ api: { get: (path: string) => get(path) } }
 const { VISUAL_TOOLS } = await import('./visualTools');
 
 const tool = (name: string) => VISUAL_TOOLS.find((t) => t.name === name)!;
-const ctx = { siteId: 'site-1' } as never;
+const ctx = { siteId: 'site-1', files: () => ({}) } as never;
 
 const MODEL = {
   tables: [

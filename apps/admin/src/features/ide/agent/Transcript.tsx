@@ -2,6 +2,7 @@ import {
   Check,
   ChevronRight,
   CircleAlert,
+  CirclePause,
   CircleCheck,
   CircleSlash,
   Loader2,
@@ -67,6 +68,14 @@ function Entry({ entry }: { entry: AgentEntry }) {
           <span>
             <RetryText attempt={entry.attempt} of={entry.of} because={entry.because} />
           </span>
+        </p>
+      );
+
+    case 'notice':
+      return (
+        <p className="flex items-start gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning-foreground">
+          <CirclePause className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 whitespace-pre-wrap">{entry.text}</span>
         </p>
       );
 

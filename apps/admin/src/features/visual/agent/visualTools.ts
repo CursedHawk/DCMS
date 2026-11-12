@@ -32,10 +32,10 @@ import type { ToolOutcome, ToolSpec } from '../../agent/contracts';
 import type { TenantToolContext } from '../../ide/agent/tenantTools';
 import { api } from '../../../lib/api';
 import { type ApiConnection } from '../../connections/api';
-import { useVfs } from '../../site-source/vfs';
 import { newNodeId, nodeFromStarter } from '../canvas/tree';
 import { defaultShell, migrateInstance, pageIdFor, pruneComponent, registryOf } from '../documents';
 import { serializeDoc } from '../starter';
+import { useVfs } from '../../site-source/vfs';
 import { useVisual } from '../store';
 import { SECTION_TEMPLATES } from '../templates/sections';
 
@@ -54,8 +54,9 @@ import { SECTION_TEMPLATES } from '../templates/sections';
 
 type Tool = ToolSpec<TenantToolContext>;
 
-function files(): Readonly<Record<string, string>> {
-  return useVfs.getState().files;
+/** The run's own files (ADR 0033) — never the editor's store, which may hold another site. */
+function files(ctx: Pick<TenantToolContext, 'files'>): Readonly<Record<string, string>> {
+  return ctx.files();
 }
 
 function err(content: string): ToolOutcome {
@@ -71,7 +72,7 @@ function json(text: string | undefined): unknown {
 }
 
 /** The registry the site renders with: built-ins, its own components, developer contracts. */
-export function registryFromFiles(all: Readonly<Record<string, string>> = files()): Registry {
+export function registryFromFiles(all: Readonly<Record<string, string>>): Registry {
   return registryOf(all);
 }
 
@@ -95,8 +96,7 @@ function issue(e: { issues: { path: PropertyKey[]; message: string }[] }): strin
   return `${i?.path.map(String).join('.') || 'document'}: ${i?.message}`;
 }
 
-function loadDoc(ref: string): LoadedDoc | string {
-  const all = files();
+function loadDoc(ref: string, all: Readonly<Record<string, string>>): LoadedDoc | string {
   if (ref === 'shell') {
     const app = appSchema.safeParse(json(all[APP_JSON]));
     if (!app.success) return `${APP_JSON} cannot be read: ${issue(app.error)}`;
@@ -145,7 +145,7 @@ function loadDoc(ref: string): LoadedDoc | string {
 }
 
 /** How often a component is used outside its own files — of one version, when given. */
-function usesOf(name: string, version?: number, all = files()): number {
+function usesOf(all: Readonly<Record<string, string>>, name: string, version?: number): number {
   const type = tenantType(name);
   let count = 0;
   const visit = (root: Node | undefined, path: string) => {
@@ -165,7 +165,7 @@ function usesOf(name: string, version?: number, all = files()): number {
  * version of a component that pages already use is never edited in place.
  */
 function save(ctx: TenantToolContext, doc: LoadedDoc, root: Node, registry: Registry, summary: string): ToolOutcome {
-  if (doc.component && usesOf(doc.component.name, doc.component.version) > 0) {
+  if (doc.component && usesOf(files(ctx), doc.component.name, doc.component.version) > 0) {
     return err(`Version ${doc.component.version} of ${doc.component.name} is used by pages, so it is not edited in place. Call start_component_version and edit the new version.`);
   }
   const placement = checkPlacement(root, registry);
@@ -267,8 +267,8 @@ function compact(node: Node): unknown {
   return out;
 }
 
-function readApp(): App | null {
-  const app = appSchema.safeParse(json(files()[APP_JSON]));
+function readApp(all: Readonly<Record<string, string>>): App | null {
+  const app = appSchema.safeParse(json(all[APP_JSON]));
   return app.success ? app.data : null;
 }
 
@@ -284,9 +284,9 @@ export const VISUAL_TOOLS: Tool[] = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'inspect site',
     maxResultChars: 12_000,
-    run: async () => {
-      const all = files();
-      const app = readApp();
+    run: async (_input, ctx) => {
+      const all = files(ctx);
+      const app = readApp(files(ctx));
       const pages = Object.keys(all)
         .map(pageIdFromPath)
         .filter((id): id is string => id !== null)
@@ -314,7 +314,7 @@ export const VISUAL_TOOLS: Tool[] = [
               type: tenantType(name),
               versions,
               docs: versions.map((v) => `component:${name}@${v}`),
-              usedTimes: usesOf(name, undefined, all),
+              usedTimes: usesOf(all, name),
             })),
             problems: { errors: problems.filter((p) => p.severity === 'error').length, warnings: problems.filter((p) => p.severity === 'warning').length },
           },
@@ -331,8 +331,8 @@ export const VISUAL_TOOLS: Tool[] = [
     input_schema: { type: 'object', properties: { doc: DOC }, required: ['doc'], additionalProperties: false },
     describe: (input) => `inspect ${str(input, 'doc')}`,
     maxResultChars: 16_000,
-    run: async (input) => {
-      const doc = loadDoc(str(input, 'doc'));
+    run: async (input, ctx) => {
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
       const extra = doc.component
         ? { component: { label: doc.component.label, props: doc.component.props, slots: doc.component.slots, bindings: doc.component.bindings, slotTargets: doc.component.slotTargets } }
@@ -347,12 +347,16 @@ export const VISUAL_TOOLS: Tool[] = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'inspect selection',
     maxResultChars: 8_000,
-    run: async () => {
+    run: async (_input, ctx) => {
+      // A selection belongs to the canvas on screen, which may be another site's (ADR 0033).
+      if (useVfs.getState().siteId !== ctx.siteId) {
+        return { content: 'Nothing is selected: the visual editor for this site is not open. Ask what the user means, or find it with inspect_document.' };
+      }
       const { target, selectedNodeId } = useVisual.getState();
       const id = selectedNodeId();
       if (!target || !id) return { content: 'Nothing is selected on the canvas.' };
       const ref = target.kind === 'page' ? `page:${target.id}` : target.kind === 'shell' ? 'shell' : `component:${target.name}@${target.version}`;
-      const doc = loadDoc(ref);
+      const doc = loadDoc(ref, files(ctx));
       if (typeof doc === 'string') return err(doc);
       const trail: string[] = [];
       const locate = (node: Node): Node | null => {
@@ -386,13 +390,13 @@ export const VISUAL_TOOLS: Tool[] = [
     },
     describe: () => 'list component types',
     maxResultChars: 20_000,
-    run: async (input) => {
+    run: async (input, ctx) => {
       const category = str(input, 'category').toLowerCase();
       const types = Array.isArray(input.types) ? new Set((input.types as unknown[]).filter((t): t is string => typeof t === 'string')) : null;
       // Named types come with every setting explained; the whole catalogue stays compact enough
       // to arrive in one piece.
       const full = types !== null && types.size > 0;
-      const out = [...registryFromFiles().values()]
+      const out = [...registryFromFiles(files(ctx)).values()]
         .filter((d) => d.draggable !== false || (full && types!.has(d.type)))
         .filter((d) => !category || d.category.toLowerCase() === category)
         .filter((d) => !full || types!.has(d.type))
@@ -593,11 +597,11 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Insert a ${String((input.node as { type?: string })?.type ?? 'component')} into ${str(input, 'doc')}`,
     describe: (input) => `inserted ${String((input.node as { type?: string })?.type ?? 'a component')} into ${str(input, 'doc')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
       const parsed = nodeArg(input);
       if (typeof parsed === 'string') return err(parsed);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       const def = registry.get(parsed.type);
       if (def?.template && parsed.version === undefined) parsed.version = def.version;
       let inserted = '';
@@ -646,9 +650,9 @@ export const VISUAL_TOOLS: Tool[] = [
     run: async (input, ctx) => {
       const template = SECTION_TEMPLATES.find((t) => t.id === str(input, 'template'));
       if (!template) return err(`There is no section template “${str(input, 'template')}”; list_section_templates has them.`);
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       let inserted = '';
       const result = edit(doc.root, (root) => {
         const list = (root.slots ??= {}).default ?? [];
@@ -677,9 +681,9 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Move ${str(input, 'node')} in ${str(input, 'doc')}`,
     describe: (input) => `moved ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       const result = edit(doc.root, (root) => {
         const from = find(root, str(input, 'node'));
         if (!from?.parent || !from.slot) return `There is no movable node “${str(input, 'node')}”.`;
@@ -707,7 +711,7 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Remove ${str(input, 'node')} from ${str(input, 'doc')}`,
     describe: (input) => `removed ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
       const result = edit(doc.root, (root) => {
         const hit = find(root, str(input, 'node'));
@@ -717,7 +721,7 @@ export const VISUAL_TOOLS: Tool[] = [
         return null;
       });
       if ('error' in result) return err(result.error);
-      return save(ctx, doc, result.root, registryFromFiles(), `Removed ${str(input, 'node')}.`);
+      return save(ctx, doc, result.root, registryFromFiles(files(ctx)), `Removed ${str(input, 'node')}.`);
     },
   },
   {
@@ -728,7 +732,7 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Duplicate ${str(input, 'node')}`,
     describe: (input) => `duplicated ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
       let copyId = '';
       const result = edit(doc.root, (root) => {
@@ -740,7 +744,7 @@ export const VISUAL_TOOLS: Tool[] = [
         return null;
       });
       if ('error' in result) return err(result.error);
-      return save(ctx, doc, result.root, registryFromFiles(), `Duplicated as ${copyId}.`);
+      return save(ctx, doc, result.root, registryFromFiles(files(ctx)), `Duplicated as ${copyId}.`);
     },
   },
   {
@@ -762,9 +766,9 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Change ${Object.keys((input.props as object) ?? {}).join(', ')} of ${str(input, 'node')}`,
     describe: (input) => `set ${Object.keys((input.props as object) ?? {}).join(', ')} on ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       const device = str(input, 'device') as 'tablet' | 'mobile' | '';
       const changes = (input.props ?? {}) as Record<string, unknown>;
       const result = edit(doc.root, (root) => {
@@ -794,7 +798,7 @@ export const VISUAL_TOOLS: Tool[] = [
       // Values are checked by the site validator's rules, so a wrong option is named, not saved.
       const built = doc.build(result.root);
       if (!built.ok) return err(`That would not be a valid document — ${built.error}`);
-      const problems = checkVisualSite({ ...files(), [doc.path]: built.text }, registry, useVisual.getState().contentSchema).filter(
+      const problems = checkVisualSite({ ...files(ctx), [doc.path]: built.text }, registry, useVisual.getState().contentSchema).filter(
         (p) => p.file === doc.path && p.nodeId === str(input, 'node') && p.severity === 'error',
       );
       if (problems.length) return err(problems.map((p) => p.message).join('\n'));
@@ -815,9 +819,9 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Bind ${Object.keys((input.bind as object) ?? {}).join(', ')} of ${str(input, 'node')} to content`,
     describe: (input) => `bound ${Object.keys((input.bind as object) ?? {}).join(', ')} on ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       const result = edit(doc.root, (root) => {
         const hit = find(root, str(input, 'node'));
         if (!hit) return `There is no node “${str(input, 'node')}”.`;
@@ -849,9 +853,9 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Set what ${str(input, 'node')} does when clicked`,
     describe: (input) => `set action on ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       const action = input.action === null ? null : actionSchema.safeParse(input.action);
       if (action && !action.success) return err(`action: ${issue(action.error)}`);
       const result = edit(doc.root, (root) => {
@@ -883,7 +887,7 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Give ${str(input, 'node')} its own CSS`,
     describe: (input) => `set css on ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
       const css = str(input, 'css').trim();
       const checked = nodeCssSchema.safeParse(css);
@@ -896,7 +900,7 @@ export const VISUAL_TOOLS: Tool[] = [
         return null;
       });
       if ('error' in result) return err(result.error);
-      return save(ctx, doc, result.root, registryFromFiles(), `Updated the CSS of ${str(input, 'node')}.`);
+      return save(ctx, doc, result.root, registryFromFiles(files(ctx)), `Updated the CSS of ${str(input, 'node')}.`);
     },
   },
   {
@@ -913,7 +917,7 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Show ${str(input, 'node')} only when its page state matches`,
     describe: (input) => `set when on ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'doc'));
+      const doc = loadDoc(str(input, 'doc'), files(ctx));
       if (typeof doc === 'string') return err(doc);
       const when = input.when === null ? null : whenSchema.safeParse(input.when);
       if (when && !when.success) return err(`when: ${issue(when.error)}`);
@@ -928,11 +932,11 @@ export const VISUAL_TOOLS: Tool[] = [
       // The validator knows which states the page declares; a missing one is named, not saved.
       const built = doc.build(result.root);
       if (!built.ok) return err(`That would not be a valid document — ${built.error}`);
-      const problems = checkVisualSite({ ...files(), [doc.path]: built.text }, registryFromFiles(), useVisual.getState().contentSchema).filter(
+      const problems = checkVisualSite({ ...files(ctx), [doc.path]: built.text }, registryFromFiles(files(ctx)), useVisual.getState().contentSchema).filter(
         (p) => p.file === doc.path && p.nodeId === str(input, 'node') && p.severity === 'error',
       );
       if (problems.length) return err(problems.map((p) => p.message).join('\n'));
-      return save(ctx, doc, result.root, registryFromFiles(), `Updated when ${str(input, 'node')} shows.`);
+      return save(ctx, doc, result.root, registryFromFiles(files(ctx)), `Updated when ${str(input, 'node')} shows.`);
     },
   },
   {
@@ -954,11 +958,11 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Add the page “${str(input, 'title')}” at ${str(input, 'path')}`,
     describe: (input) => `created page ${str(input, 'title')}`,
     run: async (input, ctx) => {
-      const app = readApp();
+      const app = readApp(files(ctx));
       if (!app) return err(`${APP_JSON} cannot be read.`);
       const title = str(input, 'title').trim();
       const path = str(input, 'path').trim();
-      const taken = new Set(Object.keys(files()).map(pageIdFromPath).filter((id): id is string => id !== null));
+      const taken = new Set(Object.keys(files(ctx)).map(pageIdFromPath).filter((id): id is string => id !== null));
       const id = pageIdFor(title, taken);
       let data: Page['data'];
       if (input.detail_of) {
@@ -985,7 +989,7 @@ export const VISUAL_TOOLS: Tool[] = [
       if (!page.success) return err(issue(page.error));
       const created = ctx.tx.create(pagePath(id), serializeDoc(page.data));
       if (created.isError) return created;
-      const routed = ctx.tx.patch(APP_JSON, { oldText: files()[APP_JSON]!, newText: serializeDoc(nextApp.data) });
+      const routed = ctx.tx.patch(APP_JSON, { oldText: files(ctx)[APP_JSON]!, newText: serializeDoc(nextApp.data) });
       if (routed.isError) return routed;
       return { content: `Created page:${id} at ${path} (root ${page.data.root.id}).`, paths: [pagePath(id), APP_JSON] };
     },
@@ -1006,7 +1010,7 @@ export const VISUAL_TOOLS: Tool[] = [
     run: async (input, ctx) => {
       const id = str(input, 'page').replace(/^page:/, '');
       const path = pagePath(id);
-      const page = pageSchema.safeParse(json(files()[path]));
+      const page = pageSchema.safeParse(json(files(ctx)[path]));
       if (!page.success) return err(`There is no readable page “${id}”.`);
       const next = pageSchema.safeParse({
         ...page.data,
@@ -1016,13 +1020,13 @@ export const VISUAL_TOOLS: Tool[] = [
       });
       if (!next.success) return err(issue(next.error));
       const paths: string[] = [];
-      if (serializeDoc(next.data) !== files()[path]) {
-        const o = ctx.tx.patch(path, { oldText: files()[path]!, newText: serializeDoc(next.data) });
+      if (serializeDoc(next.data) !== files(ctx)[path]) {
+        const o = ctx.tx.patch(path, { oldText: files(ctx)[path]!, newText: serializeDoc(next.data) });
         if (o.isError) return o;
         paths.push(path);
       }
       if (input.path) {
-        const app = readApp();
+        const app = readApp(files(ctx));
         const route = app?.routes.find((r) => r.page === id);
         if (!app || !route) return err('That page has no route to change.');
         const nextApp = appSchema.safeParse({
@@ -1033,7 +1037,7 @@ export const VISUAL_TOOLS: Tool[] = [
             : undefined,
         });
         if (!nextApp.success) return err(issue(nextApp.error));
-        const o = ctx.tx.patch(APP_JSON, { oldText: files()[APP_JSON]!, newText: serializeDoc(nextApp.data) });
+        const o = ctx.tx.patch(APP_JSON, { oldText: files(ctx)[APP_JSON]!, newText: serializeDoc(nextApp.data) });
         if (o.isError) return o;
         paths.push(APP_JSON);
       }
@@ -1049,7 +1053,7 @@ export const VISUAL_TOOLS: Tool[] = [
     describe: (input) => `deleted page ${str(input, 'page')}`,
     run: async (input, ctx) => {
       const id = str(input, 'page').replace(/^page:/, '');
-      const app = readApp();
+      const app = readApp(files(ctx));
       if (!app) return err(`${APP_JSON} cannot be read.`);
       const removed = app.routes.filter((r) => r.page === id);
       if (removed.some((r) => r.path === '/')) return err('The home page cannot be deleted.');
@@ -1060,7 +1064,7 @@ export const VISUAL_TOOLS: Tool[] = [
         navigation: app.navigation ? Object.fromEntries(Object.entries(app.navigation).map(([m, items]) => [m, items.filter((i) => !paths.has(i.to))])) : undefined,
       });
       if (!nextApp.success) return err(issue(nextApp.error));
-      const o = ctx.tx.patch(APP_JSON, { oldText: files()[APP_JSON]!, newText: serializeDoc(nextApp.data) });
+      const o = ctx.tx.patch(APP_JSON, { oldText: files(ctx)[APP_JSON]!, newText: serializeDoc(nextApp.data) });
       if (o.isError) return o;
       const r = ctx.tx.remove(pagePath(id));
       if (r.isError) return r;
@@ -1083,10 +1087,10 @@ export const VISUAL_TOOLS: Tool[] = [
     run: async (input, ctx) => {
       const parsed = nodeArg({ node: input.root });
       if (typeof parsed === 'string') return err(parsed.replace(/^node/, 'root'));
-      const taken = new Set(Object.keys(files()).map(componentFileOf).filter(Boolean).map((f) => f!.name));
+      const taken = new Set(Object.keys(files(ctx)).map(componentFileOf).filter(Boolean).map((f) => f!.name));
       const name = pageIdFor(str(input, 'label'), taken).slice(0, 48);
       const root = withIds(parsed, new Set());
-      const placement = checkPlacement(root, registryFromFiles());
+      const placement = checkPlacement(root, registryFromFiles(files(ctx)));
       if (placement) return err(placement);
       const doc = tenantComponentSchema.safeParse({ schemaVersion: 1, name, version: 1, label: str(input, 'label'), props: [], slots: [], bindings: {}, slotTargets: {}, root });
       if (!doc.success) return err(issue(doc.error));
@@ -1104,10 +1108,10 @@ export const VISUAL_TOOLS: Tool[] = [
     describe: (input) => `started a new version of ${str(input, 'name')}`,
     run: async (input, ctx) => {
       const name = str(input, 'name').replace(/^tenant\./, '');
-      const versions = Object.keys(files()).map(componentFileOf).filter((f) => f?.name === name).map((f) => f!.version);
+      const versions = Object.keys(files(ctx)).map(componentFileOf).filter((f) => f?.name === name).map((f) => f!.version);
       if (!versions.length) return err(`There is no component “${name}”.`);
       const latest = Math.max(...versions);
-      const doc = tenantComponentSchema.safeParse(json(files()[componentPath(name, latest)]));
+      const doc = tenantComponentSchema.safeParse(json(files(ctx)[componentPath(name, latest)]));
       if (!doc.success) return err(`${componentPath(name, latest)} cannot be read.`);
       const o = ctx.tx.create(componentPath(name, latest + 1), serializeDoc({ ...doc.data, version: latest + 1 }));
       if (o.isError) return o;
@@ -1135,11 +1139,11 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Expose ${input.link ? 'the link' : str(input, 'prop')} of ${str(input, 'node')}`,
     describe: (input) => `exposed ${input.link ? 'link' : str(input, 'prop')} of ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'component'));
+      const doc = loadDoc(str(input, 'component'), files(ctx));
       if (typeof doc === 'string' || !doc.component) return err(typeof doc === 'string' ? doc : 'Not a component.');
       const hit = find(doc.root, str(input, 'node'));
       if (!hit) return err(`There is no node “${str(input, 'node')}” in it.`);
-      const registry = registryFromFiles();
+      const registry = registryFromFiles(files(ctx));
       const def = definitionFor(registry, hit.node);
       const comp = doc.component;
       const taken = new Set(comp.props.map((p) => p.name));
@@ -1177,7 +1181,7 @@ export const VISUAL_TOOLS: Tool[] = [
     summarize: (input) => `Expose the slot ${str(input, 'slot')} of ${str(input, 'node')}`,
     describe: (input) => `exposed slot ${str(input, 'slot')} of ${str(input, 'node')}`,
     run: async (input, ctx) => {
-      const doc = loadDoc(str(input, 'component'));
+      const doc = loadDoc(str(input, 'component'), files(ctx));
       if (typeof doc === 'string' || !doc.component) return err(typeof doc === 'string' ? doc : 'Not a component.');
       const comp = doc.component;
       let name = str(input, 'name') || (str(input, 'slot') === 'default' ? 'content' : str(input, 'slot'));
@@ -1201,9 +1205,9 @@ export const VISUAL_TOOLS: Tool[] = [
     describe: (input) => `updated uses of ${str(input, 'name')}`,
     run: async (input, ctx) => {
       const name = str(input, 'name').replace(/^tenant\./, '');
-      const versions = Object.keys(files()).map(componentFileOf).filter((f) => f?.name === name).map((f) => f!.version);
+      const versions = Object.keys(files(ctx)).map(componentFileOf).filter((f) => f?.name === name).map((f) => f!.version);
       if (!versions.length) return err(`There is no component “${name}”.`);
-      const latest = tenantComponentSchema.safeParse(json(files()[componentPath(name, Math.max(...versions))]));
+      const latest = tenantComponentSchema.safeParse(json(files(ctx)[componentPath(name, Math.max(...versions))]));
       if (!latest.success) return err('Its latest version cannot be read.');
       const type = tenantType(name);
       let updated = 0;
@@ -1221,9 +1225,9 @@ export const VISUAL_TOOLS: Tool[] = [
         return out.slots ? { ...out, slots: Object.fromEntries(Object.entries(out.slots).map(([k, v]) => [k, v.map(rewrite)])) } : out;
       };
       const paths: string[] = [];
-      for (const ref of [...Object.keys(files()).map((p) => (pageIdFromPath(p) ? `page:${pageIdFromPath(p)}` : null)), 'shell']) {
+      for (const ref of [...Object.keys(files(ctx)).map((p) => (pageIdFromPath(p) ? `page:${pageIdFromPath(p)}` : null)), 'shell']) {
         if (!ref) continue;
-        const doc = loadDoc(ref);
+        const doc = loadDoc(ref, files(ctx));
         if (typeof doc === 'string' || (ref === 'shell' && doc.text === undefined)) continue;
         const before = updated;
         const root = rewrite(doc.root);
@@ -1250,7 +1254,7 @@ export const VISUAL_TOOLS: Tool[] = [
     run: async (input, ctx) => {
       const kit = findKit(str(input, 'kit'));
       if (!kit) return err(`No kit named that. Available: ${DESIGN_KITS.map((k) => k.id).join(', ')}.`);
-      const current = files()[THEME_JSON];
+      const current = files(ctx)[THEME_JSON];
       const base = themeTokensSchema.safeParse(json(current));
       const next = serializeDoc(applyKit(base.success ? base.data : kit.theme, kit));
       if (next === current) return { content: `The site is already on “${kit.name}”.` };
@@ -1265,15 +1269,17 @@ export const VISUAL_TOOLS: Tool[] = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     describe: () => 'check site',
     maxResultChars: 12_000,
-    run: async () => {
-      const problems = checkVisualSite(files(), registryFromFiles(), useVisual.getState().contentSchema);
+    run: async (_input, ctx) => {
+      const problems = checkVisualSite(files(ctx), registryFromFiles(files(ctx)), useVisual.getState().contentSchema);
       return { content: formatProblems(problems), isError: problems.some((p) => p.severity === 'error') };
     },
   },
 ];
 
 /** The run's deterministic gate: the same report, errors fail it. */
-export async function validateVisualSite(): Promise<{ ok: boolean; report: string }> {
-  const problems = checkVisualSite(files(), registryFromFiles(), useVisual.getState().contentSchema);
+export async function validateVisualSite(
+  all: Readonly<Record<string, string>>,
+): Promise<{ ok: boolean; report: string }> {
+  const problems = checkVisualSite(all, registryFromFiles(all), useVisual.getState().contentSchema);
   return { ok: !problems.some((p) => p.severity === 'error'), report: formatProblems(problems) };
 }

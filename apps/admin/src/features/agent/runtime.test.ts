@@ -144,6 +144,33 @@ describe('run lifecycle', () => {
     await events;
     expect(ctx.log).toHaveLength(3);
   });
+
+  it('says it paused, not completed, when the ceiling cuts a task short', async () => {
+    // The HrSite runs ended mid-edit at 25 turns and were recorded as "completed".
+    const { events } = run({
+      transport: scripted(useTools({ id: '1', name: 'read' })),
+      tools: [tool('read')],
+      maxIterations: 2,
+    });
+    const all = await events;
+    expect(all.at(-1)).toMatchObject({ type: 'agent.paused', turns: 2 });
+    expect(types(all)).not.toContain('agent.completed');
+  });
+
+  it('checks what it wrote before pausing, and leaves a failing build in the transcript', async () => {
+    const validate = vi.fn(async () => ({ ok: false, report: 'src/App.tsx:3 — TS2304' }));
+    const { events, messages } = run({
+      transport: scripted(useTools({ id: '1', name: 'edit', input: {} })),
+      tools: [tool('edit', 'safe')],
+      maxIterations: 2,
+      validate,
+    });
+    const all = await events;
+    expect(validate).toHaveBeenCalledOnce();
+    expect(types(all)).toEqual(expect.arrayContaining(['validation.started', 'validation.failed', 'agent.paused']));
+    // "continue" picks up from what is actually broken.
+    expect(JSON.stringify(messages.at(-1))).toContain('TS2304');
+  });
 });
 
 describe('tool execution', () => {

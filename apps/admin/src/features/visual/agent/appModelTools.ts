@@ -1,6 +1,4 @@
-import { useMemo } from 'react';
 import type { ToolSpec } from '../../agent/contracts';
-import { useContractTools } from '../../assistant/contractTools';
 import type { AssistantTool } from '../../assistant/tools';
 import { fromAssistantTool, type TenantToolContext } from '../../ide/agent/tenantTools';
 
@@ -25,9 +23,4 @@ export function siteAgentAppTools(contract: readonly AssistantTool[]): ToolSpec<
   return contract
     .filter((tool) => KEPT.test(tool.name))
     .map((tool) => fromAssistantTool(tool.name.endsWith('_apply_change_set') ? { ...tool, risk: 'dangerous' } : tool));
-}
-
-export function useSiteAgentAppTools(): ToolSpec<TenantToolContext>[] {
-  const contract = useContractTools();
-  return useMemo(() => siteAgentAppTools(contract), [contract]);
 }

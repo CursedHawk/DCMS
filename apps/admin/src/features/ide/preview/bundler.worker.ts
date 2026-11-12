@@ -35,6 +35,12 @@ interface BuildResponse {
    */
   messages?: EsbuildMessage[];
   warnings?: EsbuildMessage[];
+  /**
+   * The bundler itself could not start (esbuild-wasm failed to initialise). Nothing was built, so
+   * nothing is known about the code: an agent's gate reads this as "not checked", never as a
+   * broken build to spend repair turns on.
+   */
+  unavailable?: boolean;
 }
 
 /** Structurally what esbuild's `Message` is, narrowed to what survives postMessage. */
@@ -326,6 +332,12 @@ self.onmessage = async (e: MessageEvent<BuildRequest>) => {
   });
   try {
     await init();
+  } catch (err) {
+    const text = `The bundler could not start: ${String((err as Error)?.message ?? err)}`;
+    respond({ id, ok: false, unavailable: true, error: text, messages: [{ text }], warnings: [] });
+    return;
+  }
+  try {
     const result = await esbuild.build({
       entryPoints: [entry],
       bundle: true,

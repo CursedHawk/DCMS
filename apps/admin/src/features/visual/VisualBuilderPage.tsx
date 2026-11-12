@@ -31,7 +31,6 @@ import {
   Rocket,
   Smartphone,
   Braces,
-  Sparkles,
   Tablet,
   Undo2,
   X,
@@ -85,8 +84,8 @@ import { starterFiles } from './starter';
 import { useVisual, type VisualView } from './store';
 import { useSiteRuntime } from './useSiteRuntime';
 import { AgentPanel } from '../ide/agent/AgentPanel';
-import { VISUAL_TOOLS, validateVisualSite } from './agent/visualTools';
-import { useSiteAgentAppTools } from './agent/appModelTools';
+import { AgentRailIcon } from '../agent/AgentRailIcon';
+import { useAgentFocus } from '../agent/hostStore';
 import { useIslandBuild } from './canvas/islands';
 import { previewClient, useContentCatalog } from './data';
 
@@ -118,6 +117,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
   const [sidebar, setSidebar] = useState<SidebarView>('components');
   const [agentOpened, setAgentOpened] = useState(false);
   if (sidebar === 'agent' && !agentOpened) setAgentOpened(true);
+  useAgentFocus(siteId, () => setSidebar('agent'));
   const [pageError, setPageError] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -300,9 +300,6 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
 
   // With the tenant's content types known, the validator also checks sources and bound fields.
   const catalog = useContentCatalog();
-  // The agent's own tools, and the Dynamic Apps model tools the server lets it have.
-  const appTools = useSiteAgentAppTools();
-  const agentTools = useMemo(() => [...VISUAL_TOOLS, ...appTools], [appTools]);
   const contentSchema = catalog.isLoading ? undefined : catalog.schema;
   const problems = useMemo(() => checkVisualSite(files, registry, contentSchema), [files, registry, contentSchema]);
   // The agent's checks read it from the store: it must see the problems this list shows.
@@ -517,7 +514,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             <Rail active={sidebar === 'scm'} label={t('ide.git.title')} onClick={() => setSidebar('scm')} badge={changes.data?.length ?? 0}><GitBranch className="h-5 w-5" /></Rail>
             <TourTarget id="visual.rail.deploy"><Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail></TourTarget>
             <TourTarget id="visual.rail.problems"><Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail></TourTarget>
-            <TourTarget id="visual.rail.agent"><Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><Sparkles className="h-5 w-5" /></Rail></TourTarget>
+            <TourTarget id="visual.rail.agent"><Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><AgentRailIcon siteId={siteId} /></Rail></TourTarget>
             <Rail active={apiOpen} label={t('visual.api.title')} onClick={() => setApiOpen(true)}><Braces className="h-5 w-5" /></Rail>
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
@@ -546,7 +543,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
                 progress) survives switching views; it ends with the page. */}
             {agentOpened && (
               <div className={cn('h-full', sidebar !== 'agent' && 'hidden')}>
-                <AgentPanel key={siteId} siteId={siteId} siteName={site.data?.name} kind="visual" tools={agentTools} validate={validateVisualSite} />
+                <AgentPanel key={siteId} siteId={siteId} siteName={site.data?.name} kind="visual" />
               </div>
             )}
           </div>

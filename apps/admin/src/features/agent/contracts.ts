@@ -176,6 +176,11 @@ export type AgentEvent =
   | { type: 'validation.failed'; scope: string; problems: number }
   | { type: 'agent.retrying'; attempt: number; of: number; because: string }
   | { type: 'agent.completed'; runId: string }
+  /**
+   * The run used its turn budget while still working. Not "completed": the task is unfinished,
+   * and saying so is what tells the person to continue it rather than trust it.
+   */
+  | { type: 'agent.paused'; runId: string; turns: number }
   | { type: 'agent.failed'; runId: string; message: string }
   | { type: 'agent.stopped'; runId: string };
 

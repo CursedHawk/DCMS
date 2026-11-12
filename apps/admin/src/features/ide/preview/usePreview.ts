@@ -4,7 +4,7 @@ import { useVfs } from '../../site-source';
 import { previewEntry } from '../paths';
 import type { BuildRequest, BuildResponse } from './bundler.worker';
 import { toProblems, type BuildProblem } from './problems';
-import { publishBuildResult, registerPreview } from './buildBroker';
+import { publishBuildResult } from './buildBroker';
 import { BRIDGE_SCRIPT, clearPreviewMessages } from './previewBridge';
 import BundlerWorker from './bundler.worker?worker';
 
@@ -166,17 +166,6 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
     const handle = setTimeout(build, DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [enabled, loaded, rev, build]);
-
-  /*
-   * Publish this pane as the thing that can build, for the agent's `check_build` tool.
-   *
-   * Registered only while the preview is enabled: with the pane closed there is no worker, and
-   * the tool must say it cannot check rather than report a build that never ran.
-   */
-  useEffect(() => {
-    if (!enabled) return;
-    return registerPreview(build);
-  }, [enabled, build]);
 
   // Force an immediate rebuild when the caller bumps refreshKey (e.g. after a
   // sandbox reset). Skips the initial 0 so it doesn't double-build on mount.

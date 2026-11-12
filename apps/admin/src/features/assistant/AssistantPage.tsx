@@ -4,14 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Button, Sheet, SheetContent, SheetTitle, Spinner, cn, Callout } from '@dcms/ui';
-import { useAi } from './context';
 import { ApprovalCard } from './ApprovalCard';
 import { Composer } from './Composer';
 import { ConversationRail } from './ConversationRail';
 import { type ConversationScope, useConversation, useUpdateConversation } from './conversations';
 import { Transcript } from './Transcript';
 import type { ToolStep } from './steps';
-import { useAssistantSession } from './useAssistantSession';
+import { useSharedAssistant } from './session';
 import { WorkDetail } from './WorkCard';
 
 /**
@@ -26,7 +25,6 @@ export function AssistantPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { conversationId: routeId } = useParams({ strict: false }) as { conversationId?: string };
-  const { page } = useAi();
 
   const [scope, setScope] = useState<ConversationScope>('mine');
   const [selected, setSelected] = useState<ToolStep | null>(null);
@@ -34,16 +32,41 @@ export function AssistantPage() {
   const [railOpen, setRailOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const conversationId = routeId ?? null;
-  const session = useAssistantSession(page, {
-    conversationId,
-    onConversationChange: (id) =>
+  // The tab's one assistant session, shared with the dock (ADR 0033): opening the full page
+  // shows the run in progress instead of starting a second loop on the same conversation.
+  const session = useSharedAssistant();
+  const conversationId = session.conversationId;
+  const routeConversation = routeId ?? null;
+
+  // The address decides what is shown. A bare /assistant shows whatever the dock has rather than
+  // throwing it away; "New chat" is the explicit way to start over.
+  useEffect(() => {
+    if (routeConversation === null) {
+      if (session.conversationId) {
+        void navigate({
+          to: '/assistant/$conversationId' as string,
+          params: { conversationId: session.conversationId } as never,
+          replace: true,
+        });
+      }
+      return;
+    }
+    if (routeConversation !== session.conversationId) session.select(routeConversation);
+    // Only a change of address is a request to show something else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeConversation]);
+
+  // A conversation created here, or picked in the dock, moves the address with it.
+  useEffect(() => {
+    if (session.conversationId && session.conversationId !== routeConversation) {
       void navigate({
         to: '/assistant/$conversationId' as string,
-        params: { conversationId: id } as never,
+        params: { conversationId: session.conversationId } as never,
         replace: true,
-      }),
-  });
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.conversationId]);
 
   const detail = useConversation(conversationId);
   const update = useUpdateConversation();
@@ -79,6 +102,7 @@ export function AssistantPage() {
       onNew={() => {
         setRailOpen(false);
         session.reset();
+        session.select(null);
         void navigate({ to: '/assistant' as string });
       }}
     />

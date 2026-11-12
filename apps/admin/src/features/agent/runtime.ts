@@ -138,6 +138,9 @@ async function drive<TContext>(
   /** Tools the operator has said not to ask about again — for this run, and only this run. */
   const allowedForRun = new Set<string>();
 
+  /** Set when the model stopped of its own accord, as opposed to running out of turns. */
+  let finished = false;
+
   try {
     for (let i = 0; i < maxIterations; i++) {
       if (opts.signal.aborted) {
@@ -174,6 +177,7 @@ async function drive<TContext>(
       const calls = toCalls(turn);
 
       if (turn.stopReason !== 'tool_use' || calls.length === 0) {
+        finished = true;
         /*
          * The model thinks it is finished. Check before believing it.
          *
@@ -198,6 +202,7 @@ async function drive<TContext>(
         }
 
         repairs++;
+        finished = false;
         out.push({ type: 'validation.failed', scope: 'build', problems: 1 });
         out.push({
           type: 'agent.retrying',
@@ -218,6 +223,32 @@ async function drive<TContext>(
         wroteSomething = true;
       }
       opts.messages.push({ role: 'user', content: results });
+    }
+
+    if (!finished && !opts.signal.aborted) {
+      /*
+       * Out of turns mid-task. This used to fall through to "completed" — unvalidated, with the
+       * model halfway through an edit — and the person found out from a broken preview. Check
+       * what was written, so the transcript says what state the work was left in, and say
+       * plainly that it stopped rather than finished.
+       */
+      if (wroteSomething && opts.validate) {
+        out.push({ type: 'validation.started', scope: 'build' });
+        const verdict = await opts.validate();
+        if (!verdict) out.push({ type: 'validation.failed', scope: 'build', problems: 0 });
+        else if (verdict.ok) out.push({ type: 'validation.passed', scope: 'build' });
+        else {
+          out.push({ type: 'validation.failed', scope: 'build', problems: 1 });
+          memory.notes.push('Paused at the turn limit with a failing build.');
+          // Kept in the transcript, so "continue" starts from what is actually broken.
+          opts.messages.push({
+            role: 'user',
+            content: `You ran out of turns before finishing. The build currently fails:\n\n${verdict.report}`,
+          });
+        }
+      }
+      out.push({ type: 'agent.paused', runId, turns: maxIterations });
+      return;
     }
 
     if (repairs >= maxRepairs) {

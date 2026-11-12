@@ -8,13 +8,12 @@ import { AGENT_SCOPES, type AgentScope } from '../../agent/scope';
 import { ConversationRail } from '../../assistant/ConversationRail';
 import type { ConversationScope } from '../../assistant/conversations';
 import { ApprovalCard } from './ApprovalCard';
+import { runFiles } from '../../agent/hostStore';
 import { ChangeReview } from './ChangeReview';
 import type { AgentRunMetrics } from './runMetrics';
 import { Transcript } from './Transcript';
 import type { SiteAgentKind } from './systemPrompt';
 import { useAgentSession } from './useAgentSession';
-import type { ToolSpec } from '../../agent/contracts';
-import type { TenantToolContext } from './tenantTools';
 
 // The router's typed route union is intentionally loose here (see routes.tsx); a
 // string-typed path matches the existing pattern (e.g. sitesPath in IdePage).
@@ -99,20 +98,21 @@ export function AgentPanel({
   siteId,
   siteName,
   kind,
-  tools,
-  validate,
+  functionsApi,
 }: {
   siteId: string;
   siteName?: string;
-  /** Mode A ('static'), Mode B ('react') or Mode D ('visual'). Decides the prompt, the tools and the check. */
+  /**
+   * Mode A ('static'), Mode B ('react'), Mode D ('visual') or a functions repository. Decides the
+   * prompt, the tools and the check — all chosen by `agent/siteKits.ts`, so a run the assistant
+   * delegates gets the same agent as one started here.
+   */
   kind?: SiteAgentKind;
-  /** Tools this surface contributes, kept out of this chunk by being passed in. */
-  tools?: readonly ToolSpec<TenantToolContext>[];
-  /** This surface's own deterministic gate, if it has one. */
-  validate?: () => Promise<{ ok: boolean; report: string } | null>;
+  /** A repository's Functions app, for the functions kind. */
+  functionsApi?: string;
 }) {
   const { t } = useTranslation();
-  const session = useAgentSession({ siteId, siteName, kind, tools, validate });
+  const session = useAgentSession({ siteId, siteName, kind, functionsApi });
   const [input, setInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [scope, setScope] = useState<ConversationScope>('mine');
@@ -198,7 +198,14 @@ export function AgentPanel({
         {/* The approval gate. Inside the scroll container and at the end of it, so it arrives
             where the run left off rather than as chrome pinned somewhere else on screen. */}
         {session.pending && (
-          <ApprovalCard calls={session.pending.tools} onDecide={session.approve} />
+          <ApprovalCard calls={session.pending.tools} files={runFiles(siteId)} onDecide={session.approve} />
+        )}
+
+        {/* Requests waiting for this run — the assistant's, usually. They start by themselves. */}
+        {session.queued > 0 && (
+          <p className="px-3 pb-2 text-2xs text-muted-foreground">
+            {t('ide.agent.queued', { count: session.queued })}
+          </p>
         )}
       </div>
 
