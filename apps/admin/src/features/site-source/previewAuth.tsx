@@ -22,7 +22,7 @@ import {
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { usePluginUi } from '../../pluginHost/api';
-import { getCurrentTenantSlug } from '../../tenants';
+import { getCurrentEnvironment, getCurrentTenantSlug } from '../../tenants';
 
 /** Who a site builder's preview is signed in as (#269), from the edge's preview endpoints. */
 export interface PreviewIdentity {
@@ -39,9 +39,14 @@ export interface PreviewIdentity {
 /** The message the edge's done page posts to this window when a popup sign-in or sign-out finishes. */
 const DONE_MESSAGE = 'dcms:preview-auth';
 
-/** The edge's preview endpoints for one site: where a preview asks who it is and what it may open. */
+/**
+ * The edge's preview endpoints for one site: where a preview asks who it is and what it may open.
+ * Outside production it names the environment, as every admin-api call does: the site is that
+ * environment's, and so is its sign-in.
+ */
 export function previewEdgeBase(siteId: string): string {
-  return `/.edge/preview/${encodeURIComponent(getCurrentTenantSlug() ?? '')}/${siteId}`;
+  const environment = getCurrentEnvironment();
+  return `/.edge/preview/${encodeURIComponent(getCurrentTenantSlug() ?? '')}/${environment ? `${encodeURIComponent(environment)}/` : ''}${siteId}`;
 }
 
 /**

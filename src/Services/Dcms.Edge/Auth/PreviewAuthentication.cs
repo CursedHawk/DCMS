@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Dcms.Shared.Data.Tenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -247,14 +248,27 @@ public static partial class PreviewAuthentication
             return;
         }
         var adminHost = app.Services.GetRequiredService<IOptions<EdgeOptions>>().Value.AdminHost;
-        var group = app.MapGroup("/.edge/preview/{tenant}/{siteId:guid}")
-            .AddEndpointFilter(async (context, next) =>
-                // The console's host only: that is where the console session, and the realm's
-                // preview callback, live.
-                string.Equals(context.HttpContext.Request.Host.Host, adminHost, StringComparison.OrdinalIgnoreCase)
-                    ? await next(context)
-                    : Results.NotFound());
+        // Outside production the console names its environment (ADR 0028): a site there is not
+        // production's, and admin-api answers for the environment the request names.
+        foreach (var template in (string[])["/.edge/preview/{tenant}/{siteId:guid}", "/.edge/preview/{tenant}/{environment}/{siteId:guid}"])
+        {
+            MapPreviewSiteEndpoints(app.MapGroup(template)
+                .AddEndpointFilter(async (context, next) =>
+                    // The console's host only: that is where the console session, and the realm's
+                    // preview callback, live.
+                    string.Equals(context.HttpContext.Request.Host.Host, adminHost, StringComparison.OrdinalIgnoreCase)
+                        ? await next(context)
+                        : Results.NotFound()), auth);
+        }
 
+        app.MapGet(DonePath, (HttpContext context) =>
+            string.Equals(context.Request.Host.Host, adminHost, StringComparison.OrdinalIgnoreCase)
+                ? Results.Content(DonePage, "text/html; charset=utf-8")
+                : Results.NotFound());
+    }
+
+    private static void MapPreviewSiteEndpoints(RouteGroupBuilder group, EdgeAuthOptions auth)
+    {
         // In a popup the console opened: the realm's own sign-in, then the done page.
         group.MapGet("/signin", async (HttpContext context, string tenant, Guid siteId, PreviewTargets targets) =>
         {
@@ -367,11 +381,6 @@ public static partial class PreviewAuthentication
             await context.SignInAsync(CookieScheme, await PrincipalAsync(context, session));
             return Results.Ok(new { signedIn = true, name = session.Name, email = session.Email, groups = session.Groups, viewAs = true });
         });
-
-        app.MapGet(DonePath, (HttpContext context) =>
-            string.Equals(context.Request.Host.Host, adminHost, StringComparison.OrdinalIgnoreCase)
-                ? Results.Content(DonePage, "text/html; charset=utf-8")
-                : Results.NotFound());
     }
 
     public sealed record ViewAsRequest(string Instance, Guid UserId);
@@ -429,11 +438,12 @@ public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffToken
 
     public async Task<PreviewTarget?> ResolveAsync(HttpContext context, string tenant, Guid siteId)
     {
-        if (BffTokenProvider.SessionIdOf(context.User) is not { Length: > 0 } session)
+        if (BffTokenProvider.SessionIdOf(context.User) is not { Length: > 0 } session
+            || (EnvironmentOf(context) is null && context.GetRouteValue("environment") is not null))
         {
             return null;
         }
-        var key = $"edge:preview:{session}:{tenant}:{siteId}";
+        var key = $"edge:preview:{session}:{tenant}:{EnvironmentOf(context)}:{siteId}";
         if (cache.TryGetValue(key, out PreviewTarget? known))
         {
             return known;
@@ -475,6 +485,11 @@ public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffToken
         return (body.GetProperty("accessToken").GetString(), body.GetProperty("expiresAt").GetDateTimeOffset(), StatusCodes.Status200OK, null);
     }
 
+    /// <summary>The environment the preview's path names, when it is a well-formed name (as admin-api allows them).</summary>
+    private static string? EnvironmentOf(HttpContext context) =>
+        context.GetRouteValue("environment") is string { Length: > 0 and <= 63 } name
+        && name.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-') ? name : null;
+
     private async Task<HttpResponseMessage?> SendAsync(HttpContext context, HttpMethod method, string tenant, string path, object? body)
     {
         if (await tokens.GetAccessTokenAsync(context.User, context.RequestAborted) is not { } token)
@@ -484,6 +499,10 @@ public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffToken
         using var request = new HttpRequestMessage(method, edge.Value.Upstreams.AdminApi.TrimEnd('/') + path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.TryAddWithoutValidation("X-Dcms-Tenant", tenant);
+        if (EnvironmentOf(context) is { } environment)
+        {
+            request.Headers.TryAddWithoutValidation(EnvironmentResolution.Header, environment);
+        }
         // admin-api refuses a person's write without a key (ADR 0024). The console's own key when it
         // sent one, so its retry is the same operation; else this call's own.
         if (method != HttpMethod.Get)

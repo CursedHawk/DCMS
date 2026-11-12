@@ -53,6 +53,8 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
     private static readonly Uri Auth = new($"http://{IdentityHost}/");
     private static readonly Guid TenantId = Guid.NewGuid();
     private static readonly Guid Site = Guid.NewGuid();
+    /// <summary>A site of the tenant's "development" environment: admin-api finds it only when the request names that environment.</summary>
+    private static readonly Guid DevelopmentSite = Guid.NewGuid();
 
     private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
@@ -203,6 +205,21 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
         signedOut.Uri.AbsolutePath.Should().Be(PreviewAuthentication.DonePath, signedOut.Body);
         (await JsonAsync(browser, $"/.edge/preview/{Tenant}/{Site}/me", ct)).GetProperty("signedIn").GetBoolean().Should().BeFalse();
         (await WhoAmIAsync(browser, ct)).Should().BeEmpty();
+    }
+
+    [DockerFact]
+    public async Task A_preview_outside_production_names_its_environment_to_admin_api()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var browser = new Browser(_identity.Server.CreateHandler(), _edge.GetTestServer().CreateHandler());
+        await SignInToConsoleAsync(browser, ct);
+
+        (await browser.SendRawAsync(new Uri(Admin, $"/.edge/preview/{Tenant}/{DevelopmentSite}/me"), ct)).StatusCode
+            .Should().Be(HttpStatusCode.NotFound, "production has no such site");
+        (await JsonAsync(browser, $"/.edge/preview/{Tenant}/development/{DevelopmentSite}/me", ct)).GetProperty("available").GetBoolean()
+            .Should().BeTrue("the edge asks admin-api in the environment the console named");
+        (await browser.SendRawAsync(new Uri(Admin, $"/.edge/preview/{Tenant}/Dev%0Ax/{DevelopmentSite}/me"), ct)).StatusCode
+            .Should().Be(HttpStatusCode.NotFound, "a malformed name never becomes a header");
     }
 
     [DockerFact]
@@ -382,7 +399,8 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
                 return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = "idempotency-key-required" }) };
             }
             var path = request.RequestUri!.AbsolutePath;
-            if (request.Method == HttpMethod.Get && path == $"/api/admin/sites/{Site}/preview/realm")
+            var environment = request.Headers.TryGetValues("X-Dcms-Environment", out var named) ? named.Single() : null;
+            if (request.Method == HttpMethod.Get && path == $"/api/admin/sites/{(environment == "development" ? DevelopmentSite : Site)}/preview/realm")
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { tenantId = TenantId, host = SiteHost }) };
             }
