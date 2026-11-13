@@ -1729,7 +1729,28 @@
         "paused": "Pozastaveno — došly kroky",
         "failed": "Selhalo",
         "stopped": "Zastaveno"
-      }
+      },
+      "asking": "Má pro vás otázku"
+    },
+    "ask": {
+      "title_one": "Otázka pro vás",
+      "title_few": "{{count}} otázky pro vás",
+      "title_other": "{{count}} otázek pro vás",
+      "multi": "Vyberte libovolné",
+      "other": "Jiné",
+      "otherPlaceholder": "Napište vlastní odpověď…",
+      "send": "Odeslat odpovědi",
+      "skip": "Přeskočit"
+    },
+    "notify": {
+      "asking": "{{name}}: agent má otázku",
+      "assistantAsking": "Asistent má otázku",
+      "answer": "Odpovědět",
+      "open": "Otevřít",
+      "completed": "{{name}}: agent dokončil práci",
+      "paused": "{{name}}: agent se pozastavil — došly kroky",
+      "failed": "{{name}}: agent selhal",
+      "assistantDone": "Asistent dokončil odpověď"
     }
   },
   "settings": {

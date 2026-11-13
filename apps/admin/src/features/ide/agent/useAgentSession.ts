@@ -1,13 +1,16 @@
 import { useEffect } from 'react';
 import type { Classification } from '../../agent/classify';
+import type { AgentAnswers } from '../../agent/ask';
 import type { ApprovalDecision } from '../../agent/contracts';
 import { resumeSite, sendToSite } from '../../agent/host';
 import {
   type AgentEntry,
+  answerSite,
   approveSite,
   configureSite,
   newSiteConversation,
   type PendingApproval,
+  type PendingQuestion,
   resetSite,
   revertAllSite,
   revertSite,
@@ -44,6 +47,8 @@ export interface AgentSession {
   needsKey: boolean;
   keyProvider: string | null;
   pending: PendingApproval | null;
+  /** Questions the agent asked (`ask_user`), waiting for an answer. */
+  question: PendingQuestion | null;
   /** How the last run was classified, so the panel can say why it did or did not plan. */
   classification: Classification | null;
   /** Files the last run touched, for the change-review pane. */
@@ -59,6 +64,8 @@ export interface AgentSession {
   unsaved: boolean;
   /** Answer the pending approval: once, for the rest of this run, or not at all. */
   approve: (decision: ApprovalDecision) => void;
+  /** Answer the agent's questions, or skip them with `null`. */
+  answer: (answers: AgentAnswers) => void;
   send: (text: string) => void;
   stop: () => void;
   reset: () => void;
@@ -80,6 +87,7 @@ const EMPTY: Omit<SiteSession, 'key' | 'kind'> = {
   needsKey: false,
   keyProvider: null,
   pending: null,
+  question: null,
   classification: null,
   changes: [],
   lastRun: null,
@@ -125,6 +133,7 @@ export function useAgentSession(opts: {
     needsKey: session.needsKey,
     keyProvider: session.keyProvider,
     pending: session.pending,
+    question: session.question,
     classification: session.classification,
     changes: session.changes,
     lastRun: session.lastRun,
@@ -133,6 +142,7 @@ export function useAgentSession(opts: {
     conversationId: session.conversationId,
     unsaved: session.unsaved,
     approve: (decision) => approveSite(key, decision),
+    answer: (answers) => answerSite(key, answers),
     send: (text) => {
       // The effect above may not have run yet on the very first render.
       configureSite(key, { kind, siteName: opts.siteName, functionsApi: opts.functionsApi });

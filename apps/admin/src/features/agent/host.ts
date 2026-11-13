@@ -15,6 +15,7 @@ import { combineVerdict, isCheckable, newProblems, problemKey } from '../ide/dia
 import { clientId } from '../site-source/clientId';
 import { languageOf } from '../site-source/paths';
 import type { Classification } from './classify';
+import { ASK_USER, type AgentAnswers, describeAsk, formatAnswers, parseQuestions } from './ask';
 import type { AgentEvent, ApprovalDecision, ToolSpec } from './contracts';
 import {
   type AgentEntry,
@@ -523,7 +524,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
     if (opened === 'busy') throw new SiteBusyError(ELSEWHERE);
     heartbeat = setInterval(() => void recordRun(conversationId, runId, { clientId: clientId() }), HEARTBEAT_MS);
 
-    const tools = withDraftNotes(toolsFor(kit.tools, current.scope, agentPermissions()), draft);
+    const tools = [...withDraftNotes(toolsFor(kit.tools, current.scope, agentPermissions()), draft), askTool(key)];
 
     for await (const event of runAgent<TenantToolContext>({
       task: prompt,
@@ -589,9 +590,12 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
     const finished = finishRun(metrics, outcome === 'paused' ? 'stopped' : outcome, { model });
     if (i.abort === controller) i.abort = null;
     i.approve = null;
+    i.answer?.(null);
+    i.answer = null;
     patch(key, {
       running: false,
       pending: null,
+      question: null,
       step: null,
       changes: fileChanges,
       lastRun: finished,
@@ -630,6 +634,33 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
       finished: true,
     });
   }
+}
+
+/**
+ * `ask_user` for a site's run: the questions wait in the host store, where the panel, the dock's
+ * Agents tab and the notifications all see them, until someone answers, skips or stops the run.
+ */
+function askTool(key: string): ToolSpec<TenantToolContext> {
+  return {
+    ...ASK_USER,
+    describe: describeAsk,
+    run: async (input) => {
+      const questions = parseQuestions(input);
+      if (typeof questions === 'string') return { content: questions, isError: true };
+      const i = inner(key);
+      const asked = i.asking.then(
+        () =>
+          new Promise<AgentAnswers>((resolve) => {
+            // A second set queued behind one answered by a stop: nobody is left to ask.
+            if (!i.abort || i.abort.signal.aborted) return resolve(null);
+            i.answer = resolve;
+            patch(key, { question: { id: uid(), questions } });
+          }),
+      );
+      i.asking = asked;
+      return { content: formatAnswers(questions, await asked) };
+    },
+  };
 }
 
 /**
@@ -727,7 +758,7 @@ export function projectEntries(messages: readonly Message[]): AgentEntry[] {
           kind: 'tool',
           name: String(block.name ?? 'tool'),
           input: (block.input as Record<string, unknown>) ?? {},
-          label: String(block.name ?? 'tool'),
+          label: block.name === ASK_USER.name ? describeAsk((block.input as Record<string, unknown>) ?? {}) : String(block.name ?? 'tool'),
           // A stored call is over by definition; a failing result below overrides this.
           status: 'ok',
           startedAt: 0,

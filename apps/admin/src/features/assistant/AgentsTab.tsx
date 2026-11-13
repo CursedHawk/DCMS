@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronRight, CircleAlert, CircleCheck, CirclePause, CircleSlash, ExternalLink, Loader2, Square } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { ChevronRight, CircleAlert, MessageCircleQuestion, CircleCheck, CirclePause, CircleSlash, ExternalLink, Loader2, Square } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button, cn, Spinner } from '@dcms/ui';
 import { requestAgentFocus, type SiteSession, stopSite, useAgentHost } from '../agent/hostStore';
@@ -18,7 +18,15 @@ const AgentRunDetail = lazy(() => import('./AgentRunDetail'));
 export function AgentsTab({ onLeave }: { onLeave: () => void }) {
   const { t } = useTranslation();
   const sessions = useAgentHost((state) => state.sessions);
-  const [open, setOpen] = useState<string | null>(null);
+  const wanted = useAgentHost((state) => state.dockAgent);
+  const [open, setOpen] = useState<string | null>(wanted);
+
+  // A notification was clicked: open that agent, once.
+  useEffect(() => {
+    if (!wanted) return;
+    setOpen(wanted);
+    useAgentHost.setState({ dockAgent: null });
+  }, [wanted]);
 
   const list = Object.values(sessions)
     .filter((s) => s.running || s.queue.length > 0 || s.task !== null)
@@ -63,7 +71,7 @@ function AgentRow({
   const navigate = useNavigate();
 
   return (
-    <li className={cn('rounded-md border', session.pending && 'border-warning/60')}>
+    <li className={cn('rounded-md border', (session.pending || session.question) && 'border-warning/60')}>
       <button
         type="button"
         onClick={onToggle}
@@ -128,6 +136,15 @@ function Status({ session }: { session: SiteSession }) {
   const { t } = useTranslation();
   const queued = session.queue.length > 0 ? ` · ${t('assistant.agents.queued', { count: session.queue.length })}` : '';
 
+  if (session.question) {
+    return (
+      <span className="mt-1 flex items-center gap-1 text-2xs font-medium text-warning-foreground">
+        <MessageCircleQuestion className="h-3 w-3" aria-hidden />
+        {t('assistant.agents.asking')}
+        {queued}
+      </span>
+    );
+  }
   if (session.pending) {
     return (
       <span className="mt-1 flex items-center gap-1 text-2xs font-medium text-warning-foreground">

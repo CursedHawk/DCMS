@@ -208,3 +208,78 @@ test('a second tab of the same browser cannot start another agent on the same si
   await expect(page.getByText('Done.')).toBeVisible({ timeout: 30000 });
   await second.close();
 });
+
+test('an agent asks while you are elsewhere: the toast takes you to its questions', async ({ page }) => {
+  const model = scriptModel(page, {
+    'Acme site': [
+      {
+        hold: true,
+        tool: {
+          id: 'q1',
+          name: 'ask_user',
+          input: {
+            questions: [
+              {
+                question: 'Which layout should the page use?',
+                header: 'Layout',
+                options: [{ label: 'Cards', description: 'A grid of cards' }, { label: 'List' }],
+              },
+              { question: 'Which sections?', multiSelect: true, options: [{ label: 'News' }, { label: 'Events' }] },
+            ],
+          },
+        },
+      } as ScriptedTurn,
+      { text: 'Built the cards layout with news and job openings.' },
+    ],
+  });
+
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto(`/sites/${A}`);
+  await openAgent(page);
+  await ask(page, 'Make an HR portal page');
+  await expect.poll(() => model.seen.includes('Acme site'), { timeout: 15000 }).toBe(true);
+
+  // Leave, then let the agent ask.
+  await page.getByRole('link', { name: 'Back to Sites' }).click();
+  model.release();
+
+  const toast = page.getByText('Acme site: the agent has a question');
+  await expect(toast).toBeVisible({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Answer', exact: true }).click();
+
+  const dock = page.getByRole('dialog', { name: /Assistant/ });
+  const card = dock.getByRole('dialog', { name: '2 questions for you' });
+  await expect(card).toBeVisible();
+  await card.getByLabel('Cards').check();
+  await card.getByLabel('News').check();
+  await card.getByLabel('Which sections? — Other').fill('Job openings');
+  await card.getByRole('button', { name: 'Send answers' }).click();
+
+  await expect(dock.getByText('Finished')).toBeVisible({ timeout: 30000 });
+  // Answered, so its toast is gone; and it finished in view, so no second one.
+  await expect(toast).toHaveCount(0);
+  await expect(page.getByText('Acme site: the agent finished')).toHaveCount(0);
+});
+
+test('an agent that finishes while you are elsewhere says so, and the toast opens it', async ({ page }) => {
+  const model = scriptModel(page, {
+    'Acme site': [{ hold: true, text: 'Changed the heading on Acme.' } as ScriptedTurn],
+  });
+
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto(`/sites/${A}`);
+  await openAgent(page);
+  await ask(page, 'Change the heading');
+  await expect.poll(() => model.seen.includes('Acme site'), { timeout: 15000 }).toBe(true);
+
+  await page.getByRole('link', { name: 'Back to Sites' }).click();
+  model.release();
+
+  await expect(page.getByText('Acme site: the agent finished')).toBeVisible({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+
+  const dock = page.getByRole('dialog', { name: /Assistant/ });
+  await expect(dock.getByRole('tab', { name: /Agents/ })).toHaveAttribute('data-state', 'active');
+  // Its row is open on the transcript, not just listed.
+  await expect(dock.getByText('Changed the heading on Acme.')).toBeVisible();
+});

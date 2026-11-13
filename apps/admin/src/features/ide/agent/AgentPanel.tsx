@@ -8,7 +8,8 @@ import { AGENT_SCOPES, type AgentScope } from '../../agent/scope';
 import { ConversationRail } from '../../assistant/ConversationRail';
 import type { ConversationScope } from '../../assistant/conversations';
 import { ApprovalCard } from './ApprovalCard';
-import { runFiles } from '../../agent/hostStore';
+import { runFiles, useWatchAgent } from '../../agent/hostStore';
+import { QuestionCard } from '../../agent/QuestionCard';
 import { ChangeReview } from './ChangeReview';
 import type { AgentRunMetrics } from './runMetrics';
 import { Transcript } from './Transcript';
@@ -99,8 +100,11 @@ export function AgentPanel({
   siteName,
   kind,
   functionsApi,
+  visible = true,
 }: {
   siteId: string;
+  /** False while the panel is kept mounted behind another sidebar view. */
+  visible?: boolean;
   siteName?: string;
   /**
    * Mode A ('static'), Mode B ('react'), Mode D ('visual') or a functions repository. Decides the
@@ -113,6 +117,8 @@ export function AgentPanel({
 }) {
   const { t } = useTranslation();
   const session = useAgentSession({ siteId, siteName, kind, functionsApi });
+  // On screen: its questions and its finish need no toast.
+  useWatchAgent(siteId, visible);
   const [input, setInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [scope, setScope] = useState<ConversationScope>('mine');
@@ -120,7 +126,7 @@ export function AgentPanel({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [session.entries, session.pending]);
+  }, [session.entries, session.pending, session.question]);
 
   const submit = () => {
     if (!input.trim() || session.running) return;
@@ -199,6 +205,9 @@ export function AgentPanel({
             where the run left off rather than as chrome pinned somewhere else on screen. */}
         {session.pending && (
           <ApprovalCard calls={session.pending.tools} files={runFiles(siteId)} onDecide={session.approve} />
+        )}
+        {session.question && (
+          <QuestionCard key={session.question.id} questions={session.question.questions} onAnswer={session.answer} />
         )}
 
         {/* Requests waiting for this run — the assistant's, usually. They start by themselves. */}

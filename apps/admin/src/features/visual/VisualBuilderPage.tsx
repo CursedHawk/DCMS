@@ -543,7 +543,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
                 progress) survives switching views; it ends with the page. */}
             {agentOpened && (
               <div className={cn('h-full', sidebar !== 'agent' && 'hidden')}>
-                <AgentPanel key={siteId} siteId={siteId} siteName={site.data?.name} kind="visual" />
+                <AgentPanel key={siteId} siteId={siteId} siteName={site.data?.name} kind="visual" visible={sidebar === 'agent'} />
               </div>
             )}
           </div>

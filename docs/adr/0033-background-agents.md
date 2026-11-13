@@ -72,6 +72,9 @@ Separately, the person wanted the opposite of "abort on unmount". They wanted ag
    - The assistant button (topbar and focus-mode header) carries a spinning ring while the assistant or any site agent works, and a dot while one waits for a decision.
    - The dock has an Agents tab listing every site agent in the tab: site, kind, task, status, transcript, its pending approval, Stop, and Open in editor.
    - Each editor's agent rail icon shows its own site's state.
+11. **Agents ask, and say when they are done** (added 2026-11-13, kanban #638).
+   - `ask_user` puts a set of questions to the person, with options and a free answer. The run waits on them like an approval (`docs/ai-agent.md`, "Asking the person").
+   - A run in the background is one nobody is watching, so a question or an ending is a toast: a question stays until answered; a finished, paused or failed run says so for 15 s. Either opens that agent in the dock's Agents tab. An agent on screen gets none, and a stop is never announced.
 
 ## Consequences
 

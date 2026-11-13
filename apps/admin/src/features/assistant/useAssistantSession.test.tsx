@@ -127,6 +127,45 @@ describe('agent mode', () => {
   });
 });
 
+describe('asking the operator', () => {
+  const ask = () =>
+    turns('ask_user', { questions: [{ question: 'Which tone?', options: [{ label: 'Formal' }, { label: 'Casual' }] }] });
+
+  it('waits for the answers and hands them to the model', async () => {
+    ask();
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+
+    act(() => result.current.send('write me a post'));
+    await waitFor(() => expect(result.current.question).not.toBeNull());
+    expect(result.current.question!.questions[0].question).toBe('Which tone?');
+    expect(result.current.running).toBe(true);
+
+    act(() => result.current.answer([{ selected: ['Casual'] }]));
+    await waitFor(() => expect(result.current.running).toBe(false));
+    expect(result.current.question).toBeNull();
+    const [, second] = vi.mocked(streamAssistantTurn).mock.calls;
+    expect(JSON.stringify(second[0].messages)).toContain('→ Casual');
+  });
+
+  it('is offered even in read-only mode: asking changes nothing', async () => {
+    localStorage.setItem('dcms.ai.mode', 'read');
+    turns('noop', {});
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+    act(() => result.current.send('hi'));
+    await waitFor(() => expect(result.current.running).toBe(false));
+    expect(offeredOn(0)).toContain('ask_user');
+  });
+
+  it('a stop releases a waiting question', async () => {
+    ask();
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+    act(() => result.current.send('write me a post'));
+    await waitFor(() => expect(result.current.question).not.toBeNull());
+    act(() => result.current.stop());
+    await waitFor(() => expect(result.current.question).toBeNull());
+  });
+});
+
 describe('ask-first mode', () => {
   it('stops even for a draft', async () => {
     draft();

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import type { MyPermissions } from '@dcms/core';
 import type { Message } from '../ide/agent/client';
+import type { AgentAnswers, AgentQuestion } from './ask';
 import type { AgentRunMetrics } from '../ide/agent/runMetrics';
 import type { SiteAgentKind } from '../ide/agent/systemPrompt';
 import type { Classification } from './classify';
@@ -63,6 +64,12 @@ export interface PendingApproval {
   tools: readonly ToolCall[];
 }
 
+/** Questions the agent is waiting on (`ask_user`). */
+export interface PendingQuestion {
+  id: string;
+  questions: AgentQuestion[];
+}
+
 /** How a run ended. `paused` ran out of turns mid-task; the run record stores it as stopped. */
 export type RunOutcome = 'completed' | 'paused' | 'failed' | 'stopped';
 
@@ -88,6 +95,8 @@ export interface SiteSession {
   needsKey: boolean;
   keyProvider: string | null;
   pending: PendingApproval | null;
+  /** Questions waiting for an answer; the run is paused on them. */
+  question: PendingQuestion | null;
   classification: Classification | null;
   /** Files the last run touched, for the change-review pane. */
   changes: FileChange[];
@@ -129,9 +138,11 @@ interface HostState {
   requests: Record<string, DelegatedRequest>;
   /** A site whose editor should show its agent when it next renders ("Open in editor"). */
   focus: string | null;
+  /** A site agent the dock's Agents tab should open, when a notification was clicked. */
+  dockAgent: string | null;
 }
 
-export const useAgentHost = create<HostState>(() => ({ sessions: {}, requests: {}, focus: null }));
+export const useAgentHost = create<HostState>(() => ({ sessions: {}, requests: {}, focus: null, dockAgent: null }));
 
 /** Live parts of a session no component renders. */
 interface Internals {
@@ -139,6 +150,9 @@ interface Internals {
   lastSeq: number;
   abort: AbortController | null;
   approve: ((decision: ApprovalDecision) => void) | null;
+  answer: ((answers: AgentAnswers) => void) | null;
+  /** Questions wait their turn: reads run in parallel, and two `ask_user` calls may arrive together. */
+  asking: Promise<unknown>;
   tx: AgentTransaction | null;
   draft: SiteDraft | null;
 }
@@ -148,7 +162,7 @@ const internals = new Map<string, Internals>();
 export function inner(key: string): Internals {
   let found = internals.get(key);
   if (!found) {
-    found = { messages: [], lastSeq: 0, abort: null, approve: null, tx: null, draft: null };
+    found = { messages: [], lastSeq: 0, abort: null, approve: null, answer: null, asking: Promise.resolve(), tx: null, draft: null };
     internals.set(key, found);
   }
   return found;
@@ -167,6 +181,7 @@ function blank(key: string, kind: SiteAgentKind): SiteSession {
     needsKey: false,
     keyProvider: null,
     pending: null,
+    question: null,
     classification: null,
     changes: [],
     lastRun: null,
@@ -281,15 +296,25 @@ export function approveSite(key: string, decision: ApprovalDecision): void {
   i.approve = null;
 }
 
+/** Answer the agent's questions, or skip them with `null`. */
+export function answerSite(key: string, answers: AgentAnswers): void {
+  const i = inner(key);
+  patch(key, { question: null });
+  i.answer?.(answers);
+  i.answer = null;
+}
+
 export function stopSite(key: string): void {
   const i = inner(key);
   i.abort?.abort();
   // Stopping mid-question is a "no": anything else would press on with a change nobody agreed to.
   i.approve?.('deny');
   i.approve = null;
+  i.answer?.(null);
+  i.answer = null;
   // Queued requests die with a stop; the assistant that asked is told so.
   for (const queued of sessionOf(key)?.queue ?? []) patchRequest(queued.requestId, { status: 'stopped' });
-  patch(key, { pending: null, queue: [], step: null });
+  patch(key, { pending: null, question: null, queue: [], step: null });
 }
 
 /** Clear the panel. Stops a run in progress: this is a person deliberately throwing it away. */
@@ -326,7 +351,7 @@ export function revertSite(key: string, path: string): void {
 export function resetAgentHost(): void {
   for (const key of Object.keys(useAgentHost.getState().sessions)) stopSite(key);
   internals.clear();
-  useAgentHost.setState({ sessions: {}, requests: {}, focus: null });
+  useAgentHost.setState({ sessions: {}, requests: {}, focus: null, dockAgent: null });
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +368,9 @@ export function useAgentActivity(): { working: number; waiting: boolean } {
   const working = useAgentHost((state) =>
     Object.values(state.sessions).filter((s) => s.running || s.queue.length > 0).length,
   );
-  const waiting = useAgentHost((state) => Object.values(state.sessions).some((s) => s.pending !== null));
+  const waiting = useAgentHost((state) =>
+    Object.values(state.sessions).some((s) => s.pending !== null || s.question !== null),
+  );
   return { working, waiting };
 }
 
@@ -362,6 +389,35 @@ export function useAgentFocus(key: string, open: () => void): void {
     // `open` is a fresh closure per render; the request is what matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted]);
+}
+
+/** Open the dock's Agents tab on this site's agent (a notification was clicked). */
+export function openAgentInDock(key: string): void {
+  useAgentHost.setState({ dockAgent: key });
+}
+
+// ---------------------------------------------------------------------------
+// Who is looking: a notification for an agent already on screen is noise.
+// ---------------------------------------------------------------------------
+
+const watched = new Map<string, number>();
+
+/** Marks this site's agent as on screen while the calling component shows it. */
+export function useWatchAgent(key: string | null | undefined, visible = true): void {
+  useEffect(() => {
+    if (!key || !visible) return;
+    watched.set(key, (watched.get(key) ?? 0) + 1);
+    return () => {
+      const left = (watched.get(key) ?? 1) - 1;
+      if (left > 0) watched.set(key, left);
+      else watched.delete(key);
+    };
+  }, [key, visible]);
+}
+
+/** True when this site's agent is on screen in a visible tab. */
+export function isAgentWatched(key: string): boolean {
+  return watched.has(key) && (typeof document === 'undefined' || document.visibilityState === 'visible');
 }
 
 /** True while any site agent in this tab is working or has work queued. */

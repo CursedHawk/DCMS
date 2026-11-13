@@ -128,7 +128,7 @@ export function BuilderSidebar({
             itself lives in the agent host and outlives the page (ADR 0033). */}
         {agentOpened && (
           <div className={view === 'agent' ? 'h-full' : 'hidden'}>
-            <AgentPanel key={siteId} siteId={siteId} siteName={siteName} kind="static" />
+            <AgentPanel key={siteId} siteId={siteId} siteName={siteName} kind="static" visible={view === 'agent'} />
           </div>
         )}
       </div>

@@ -182,9 +182,9 @@ export function IdeSidebar({
         {agentOpened && (
           <div className={view === 'agent' ? 'h-full' : 'hidden'}>
             {functionsApi ? (
-              <AgentPanel key={siteId} siteId={siteId} siteName={siteName} kind="functions" functionsApi={functionsApi} />
+              <AgentPanel key={siteId} siteId={siteId} siteName={siteName} kind="functions" functionsApi={functionsApi} visible={view === 'agent'} />
             ) : (
-              <AgentPanel key={siteId} siteId={siteId} siteName={siteName} />
+              <AgentPanel key={siteId} siteId={siteId} siteName={siteName} visible={view === 'agent'} />
             )}
           </div>
         )}

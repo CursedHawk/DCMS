@@ -3,7 +3,7 @@ import { afterEach } from 'vitest';
 import { api, ApiError } from '../../lib/api';
 import { streamAssistantTurn } from '../ide/agent/client';
 import { requestSiteChange, sendToSite } from './host';
-import { configureSite, resetAgentHost, sessionOf, stopSite, useAgentHost } from './hostStore';
+import { answerSite, configureSite, resetAgentHost, sessionOf, stopSite, useAgentHost } from './hostStore';
 
 vi.mock('../ide/agent/client', async (original) => ({
   ...(await original<typeof import('../ide/agent/client')>()),
@@ -154,6 +154,50 @@ describe('agent host', () => {
     expect(closing()).toBe(false);
   });
 
+
+  it('waits on its questions, and the model reads the answers', async () => {
+    const ask = {
+      type: 'tool_use',
+      id: 'q1',
+      name: 'ask_user',
+      input: { questions: [{ question: 'Which layout?', options: [{ label: 'Cards' }, { label: 'List' }] }] },
+    };
+    const sent: unknown[] = [];
+    vi.mocked(streamAssistantTurn)
+      .mockImplementationOnce(async () => ({ content: [ask], stopReason: 'tool_use' }) as never)
+      .mockImplementationOnce(async (request) => {
+        sent.push(JSON.stringify(request));
+        return { content: [{ type: 'text', text: 'Cards it is.' }], stopReason: 'end_turn' } as never;
+      });
+    configureSite('site-a', { kind: 'react' });
+    sendToSite('site-a', 'make a page');
+
+    await until(() => sessionOf('site-a')?.question !== null && sessionOf('site-a')?.question !== undefined);
+    expect(sessionOf('site-a')?.question?.questions[0].question).toBe('Which layout?');
+    expect(sessionOf('site-a')?.running).toBe(true);
+
+    answerSite('site-a', [{ selected: [], other: 'A masonry grid' }]);
+    await until(() => sessionOf('site-a')?.outcome === 'completed');
+    expect(sessionOf('site-a')?.question).toBeNull();
+    expect(sent[0]).toContain('their own answer: \\"A masonry grid\\"');
+  });
+
+  it('a stop answers an open question, so the run can end', async () => {
+    vi.mocked(streamAssistantTurn).mockImplementationOnce(
+      async () =>
+        ({
+          content: [{ type: 'tool_use', id: 'q1', name: 'ask_user', input: { questions: [{ question: 'A or B?', options: [{ label: 'A' }, { label: 'B' }] }] } }],
+          stopReason: 'tool_use',
+        }) as never,
+    );
+    configureSite('site-a', { kind: 'react' });
+    sendToSite('site-a', 'something');
+    await until(() => Boolean(sessionOf('site-a')?.question));
+
+    stopSite('site-a');
+    await until(() => sessionOf('site-a')?.running === false);
+    expect(sessionOf('site-a')).toMatchObject({ question: null, outcome: 'stopped' });
+  });
 });
 
 /** Web Locks with real exclusivity, as two tabs of one browser see them. */

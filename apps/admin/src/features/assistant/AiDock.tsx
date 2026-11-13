@@ -24,7 +24,8 @@ import { type ConversationScope } from './conversations';
 import { Transcript } from './Transcript';
 import { AgentsTab } from './AgentsTab';
 import { useSharedAssistant } from './session';
-import { useAgentActivity } from '../agent/hostStore';
+import { useAgentActivity, useAgentHost } from '../agent/hostStore';
+import { QuestionCard } from '../agent/QuestionCard';
 
 /**
  * The assistant, on every page.
@@ -52,10 +53,18 @@ export function AiDock() {
   const { conversationId } = session;
   const [tab, setTab] = useState<'chat' | 'agents'>('chat');
   const agents = useAgentActivity();
+  const wantedAgent = useAgentHost((state) => state.dockAgent);
+
+  // A notification about a site agent was clicked: show the Agents tab (which opens its row).
+  useEffect(() => {
+    if (!wantedAgent) return;
+    setShowHistory(false);
+    setTab('agents');
+  }, [wantedAgent]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [session.steps, session.pending]);
+  }, [session.steps, session.pending, session.question]);
 
   useEffect(() => {
     if (!session.running) {
@@ -184,6 +193,9 @@ export function AiDock() {
 
             {session.pending ? (
               <ApprovalCard pending={session.pending} onDecide={session.approve} />
+            ) : null}
+            {session.question ? (
+              <QuestionCard key={session.question.id} questions={session.question.questions} onAnswer={session.answer} />
             ) : null}
 
             {session.needsKey ? (

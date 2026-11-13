@@ -36,6 +36,8 @@ import { newPruneState, pruneHistory, type PruneState } from '../agent/context';
 import { DEFAULT_CONTEXT_BUDGET } from '../agent/contracts';
 import { useContractTools } from './contractTools';
 import { DELEGATION_TOOLS } from './delegationTools';
+import { ASK_USER, type AgentAnswers, describeAsk, formatAnswers, parseQuestions } from '../agent/ask';
+import type { PendingQuestion } from '../agent/hostStore';
 
 /*
  * Shorter than the IDE agent's 25. That one is writing code across many files and genuinely
@@ -163,6 +165,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   const [keyProvider, setKeyProvider] = useState<string | null>(null);
   const [mode, setModeState] = useState<AiMode>(storedMode);
   const [pending, setPending] = useState<PendingApproval | null>(null);
+  const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [unsaved, setUnsaved] = useState(false);
@@ -175,6 +178,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   /** The system prompt and tool names last sent, to notice a mode switch changing them. */
   const requestShape = useRef<string | null>(null);
   const decideCall = useRef<((ok: boolean) => void) | null>(null);
+  const answerCall = useRef<((answers: AgentAnswers) => void) | null>(null);
   // Tools the operator has waved through for the rest of this conversation. Per conversation,
   // never per browser: "yes, publish, stop asking" is about this piece of work.
   const standing = useRef<Set<string>>(new Set());
@@ -188,6 +192,31 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   // A role that lost content:write between page loads must not keep a remembered write mode.
   const effectiveMode: AiMode = writable ? mode : 'read';
   const available = toolsFor(me, effectiveMode, contractTools);
+
+  /** `ask_user`: the run waits on the card until the operator answers, skips or stops it. */
+  const askTool = useMemo<AssistantTool>(
+    () => ({
+      ...ASK_USER,
+      describe: describeAsk,
+      run: async (input) => {
+        const questions = parseQuestions(input);
+        if (typeof questions === 'string') throw new Error(questions);
+        const answers = await new Promise<AgentAnswers>((resolve) => {
+          answerCall.current = resolve;
+          setQuestion({ id: crypto.randomUUID(), questions });
+        });
+        return formatAnswers(questions, answers);
+      },
+    }),
+    [],
+  );
+
+  /** Answer the questions card, or skip it with `null`. */
+  const answer = useCallback((answers: AgentAnswers) => {
+    setQuestion(null);
+    answerCall.current?.(answers);
+    answerCall.current = null;
+  }, []);
 
   const push = (step: Step) => setSteps((current) => [...current, step]);
 
@@ -253,6 +282,9 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
     decideCall.current?.(false);
     decideCall.current = null;
     setPending(null);
+    answerCall.current?.(null);
+    answerCall.current = null;
+    setQuestion(null);
     setRunning(false);
   }, []);
 
@@ -311,7 +343,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
         conversation.current = detail.id;
         loaded.current = detail.id;
         standing.current = new Set();
-        setSteps(stepsFromMessages(messages, available));
+        setSteps(stepsFromMessages(messages, [...available, askTool]));
         setAttachments([]);
         // Someone else's conversation is readable, never continuable: the tools would run with
         // the reader's permissions against work they did not do, and the server refuses the
@@ -362,7 +394,8 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
       const files = attachments.map((a) => a.name);
       const prompt = question + describeAttachments(attachments);
-      const tools = toolsFor(me, effectiveMode, contractTools);
+      // Asking is offered in every mode: it changes nothing.
+      const tools = [...toolsFor(me, effectiveMode, contractTools), askTool];
       // One id per question: the tool calls it sets off share it, so a server that records
       // them (a Dynamic Apps revision) can tell which turn of the conversation made a change.
       const runId = crypto.randomUUID();
@@ -565,6 +598,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
       me,
       onConversationChange,
       contractTools,
+      askTool,
       page,
       patchSay,
       patchStep,
@@ -599,6 +633,9 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
     writable,
     pending,
     approve,
+    /** Questions the assistant asked (`ask_user`), waiting for an answer. */
+    question,
+    answer,
     attachments,
     attach,
     detach,

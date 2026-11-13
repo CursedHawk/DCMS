@@ -1689,7 +1689,27 @@
         "paused": "Paused — ran out of turns",
         "failed": "Failed",
         "stopped": "Stopped"
-      }
+      },
+      "asking": "Has a question for you"
+    },
+    "ask": {
+      "title_one": "A question for you",
+      "title_other": "{{count}} questions for you",
+      "multi": "Choose any",
+      "other": "Other",
+      "otherPlaceholder": "Write your own answer…",
+      "send": "Send answers",
+      "skip": "Skip"
+    },
+    "notify": {
+      "asking": "{{name}}: the agent has a question",
+      "assistantAsking": "The assistant has a question",
+      "answer": "Answer",
+      "open": "Open",
+      "completed": "{{name}}: the agent finished",
+      "paused": "{{name}}: the agent paused — out of turns",
+      "failed": "{{name}}: the agent failed",
+      "assistantDone": "The assistant finished"
     }
   },
   "settings": {

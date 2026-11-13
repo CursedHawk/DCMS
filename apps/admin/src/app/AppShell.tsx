@@ -15,6 +15,7 @@ import {
   useSidebarCollapse,
 } from '@dcms/ui';
 import { AiDock } from '../features/assistant/AiDock';
+import { AgentNotifier } from '../features/assistant/AgentNotifier';
 import { AiProvider } from '../features/assistant/context';
 import { AssistantSessionProvider } from '../features/assistant/session';
 import { setAgentPermissions } from '../features/agent/hostStore';
@@ -120,6 +121,7 @@ export function AppShell() {
             <TourOverlay />
             <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
             <AiDock />
+            <AgentNotifier />
           </TourProvider>
           </AssistantSessionProvider>
         </AiProvider>

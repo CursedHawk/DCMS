@@ -5,6 +5,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Button, Sheet, SheetContent, SheetTitle, Spinner, cn, Callout } from '@dcms/ui';
 import { ApprovalCard } from './ApprovalCard';
+import { QuestionCard } from '../agent/QuestionCard';
 import { Composer } from './Composer';
 import { ConversationRail } from './ConversationRail';
 import { type ConversationScope, useConversation, useUpdateConversation } from './conversations';
@@ -73,7 +74,7 @@ export function AssistantPage() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [session.steps, session.pending]);
+  }, [session.steps, session.pending, session.question]);
 
   useEffect(() => {
     if (!session.running) {
@@ -199,6 +200,10 @@ export function AssistantPage() {
             <div className="mt-3">
               <ApprovalCard pending={session.pending} onDecide={session.approve} />
             </div>
+          ) : null}
+
+          {session.question ? (
+            <QuestionCard key={session.question.id} questions={session.question.questions} onAnswer={session.answer} />
           ) : null}
 
           {session.needsKey ? <NoKey provider={session.keyProvider} /> : null}

@@ -175,6 +175,22 @@ Asking permission to save a draft is what teaches an operator to click Allow
 without reading — precisely the habit you do not want when the card says
 *publish*.
 
+### Asking the person
+
+`ask_user` (`agent/ask.ts`) lets either agent stop and ask one to four questions,
+each with 2–6 options (single or multi choice), always with a box for an answer
+of the person's own. It is offered in every mode — asking changes nothing — and
+the run waits on `QuestionCard` until the person answers, skips (the model is
+told to assume and say so) or stops the run (which answers it as skipped).
+
+Site agents keep the question in the host store, so the editor panel, the
+dock's Agents tab and the notifications all see it; the assistant keeps its own
+in its session. `AgentNotifier` toasts a question that nobody has on screen
+(it stays until answered) and every run that ends by itself — finished, paused
+or failed, never a stop — with a button that opens that agent in the dock's
+Agents tab. "On screen" is `useWatchAgent`: a visible agent panel or an open
+row in the Agents tab.
+
 Scope is `site` (default) or `site+tenant`. **Full auto is never
 remembered across sessions** (`modes.ts:storedMode`): every other mode is a
 preference, that one is a decision to let publishing happen with nobody watching.
