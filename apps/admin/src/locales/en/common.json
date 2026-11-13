@@ -40,7 +40,8 @@
     "jobs": "Background jobs",
     "account": "Your account",
     "notifications": "Notifications",
-    "installed": "Installed"
+    "installed": "Installed",
+    "knowledge": "AI knowledge"
   },
   "palette": {
     "pages": "Pages",
@@ -870,7 +871,10 @@
       "scope": "Reach",
       "scopeHint": "How far outside this site the agent may reach. Workspace content lets it see which plugin instances and content types exist.",
       "queued_one": "{{count}} more request is waiting for this run and starts when it ends.",
-      "queued_other": "{{count}} more requests are waiting for this run and start when it ends."
+      "queued_other": "{{count}} more requests are waiting for this run and start when it ends.",
+      "compacting": "Compacting the conversation…",
+      "compacted": "Conversation compacted — the agent continued from this summary",
+      "compactedSaved": "Saved to AI knowledge: {{paths}}"
     },
     "starter": {
       "title": "Start your site",
@@ -1724,7 +1728,8 @@
     "apiHint": "The endpoints this workspace exposes",
     "connectionsHint": "External APIs your sites read, with their keys kept on the server.",
     "usageHint": "What this workspace stores, and where",
-    "environmentsHint": "Development, test, staging and production, each with its own data"
+    "environmentsHint": "Development, test, staging and production, each with its own data",
+    "knowledgeHint": "What the AI agents know: decisions, setups and earlier conversations"
   },
   "pluginReference": {
     "title": "{{name}}: API reference",
@@ -2780,5 +2785,34 @@
     "fields_other": "{{count}} fields",
     "moreFields_one": "and {{count}} more field",
     "moreFields_other": "and {{count}} more fields"
+  },
+  "knowledge": {
+    "title": "AI knowledge",
+    "description": "Decisions, setups, information and archives of earlier conversations that the AI agents of this workspace saved — and anything you add. Agents read it only when they need it.",
+    "add": "New entry",
+    "scope": "Scope",
+    "allScopes": "Everything",
+    "workspaceOnly": "Workspace-wide only",
+    "workspace": "Workspace",
+    "search": "Search knowledge",
+    "folders": "Folders",
+    "everything": "All folders",
+    "none": "Nothing saved yet",
+    "noneHint": "Agents save decisions and setups here as they work, and archive long conversations when they compact them.",
+    "removed": "Entry deleted",
+    "saved": "Entry saved",
+    "deleteEntry": "Delete {{path}}",
+    "confirmDelete": "Delete {{path}}? Agents will no longer find it.",
+    "path": "Path",
+    "entryTitle": "Title",
+    "entryDescription": "One-line description",
+    "body": "Content (Markdown)",
+    "preview": "Preview",
+    "edit": "Edit",
+    "source": {
+      "agent": "Saved by an agent",
+      "member": "Added by a member",
+      "compaction": "Conversation archive"
+    }
   }
 }

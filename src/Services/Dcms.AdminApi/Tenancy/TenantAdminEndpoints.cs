@@ -337,6 +337,7 @@ public sealed class TenantDeleter(
             ("ai.Messages", () => ai.Messages.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.Runs", () => ai.Runs.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.Conversations", () => ai.Conversations.IgnoreTenantFilter().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Knowledge", () => ai.Knowledge.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.UserSettings", () => ai.UserSettings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.Settings", () => ai.Settings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 

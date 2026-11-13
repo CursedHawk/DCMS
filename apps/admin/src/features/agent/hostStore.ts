@@ -58,7 +58,12 @@ export type AgentEntry =
   | { id: string; kind: 'check'; status: 'running' | 'passed' | 'failed' | 'skipped' }
   | { id: string; kind: 'retry'; attempt: number; of: number; because: string }
   | { id: string; kind: 'error'; text: string }
-  | { id: string; kind: 'notice'; text: string };
+  | { id: string; kind: 'notice'; text: string }
+  /**
+   * Where the conversation was compacted (ADR 0034): what came before is summarized here, and
+   * archived in the knowledge store at `archivedAt` when it could be. `pending` while summarizing.
+   */
+  | { id: string; kind: 'compaction'; summary: string; archivedAt: string | null; saved: string[]; pending?: boolean };
 
 export interface PendingApproval {
   tools: readonly ToolCall[];
@@ -155,6 +160,8 @@ interface Internals {
   asking: Promise<unknown>;
   tx: AgentTransaction | null;
   draft: SiteDraft | null;
+  /** The last seq a compaction of this conversation covered, so the next archive starts after it. */
+  compactedThrough: number;
 }
 
 const internals = new Map<string, Internals>();
@@ -162,7 +169,7 @@ const internals = new Map<string, Internals>();
 export function inner(key: string): Internals {
   let found = internals.get(key);
   if (!found) {
-    found = { messages: [], lastSeq: 0, abort: null, approve: null, answer: null, asking: Promise.resolve(), tx: null, draft: null };
+    found = { messages: [], lastSeq: 0, abort: null, approve: null, answer: null, asking: Promise.resolve(), tx: null, draft: null, compactedThrough: 0 };
     internals.set(key, found);
   }
   return found;

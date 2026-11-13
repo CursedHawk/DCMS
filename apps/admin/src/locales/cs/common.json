@@ -40,7 +40,8 @@
     "jobs": "Úlohy na pozadí",
     "account": "Váš účet",
     "notifications": "Oznámení",
-    "installed": "Nainstalované"
+    "installed": "Nainstalované",
+    "knowledge": "Znalosti AI"
   },
   "palette": {
     "pages": "Stránky",
@@ -897,7 +898,10 @@
       "scopeHint": "Jak daleko za tento web agent dosáhne. Obsah pracovního prostoru mu dovolí zjistit, které instance pluginů a typy obsahu existují.",
       "queued_one": "Na tento běh čeká ještě {{count}} požadavek; spustí se, až skončí.",
       "queued_few": "Na tento běh čekají ještě {{count}} požadavky; spustí se, až skončí.",
-      "queued_other": "Na tento běh čeká ještě {{count}} požadavků; spustí se, až skončí."
+      "queued_other": "Na tento běh čeká ještě {{count}} požadavků; spustí se, až skončí.",
+      "compacting": "Zhušťuji konverzaci…",
+      "compacted": "Konverzace zhuštěna — agent pokračoval z tohoto shrnutí",
+      "compactedSaved": "Uloženo do znalostí AI: {{paths}}"
     },
     "starter": {
       "title": "Začněte svůj web",
@@ -1765,7 +1769,8 @@
     "apiHint": "Endpointy, které tento prostor nabízí",
     "connectionsHint": "Externí API, ze kterých weby čtou; klíče zůstávají na serveru.",
     "usageHint": "Co tento prostor ukládá a kde",
-    "environmentsHint": "Vývoj, test, staging a produkce, každé s vlastními daty"
+    "environmentsHint": "Vývoj, test, staging a produkce, každé s vlastními daty",
+    "knowledgeHint": "Co agenti AI vědí: rozhodnutí, nastavení a dřívější konverzace"
   },
   "pluginReference": {
     "title": "{{name}}: referenční příručka API",
@@ -2847,5 +2852,34 @@
     "moreFields_one": "a ještě {{count}} pole",
     "moreFields_few": "a ještě {{count}} pole",
     "moreFields_other": "a ještě {{count}} polí"
+  },
+  "knowledge": {
+    "title": "Znalosti AI",
+    "description": "Rozhodnutí, nastavení, informace a archivy dřívějších konverzací, které si uložili agenti AI tohoto prostoru — a cokoli přidáte vy. Agenti je čtou, jen když je potřebují.",
+    "add": "Nová položka",
+    "scope": "Rozsah",
+    "allScopes": "Vše",
+    "workspaceOnly": "Jen celý prostor",
+    "workspace": "Celý prostor",
+    "search": "Hledat ve znalostech",
+    "folders": "Složky",
+    "everything": "Všechny složky",
+    "none": "Zatím nic uloženo",
+    "noneHint": "Agenti sem při práci ukládají rozhodnutí a nastavení a archivují dlouhé konverzace, když je zhušťují.",
+    "removed": "Položka smazána",
+    "saved": "Položka uložena",
+    "deleteEntry": "Smazat {{path}}",
+    "confirmDelete": "Smazat {{path}}? Agenti ji už nenajdou.",
+    "path": "Cesta",
+    "entryTitle": "Název",
+    "entryDescription": "Popis na jeden řádek",
+    "body": "Obsah (Markdown)",
+    "preview": "Náhled",
+    "edit": "Upravit",
+    "source": {
+      "agent": "Uložil agent",
+      "member": "Přidal člen",
+      "compaction": "Archiv konverzace"
+    }
   }
 }

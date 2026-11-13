@@ -214,6 +214,8 @@ public static class AuditActions
     /// everyone else.
     /// </summary>
     public const string AiConversationUpdated = "ai.conversation.updated";
+    public const string AiKnowledgeSaved = "ai.knowledge.saved";
+    public const string AiKnowledgeDeleted = "ai.knowledge.deleted";
 
     public const string AiConversationDeleted = "ai.conversation.deleted";
 

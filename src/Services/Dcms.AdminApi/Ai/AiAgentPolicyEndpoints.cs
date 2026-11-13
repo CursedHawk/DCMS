@@ -28,7 +28,7 @@ public static class AiAgentPolicyEndpoints
     {
         "site.react", "site.static", "site.visual", "site.functions", "site.rules",
         "assistant", "assistant.writes", "assistant.attachments", "assistant.dataPlatform",
-        "compaction",
+        "compaction", "knowledge",
     };
 
     /// <summary>Every prompt a tenant may override: the browser agents' and the server-built ones.</summary>

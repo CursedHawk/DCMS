@@ -23,6 +23,7 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
     public const string Schema = "ai";
 
     public DbSet<TenantAiSettings> Settings => Set<TenantAiSettings>();
+    public DbSet<AiKnowledgeEntry> Knowledge => Set<AiKnowledgeEntry>();
     public DbSet<UserAiSettings> UserSettings => Set<UserAiSettings>();
     public DbSet<AiConversation> Conversations => Set<AiConversation>();
     public DbSet<AiMessage> Messages => Set<AiMessage>();
@@ -44,6 +45,21 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
             e.Property(s => s.Provider).HasConversion<string>().HasMaxLength(16);
             e.Property(s => s.Model).HasMaxLength(128);
             e.Property(s => s.BaseUrl).HasMaxLength(512);
+        });
+
+        builder.Entity<AiKnowledgeEntry>(e =>
+        {
+            e.ToTable("knowledge");
+            e.HasKey(k => k.Id);
+            e.Property(k => k.Path).HasMaxLength(200).IsRequired();
+            e.Property(k => k.Title).HasMaxLength(200).IsRequired();
+            e.Property(k => k.Description).HasMaxLength(500).IsRequired();
+            e.Property(k => k.Source).HasMaxLength(16).IsRequired();
+            // One entry per path in a scope; the workspace scope (null site) is a scope too.
+            e.HasIndex(k => new { k.TenantId, k.SiteId, k.Path }).IsUnique().AreNullsDistinct(false);
+            e.HasGeneratedTsVectorColumn(k => k.SearchVector, "simple", k => new { k.Title, k.Description, k.Body })
+                .HasIndex(k => k.SearchVector)
+                .HasMethod("GIN");
         });
 
         builder.Entity<UserAiSettings>(e =>
@@ -95,6 +111,7 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
             e.HasKey(m => m.Id);
             e.Property(m => m.Role).HasMaxLength(16).IsRequired();
             e.Property(m => m.Content).HasColumnType("jsonb").IsRequired();
+            e.Property(m => m.Kind).HasMaxLength(16);
 
             // Appending a turn races nothing but itself, and a retried append must not be able
             // to produce two turns at the same position.

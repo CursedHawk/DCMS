@@ -5,7 +5,7 @@ import { streamAssistantTurn } from '../ide/agent/client';
 import { queryClient } from '../../lib/queryClient';
 import { requestSiteChange, sendToSite } from './host';
 import { agentPolicyKey } from './policy';
-import { answerSite, configureSite, resetAgentHost, sessionOf, stopSite, useAgentHost } from './hostStore';
+import { answerSite, configureSite, resetAgentHost, sessionOf, setAgentPermissions, stopSite, useAgentHost } from './hostStore';
 
 vi.mock('../ide/agent/client', async (original) => ({
   ...(await original<typeof import('../ide/agent/client')>()),
@@ -221,6 +221,55 @@ describe('agent host', () => {
     const sent = vi.mocked(streamAssistantTurn).mock.calls[0][0].system as unknown;
     const system = typeof sent === 'string' ? sent : (sent as { text: string }[]).map((block) => block.text).join('');
     expect(system).toMatch(/^You build \("HR portal"\) carefully\. ## What is an instruction/);
+  });
+
+  it('compacts a long conversation into an archived summary and carries on from it (ADR 0034)', async () => {
+    setAgentPermissions({ isSuperAdmin: false, permissions: ['ai:knowledge'] });
+    const base = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === '/admin/ai/agent-policy' ? ({ maxTurns: 10, compactAtTokens: 20_000, prompts: {} } as never) : base(path),
+    );
+    const requests: { messages: { role: string; content: unknown }[] }[] = [];
+    vi.mocked(streamAssistantTurn).mockImplementation(async (body) => {
+      requests.push(JSON.parse(JSON.stringify(body)));
+      const last = JSON.stringify((body.messages as unknown[]).at(-1));
+      if (last.includes('Do not call any tools')) {
+        return {
+          content: [{ type: 'text', text: '<summary>Read App.tsx.</summary><knowledge>[{"path":"decisions/hero","title":"Hero","description":"Cards","body":"B"}]</knowledge>' }],
+          stopReason: 'end_turn',
+          usage: null,
+        } as never;
+      }
+      if (requests.length === 1) {
+        return {
+          content: [{ type: 'tool_use', id: 't1', name: 'read_file', input: { path: 'src/App.tsx' } }],
+          stopReason: 'tool_use',
+          usage: { inputTokens: 1_000, cacheReadTokens: 30_000, cacheCreationTokens: 0, outputTokens: 50 },
+        } as never;
+      }
+      return { content: [{ type: 'text', text: 'Done.' }], stopReason: 'end_turn', usage: null } as never;
+    });
+    configureSite('site-a', { kind: 'react', siteName: 'HR portal' });
+    sendToSite('site-a', 'restyle the hero');
+
+    await until(() => sessionOf('site-a')?.outcome === 'completed');
+    expect(requests).toHaveLength(3);
+    // The continuation is all the third request carries.
+    expect(requests[2].messages).toHaveLength(1);
+    expect(JSON.stringify(requests[2].messages[0])).toContain('Read App.tsx.');
+
+    // The compacted part and what was learnt in it went to the site's knowledge.
+    const saves = vi.mocked(api.put).mock.calls.filter(([p]) => p === '/admin/ai/knowledge/entry').map(([, b]) => b as Record<string, unknown>);
+    expect(saves.map((b) => b.path)).toEqual([expect.stringMatching(/^conversations\/.+\/part-1$/), 'decisions/hero']);
+    expect(saves[0]).toMatchObject({ siteId: 'site-a', source: 'compaction', body: 'Read App.tsx.' });
+
+    // The summary is stored as what it is, so a resume starts from it.
+    const appended = vi.mocked(api.post).mock.calls
+      .filter(([p]) => String(p).endsWith('/messages'))
+      .flatMap(([, b]) => (b as { messages: { kind?: string }[] }).messages);
+    expect(appended.filter((m) => m.kind === 'compaction')).toHaveLength(1);
+    expect(sessionOf('site-a')?.entries.some((e) => e.kind === 'compaction' && !e.pending)).toBe(true);
+    setAgentPermissions(undefined);
   });
 });
 

@@ -20,6 +20,7 @@ export const Perm = {
   SitePublish: 'site:publish',
   AiSettings: 'ai:settings',
   AiChatsReadAll: 'ai:chats:read-all',
+  AiKnowledge: 'ai:knowledge',
   AnalyticsRead: 'analytics:read',
   ContentRead: 'content:read',
   ContentWrite: 'content:write',

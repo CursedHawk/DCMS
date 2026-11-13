@@ -1,5 +1,6 @@
 import type { ContentBlock, Message, ToolResultBlock, ToolUseBlock } from '../ide/agent/client';
 import type { AssistantTool, ToolRisk } from './tools';
+import { COMPACTION_HEADER } from '../agent/compaction';
 
 /**
  * How the page the operator is on is told to the model: a text block of its own on their
@@ -55,7 +56,17 @@ export interface ErrorStep {
   text: string;
 }
 
-export type Step = UserStep | SayStep | ToolStep | ErrorStep;
+/** Where the conversation was compacted (ADR 0034); `pending` while it is being summarized. */
+export interface CompactionStep {
+  kind: 'compaction';
+  id: string;
+  summary: string;
+  archivedAt: string | null;
+  saved: string[];
+  pending?: boolean;
+}
+
+export type Step = UserStep | SayStep | ToolStep | ErrorStep | CompactionStep;
 
 /** Fields a work card can show a before/after for, when the tool returned one. */
 export interface FieldChange {
@@ -162,6 +173,11 @@ export function stepsFromMessages(
   const cards = new Map<string, ToolStep>();
 
   for (const message of messages) {
+    if (message.kind === 'compaction') {
+      const text = (message.content as ContentBlock[]).map((b) => String((b as { text?: unknown }).text ?? '')).join('');
+      steps.push({ kind: 'compaction', id: crypto.randomUUID(), summary: text.replace(COMPACTION_HEADER, '').trim(), archivedAt: null, saved: [] });
+      continue;
+    }
     const blocks: ContentBlock[] =
       typeof message.content === 'string'
         ? [{ type: 'text', text: message.content }]

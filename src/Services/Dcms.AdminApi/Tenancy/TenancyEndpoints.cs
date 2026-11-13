@@ -611,6 +611,7 @@ public static class TenancyEndpoints
         PlatformPermissions.SiteEdit => "Edit sites",
         PlatformPermissions.SitePublish => "Publish sites",
         PlatformPermissions.AiSettings => "Manage AI settings",
+        PlatformPermissions.AiKnowledge => "Manage AI knowledge",
         PlatformPermissions.AiChatsReadAll => "Read everyone's assistant chats",
         PlatformPermissions.AnalyticsRead => "View analytics",
         PlatformPermissions.ContentRead => "View content",
@@ -634,6 +635,7 @@ public static class TenancyEndpoints
         PlatformPermissions.MediaRead or PlatformPermissions.MediaWrite => "/media",
         PlatformPermissions.SiteEdit or PlatformPermissions.SitePublish => "/sites",
         PlatformPermissions.AiSettings => "/settings/ai",
+        PlatformPermissions.AiKnowledge => "/settings/knowledge",
         PlatformPermissions.AiChatsReadAll => "/assistant",
         PlatformPermissions.AnalyticsRead => "/analytics",
         PlatformPermissions.ContentRead or PlatformPermissions.ContentWrite

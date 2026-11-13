@@ -44,6 +44,45 @@ public class AiConversationTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_compacted_part_keeps_its_kind_and_its_turns_can_be_recalled_by_who_may_read_them()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (owner, slug, tenantId) = await NewTenantAsync(client, ct);
+        var colleague = await AddMemberAsync(client, owner, slug, tenantId, ct);
+        var id = await CreateConversationAsync(client, owner, slug, "the hero", ct);
+
+        var text = (string t) => new object[] { new { type = "text", text = t } };
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/admin/ai/conversations/{id}/messages", owner, slug, new
+        {
+            messages = new object[]
+            {
+                new { role = "user", content = text("Make the hero a carousel of three slides") },
+                new { role = "assistant", content = text("Done: a carousel with autoplay every 5 seconds.") },
+                new { role = "user", content = text("[This conversation was compacted.] Summary: hero is a carousel."), kind = "compaction" },
+                new { role = "user", content = text("Now the carousel should stop on hover") },
+            },
+        }), ct)).EnsureSuccessStatusCode();
+
+        var detail = await (await client.SendAsync(Get($"/api/admin/ai/conversations/{id}", owner, slug), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        detail.GetProperty("messages").EnumerateArray()
+            .Select(m => m.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() : null)
+            .Should().Equal(null, null, "compaction", null);
+
+        // Only the part the archive covers (seq 1-2) is searched.
+        var found = await (await client.SendAsync(Get($"/api/admin/ai/conversations/{id}/excerpts?from=1&to=2&q=carousel autoplay", owner, slug), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        var excerpts = found.GetProperty("excerpts").EnumerateArray().ToList();
+        excerpts.Select(e => e.GetProperty("seq").GetInt32()).Should().Equal(1, 2);
+        excerpts[1].GetProperty("excerpt").GetString().Should().Contain("every 5 seconds");
+
+        // As private as the conversation.
+        (await client.SendAsync(Get($"/api/admin/ai/conversations/{id}/excerpts?q=carousel", colleague, slug), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [DockerFact]
     public async Task A_private_conversation_is_invisible_to_a_colleague()
     {
         var ct = TestContext.Current.CancellationToken;

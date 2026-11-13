@@ -12,7 +12,7 @@ export const OTHER_TENANT = { tenantId: 'aaaaaaaa-0000-0000-0000-000000000002', 
 /** Every tenant permission key the console knows. The default operator holds all of them. */
 export const ALL_TENANT_PERMISSIONS = [
   'tenant:settings', 'members:manage', 'roles:manage', 'domains:manage', 'plugins:manage',
-  'media:read', 'media:write', 'site:edit', 'site:publish', 'ai:settings', 'analytics:read',
+  'media:read', 'media:write', 'site:edit', 'site:publish', 'ai:settings', 'ai:knowledge', 'analytics:read',
   'content:read', 'content:write', 'content:publish', 'chat:read', 'chat:manage',
   'audit:read', 'audit:export', 'environments:manage', 'environments:promote',
 ];

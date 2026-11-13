@@ -45,6 +45,11 @@ export interface ToolResultBlock {
 export interface Message {
   role: 'user' | 'assistant';
   content: string | ContentBlock[] | ToolResultBlock[];
+  /**
+   * Set on the summary a conversation was compacted into (ADR 0034). Stored with the message and
+   * never sent: `agent/compaction.ts toWire` keeps only role and content.
+   */
+  kind?: 'compaction';
 }
 
 /**

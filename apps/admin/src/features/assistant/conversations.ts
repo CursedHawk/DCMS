@@ -76,6 +76,8 @@ export interface StoredMessage {
   seq: number;
   role: 'user' | 'assistant';
   content: ContentBlock[] | ToolResultBlock[];
+  /** `compaction` for the summary a conversation was compacted into (ADR 0034). */
+  kind?: 'compaction' | null;
   createdAt: string;
 }
 
@@ -166,6 +168,7 @@ export function appendMessages(
         typeof message.content === 'string'
           ? [{ type: 'text', text: message.content }]
           : message.content,
+      ...(message.kind ? { kind: message.kind } : {}),
     })),
     ...extra,
   });

@@ -5,6 +5,7 @@ import { aiPrompt, type AiPromptOverrides } from '@dcms/core';
 import {
   type ContentBlock,
   type Message,
+  type TurnUsage,
   NoApiKeyError,
   streamAssistantTurn,
   type ToolResultBlock,
@@ -33,10 +34,21 @@ import {
 import { canWrite, findTool, toolDefinitions, toolsFor, type AssistantTool } from './tools';
 import { capResult, markUntrusted } from '../agent/runtime';
 import { withCacheHints } from '../agent/modelRouter';
-import { newPruneState, pruneHistory, type PruneState } from '../agent/context';
-import { DEFAULT_CONTEXT_BUDGET } from '../agent/contracts';
+import {
+  archive,
+  compactions,
+  contextStart,
+  continuation,
+  promptTokens,
+  summarize,
+  toWire,
+} from '../agent/compaction';
+import { can } from '@dcms/core';
+import { Perm } from '../../lib/permissions';
+import type { CompactionStep } from './steps';
 import { useContractTools } from './contractTools';
 import { DELEGATION_TOOLS } from './delegationTools';
+import { knowledgeTools } from '../agent/knowledgeTools';
 import { agentPolicy } from '../agent/policy';
 import { ASK_USER, type AgentAnswers, describeAsk, formatAnswers, parseQuestions } from '../agent/ask';
 import type { PendingQuestion } from '../agent/hostStore';
@@ -76,6 +88,7 @@ export function systemPrompt(
   const writes = decide(mode, 'safe') !== 'unavailable';
   return [
     aiPrompt('assistant', overrides),
+    aiPrompt('knowledge', overrides),
     ...(writes ? [aiPrompt('assistant.writes', overrides)] : []),
     ...(attachments > 0 ? [aiPrompt('assistant.attachments', overrides)] : []),
     ...(page?.area === 'data-platform' ? [aiPrompt('assistant.dataPlatform', overrides)] : []),
@@ -130,7 +143,13 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   const abort = useRef<AbortController | null>(null);
   const history = useRef<Message[]>([]);
   /** Where `history` has been cut for the wire. Reset whenever `history` is replaced. */
-  const pruneState = useRef<PruneState>(newPruneState());
+  /**
+   * Thinking blocks before this index of `history` are not sent: they are bound to a system prompt
+   * or tool set that has since changed (a mode switch), or to a session that is not this one.
+   */
+  const stripBefore = useRef(0);
+  /** The provider's count for the last call, and where `history` stood after its answer. */
+  const lastUsage = useRef<{ usage: TurnUsage | null; at: number }>({ usage: null, at: 0 });
   /** The system prompt and tool names last sent, to notice a mode switch changing them. */
   const requestShape = useRef<string | null>(null);
   const decideCall = useRef<((ok: boolean) => void) | null>(null);
@@ -143,7 +162,8 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
   const pluginTools = useContractTools();
   // Plugin contract tools, and the hand-off to site agents — which is the assistant's alone.
-  const contractTools = useMemo(() => [...pluginTools, ...DELEGATION_TOOLS], [pluginTools]);
+  // The knowledge store too, over every scope: the assistant serves the whole workspace.
+  const contractTools = useMemo(() => [...pluginTools, ...DELEGATION_TOOLS, ...knowledgeTools(null)], [pluginTools]);
   const writable = canWrite(me, contractTools);
   // A role that lost content:write between page loads must not keep a remembered write mode.
   const effectiveMode: AiMode = writable ? mode : 'read';
@@ -248,7 +268,8 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   const reset = useCallback(() => {
     stop();
     history.current = [];
-    pruneState.current = newPruneState();
+    stripBefore.current = 0;
+    lastUsage.current = { usage: null, at: 0 };
     requestShape.current = null;
     standing.current = new Set();
     conversation.current = null;
@@ -290,11 +311,13 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
         const messages: Message[] = detail.messages.map((m) => ({
           role: m.role,
           content: m.content,
+          ...(m.kind === 'compaction' ? { kind: 'compaction' as const } : {}),
         }));
         history.current = messages;
-        // A stored conversation's thinking was bound to whatever was sent then; start the cut
-        // fresh and strip it, since nothing guarantees this session sends the same prefix.
-        pruneState.current = { ...newPruneState(), strippedBefore: messages.length };
+        // A stored conversation's thinking was bound to whatever was sent then; strip it, since
+        // nothing guarantees this session sends the same prefix.
+        stripBefore.current = messages.length;
+        lastUsage.current = { usage: null, at: messages.length };
         requestShape.current = null;
         conversation.current = detail.id;
         loaded.current = detail.id;
@@ -357,8 +380,9 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
       const runId = crypto.randomUUID();
 
       push(userStep(question, files));
-      history.current.push({ role: 'user', content: withPageContext(prompt, page) });
-      const firstQuestion = history.current.length === 1;
+      // Appended once any compaction is done, so the question is what follows the summary.
+      const opening: Message = { role: 'user', content: withPageContext(prompt, page) };
+      const firstQuestion = history.current.length === 0;
 
       const controller = new AbortController();
       abort.current = controller;
@@ -366,9 +390,6 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
       setNeedsKey(false);
 
       void (async () => {
-        // Turns produced this send, appended once each round so a long agentic run is stored
-        // as it goes rather than only if it reaches the end.
-        const opening = history.current[history.current.length - 1];
         try {
           if (!conversation.current) {
             const created = await api.post<{ id: string }>('/admin/ai/conversations', {
@@ -380,14 +401,93 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
             loaded.current = created.id;
             onConversationChange(created.id);
           }
-          await persist(
-            [opening],
-            firstQuestion ? titleFrom(question || files[0] || '') : undefined,
-          );
-
-          // The prompts this tenant's agents use (platform console); the shipped ones if unreadable.
+          // The prompts and limits this tenant's agents use (platform console); the shipped ones
+          // if unreadable.
           const policy = await agentPolicy(queryClient);
+          const system = systemPrompt(page, effectiveMode, attachments.length, policy.prompts);
+          const definitions = toolDefinitions(tools);
+          // A thinking block is bound to the system prompt and tools it was produced under.
+          // When a mode switch changes either, the ones already in the history are stripped
+          // rather than replayed into a request the provider would refuse.
+          const shape = JSON.stringify([system, definitions.map((d) => d.name)]);
+          if (requestShape.current !== null && requestShape.current !== shape) {
+            stripBefore.current = history.current.length;
+          }
+          requestShape.current = shape;
+
+          /** What is sent: the history from its last compaction, thinking stripped where bound elsewhere. */
+          const wire = (): Message[] => {
+            const start = contextStart(history.current);
+            return history.current
+              .slice(start)
+              .map((message, offset) => {
+                const sent = toWire(message);
+                if (start + offset >= stripBefore.current || !Array.isArray(sent.content)) return sent;
+                return {
+                  ...sent,
+                  content: (sent.content as ContentBlock[]).filter(
+                    (b) => b.type !== 'thinking' && b.type !== 'redacted_thinking',
+                  ),
+                } as Message;
+              })
+              .filter((m) => !Array.isArray(m.content) || m.content.length > 0);
+          };
+
+          /**
+           * Compact when the next prompt would reach the tenant's threshold (ADR 0034): the whole
+           * conversation becomes one summary, archived to the knowledge store when the member may
+           * write it, and the conversation continues from there.
+           */
+          const compactIfNeeded = async () => {
+            const context = wire();
+            if (context.length === 0) return;
+            const tokens = promptTokens({
+              lastUsage: lastUsage.current.usage,
+              appended: history.current.slice(lastUsage.current.at),
+              context,
+              system,
+              tools: definitions,
+            });
+            if (tokens < policy.compactAtTokens) return;
+
+            const step: CompactionStep = { kind: 'compaction', id: crypto.randomUUID(), summary: '', archivedAt: null, saved: [], pending: true };
+            push(step);
+            const result = await summarize({
+              system,
+              tools: definitions,
+              context,
+              overrides: policy.prompts,
+              transport: streamAssistantTurn,
+              signal: controller.signal,
+            });
+            const saved = await archive({
+              siteId: null,
+              conversationId: conversation.current,
+              title: titleFrom(question || files[0] || 'Conversation'),
+              part: compactions(history.current) + 1,
+              fromSeq: null,
+              toSeq: null,
+              summary: result.summary,
+              knowledge: result.knowledge,
+              mayWrite: can(me, Perm.AiKnowledge),
+            });
+            const message = continuation({ summary: result.summary, ...saved });
+            history.current.push(message);
+            lastUsage.current = { usage: null, at: history.current.length };
+            await persist([message]);
+            setSteps((current) =>
+              current.map((s) => (s.id === step.id ? { ...step, summary: result.summary, ...saved, pending: false } : s)),
+            );
+          };
+
+          await compactIfNeeded();
+          history.current.push(opening);
+          // Turns produced this send are stored each round, so a long agentic run is kept as it
+          // goes rather than only if it reaches the end.
+          await persist([opening], firstQuestion ? titleFrom(question || files[0] || '') : undefined);
+
           for (let round = 0; round < policy.assistantMaxTurns; round++) {
+            if (round > 0) await compactIfNeeded();
             let streamed = '';
             /*
              * The bubble this turn is writing into, created on its first delta.
@@ -399,26 +499,11 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
              * and watching one being written, and it costs one more setState per token.</p>
              */
             let sayId: string | null = null;
-            const system = systemPrompt(page, effectiveMode, attachments.length, policy.prompts);
-            const definitions = toolDefinitions(tools);
-            // A thinking block is bound to the system prompt and tools it was produced under.
-            // When a mode switch changes either, the ones already in the history are stripped
-            // rather than replayed into a request the provider would refuse.
-            const shape = JSON.stringify([system, definitions.map((d) => d.name)]);
-            if (requestShape.current !== null && requestShape.current !== shape) {
-              pruneState.current.strippedBefore = history.current.length;
-            }
-            requestShape.current = shape;
             const turn = await streamAssistantTurn(
               withCacheHints({
                 max_tokens: MAX_TOKENS,
                 system,
-                messages: pruneHistory(
-                  history.current,
-                  DEFAULT_CONTEXT_BUDGET,
-                  { goal: question, filesChanged: [], notes: [] },
-                  pruneState.current,
-                ).messages,
+                messages: wire(),
                 tools: definitions,
               }),
               {
@@ -441,6 +526,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
             const assistantTurn: Message = { role: 'assistant', content: turn.content };
             history.current.push(assistantTurn);
+            lastUsage.current = { usage: turn.usage, at: history.current.length };
             /*
              * The streamed deltas when there were any, the finished blocks when there were not.
              * Not belt and braces: a turn can arrive complete without ever firing onText — a

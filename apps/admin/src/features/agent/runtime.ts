@@ -4,16 +4,15 @@ import type {
   StreamHandlers,
   ToolResultBlock,
   ToolUseBlock,
+  TurnUsage,
 } from '../ide/agent/client';
-import { DEFAULT_AGENT_MAX_TURNS } from '@dcms/core';
+import { type AiPromptOverrides, DEFAULT_AGENT_MAX_TURNS } from '@dcms/core';
 import { classify, type Classification } from './classify';
-import { newPruneState, pruneHistory, type WorkingMemory } from './context';
+import { contextOf, continuation, type KnowledgeItem, promptTokens, summarize } from './compaction';
 import {
-  DEFAULT_CONTEXT_BUDGET,
   riskOf,
   type AgentEvent,
   type ApprovalDecision,
-  type ContextBudget,
   type ToolCall,
   type ToolResult,
   type ToolSpec,
@@ -68,8 +67,16 @@ export interface RunOptions<TContext> {
    */
   approve?: (calls: readonly ToolCall[]) => Promise<ApprovalDecision>;
 
-  /** Ceiling the conversation is compressed to fit. */
-  budget?: ContextBudget;
+  /**
+   * Whole-conversation compaction (ADR 0034). Before a model call whose prompt would reach
+   * `atTokens`, the conversation is summarized and continues from the summary alone.
+   * `archive` saves what was compacted and says where; absent, nothing is saved.
+   */
+  compaction?: {
+    atTokens: number;
+    overrides?: AiPromptOverrides | null;
+    archive?: (result: { summary: string; knowledge: KnowledgeItem[] }) => Promise<{ archivedAt: string | null; saved: string[] }>;
+  };
 
   /**
    * Deterministic check, run after a turn that wrote files and then stopped.
@@ -122,19 +129,55 @@ async function drive<TContext>(
   const classification = classify(opts.task, { fileCount: opts.fileCount });
   opts.onClassified?.(classification);
 
-  opts.messages.push({ role: 'user', content: opts.task });
-
   const maxRepairs = opts.maxRepairs ?? DEFAULT_MAX_REPAIRS;
-  const budget = opts.budget ?? DEFAULT_CONTEXT_BUDGET;
   let repairs = 0;
   let wroteSomething = false;
 
-  // Maintained by the runtime rather than asked of the model: a model asked to summarise its
-  // own history spends a turn doing it, and this is all knowable for free.
-  const memory: WorkingMemory = { goal: opts.task, filesChanged: [], notes: [] };
-  // Per run: the cut moves only when the budget is crossed, so turns in between are append-only
-  // and read their whole prefix from the prompt cache.
-  const pruneState = newPruneState();
+  const toolDefinitions = opts.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
+  const params = () => paramsFor(classification.complexity, { repairing: repairs > 0 });
+
+  /** The provider's count for the last call, and where the transcript stood after its answer. */
+  let lastUsage: TurnUsage | null = null;
+  let measuredAt = opts.messages.length;
+
+  /**
+   * Compact if the next prompt would reach the threshold. Only ever here, at a call boundary:
+   * every tool call the transcript holds has its result.
+   */
+  const maybeCompact = async (): Promise<void> => {
+    const setup = opts.compaction;
+    if (!setup) return;
+    const context = contextOf(opts.messages);
+    if (context.length === 0) return;
+    const tokens = promptTokens({
+      lastUsage,
+      appended: opts.messages.slice(measuredAt),
+      context,
+      system: opts.system,
+      tools: toolDefinitions,
+    });
+    if (tokens < setup.atTokens) return;
+
+    out.push({ type: 'context.compacting' });
+    const result = await summarize({
+      system: opts.system,
+      tools: toolDefinitions,
+      context,
+      params: { ...params() },
+      overrides: setup.overrides,
+      transport: opts.transport,
+      signal: opts.signal,
+    });
+    const saved = (await setup.archive?.(result).catch(() => null)) ?? { archivedAt: null, saved: [] };
+    opts.messages.push(continuation({ summary: result.summary, ...saved }));
+    // The prompt is now the summary: estimate from here until the next call reports.
+    lastUsage = null;
+    measuredAt = opts.messages.length;
+    out.push({ type: 'context.compacted', summary: result.summary, ...saved });
+  };
+
+  /** Paths the run has written, in first-touched order. */
+  const memory = { filesChanged: [] as string[] };
 
   /** Tools the operator has said not to ask about again — for this run, and only this run. */
   const allowedForRun = new Set<string>();
@@ -143,26 +186,26 @@ async function drive<TContext>(
   let finished = false;
 
   try {
+    // Before the task, so its exact wording is what the model reads after the summary.
+    await maybeCompact();
+    opts.messages.push({ role: 'user', content: opts.task });
+
     for (let i = 0; i < maxIterations; i++) {
       if (opts.signal.aborted) {
         out.push({ type: 'agent.stopped', runId });
         return;
       }
 
-      // Compress to fit before sending. The full transcript stays in `opts.messages` — what is
-      // pruned is the copy on the wire, so what gets stored is still complete.
-      const pruned = pruneHistory(opts.messages, budget, memory, pruneState);
+      if (i > 0) await maybeCompact();
 
+      // From the last compaction on; between compactions only ever appended to, so each call
+      // reads its whole prefix from the cache.
       const turn = await opts.transport(
         withCacheHints({
           system: opts.system,
-          messages: pruned.messages,
-          tools: opts.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.input_schema,
-          })),
-          ...paramsFor(classification.complexity, { repairing: repairs > 0 }),
+          messages: contextOf(opts.messages),
+          tools: toolDefinitions,
+          ...params(),
         }),
         {
           onText: (delta) => out.push({ type: 'text.delta', delta }),
@@ -174,6 +217,8 @@ async function drive<TContext>(
       out.push({ type: 'turn.completed', turn: i + 1, usage: turn.usage, model: turn.model });
 
       opts.messages.push({ role: 'assistant', content: turn.content });
+      lastUsage = turn.usage;
+      measuredAt = opts.messages.length;
 
       const calls = toCalls(turn);
 
@@ -211,7 +256,6 @@ async function drive<TContext>(
           of: maxRepairs,
           because: 'the build failed',
         });
-        memory.notes.push(`Build failed after attempt ${repairs}.`);
         opts.messages.push({
           role: 'user',
           content: `The build failed after your changes. Fix it.\n\n${verdict.report}`,
@@ -240,7 +284,6 @@ async function drive<TContext>(
         else if (verdict.ok) out.push({ type: 'validation.passed', scope: 'build' });
         else {
           out.push({ type: 'validation.failed', scope: 'build', problems: 1 });
-          memory.notes.push('Paused at the turn limit with a failing build.');
           // Kept in the transcript, so "continue" starts from what is actually broken.
           opts.messages.push({
             role: 'user',
@@ -298,7 +341,7 @@ async function executeCalls<TContext>(
   byName: ReadonlyMap<string, ToolSpec<TContext>>,
   opts: RunOptions<TContext>,
   out: EventQueue<AgentEvent>,
-  memory: WorkingMemory,
+  memory: { filesChanged: string[] },
   allowedForRun: Set<string>,
 ): Promise<ToolResultBlock[]> {
   // Decide once, for the whole batch: a single approval card listing three edits is one
@@ -385,7 +428,7 @@ async function runOne<TContext>(
   call: ToolCall,
   opts: RunOptions<TContext>,
   out: EventQueue<AgentEvent>,
-  memory: WorkingMemory,
+  memory: { filesChanged: string[] },
 ): Promise<ToolResultBlock> {
   const startedAt = Date.now();
   out.push({

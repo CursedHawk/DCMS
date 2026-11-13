@@ -138,7 +138,42 @@ describe("the tenant's prompts", () => {
     await waitFor(() => expect(result.current.running).toBe(false));
     const sent = vi.mocked(streamAssistantTurn).mock.calls[0][0].system as unknown;
     const system = typeof sent === 'string' ? sent : (sent as { text: string }[]).map((b) => b.text).join('');
-    expect(system).toMatch(/^You are a pirate\.\n\nYou can change things/);
+    expect(system).toMatch(/^You are a pirate\.\n\n## Knowledge\n[\s\S]*\n\nYou can change things/);
+  });
+});
+
+describe('compaction (ADR 0034)', () => {
+  it('compacts before the next question, and asks it right after the summary', async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === '/admin/ai/agent-policy' ? ({ compactAtTokens: 20_000, prompts: {} } as never) : (undefined as never),
+    );
+    vi.mocked(streamAssistantTurn).mockImplementation(async (body) => {
+      const last = JSON.stringify((body.messages as unknown[]).at(-1));
+      if (last.includes('Do not call any tools')) {
+        return { content: [{ type: 'text', text: '<summary>We drafted a post.</summary>' }], stopReason: 'end_turn', usage: null } as never;
+      }
+      return {
+        content: [{ type: 'text', text: 'ok' }],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 500, cacheReadTokens: 25_000, cacheCreationTokens: 0, outputTokens: 10 },
+      } as never;
+    });
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+
+    act(() => result.current.send('write me a post'));
+    await waitFor(() => expect(result.current.running).toBe(false));
+    act(() => result.current.send('now a shorter one'));
+    await waitFor(() => expect(result.current.running).toBe(false));
+
+    const calls = vi.mocked(streamAssistantTurn).mock.calls.map(([body]) => body.messages as { content: unknown }[]);
+    expect(calls).toHaveLength(3);
+    const [, summary, after] = calls;
+    expect(JSON.stringify(summary.at(-1))).toMatch(/Summarize the transcript/);
+    // The summary, then the new question — nothing of the earlier exchange.
+    expect(after).toHaveLength(2);
+    expect(JSON.stringify(after[0])).toContain('We drafted a post.');
+    expect(JSON.stringify(after[1])).toContain('now a shorter one');
+    expect(result.current.steps.some((s) => s.kind === 'compaction')).toBe(true);
   });
 });
 

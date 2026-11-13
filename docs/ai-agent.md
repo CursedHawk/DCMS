@@ -56,9 +56,10 @@ iteration is one model turn:
 
 1. **Classify** the task once, up front (`classify.ts`) — complexity picks the
    model and the sampling parameters (`modelRouter.ts`).
-2. **Prune** the transcript to fit the context budget. The full history stays in
-   `opts.messages`; only the copy on the wire is compressed, so what gets stored
-   is still complete.
+2. **Compact** when the next prompt would reach the tenant's threshold
+   (`compaction.ts`, ADR 0034): the whole conversation is summarized and the run
+   continues from that summary alone. Otherwise the request is the transcript from
+   its last compaction on, appended to and never rewritten.
 3. **Call** the model through the transport, emitting `text.delta` and
    `agent.thinking` as tokens arrive.
 4. **Run** each requested tool, subject to the mode gate — emitting
@@ -204,6 +205,18 @@ either the public sees it or it is gone.
 Asking permission to save a draft is what teaches an operator to click Allow
 without reading — precisely the habit you do not want when the card says
 *publish*.
+
+### The knowledge store
+
+Decisions, setups, information and archives of compacted conversations, at
+folder-like paths (`decisions/…`, `setups/…`, `info/…`, `conversations/…`), per
+workspace with entries optionally tied to one site (ADR 0034). Agents read it only
+when they ask — `knowledge_list`, `knowledge_search`, `knowledge_read`,
+`conversation_recall` — and save with `knowledge_save`; nothing is injected into a
+prompt. Every member reads it; writing needs `ai:knowledge`, because what is
+written is read by every other member's agents. People curate it at Settings → AI
+knowledge. An archive of a compacted conversation is as private as the conversation:
+only those who may read the conversation see it. The public site chatbot never sees it.
 
 ### Asking the person
 
@@ -423,17 +436,20 @@ Three things keep a run cheap, in rough order of effect:
 
 - **Prompt caching.** The request prefix is ordered stable-first (system, tools,
   project overview) so the provider's cache prefix survives across turns.
-- **Context pruning.** `pruneHistory` compresses the wire copy against a
-  `ContextBudget` (40k input, 8k per tool result, 5 whole files per read) and
-  maintains a `WorkingMemory` the runtime derives for free rather than spending a
-  turn asking the model to summarise itself.
+- **Whole-conversation compaction** (ADR 0034). Between compactions every request
+  is the previous one plus what was appended, so it reads its prefix from the cache.
+  At the tenant's threshold (100 000 tokens by default, measured from the
+  provider's own counts) the conversation is summarized — one request that is
+  itself a cache read — and continues from the summary; each compacted part is
+  archived in the knowledge store, where `conversation_recall` can look back into it.
 - **Unchanged reads.** When the caller already holds the current hash, the
   workspace returns `{ unchanged: true }` — a dozen tokens instead of a thousand.
   This kills the read-edit-read-back loop that otherwise eats a run's budget.
 
 `estimateTokens` deliberately **over**-estimates (3.5 chars/token, not 4): source
-code tokenises harder than prose, and a budget that guesses low overruns silently
-while one that guesses high trims a little early.
+code tokenises harder than prose, and a threshold that guesses low overruns
+silently while one that guesses high compacts a little early. It is only the
+fallback: the provider's own counts decide when they exist.
 
 Exact accounting comes from the provider's own usage numbers after the fact
 (`ide/agent/runMetrics.ts`), surfaced in the panel's run meter. **An unknown is

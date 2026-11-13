@@ -139,7 +139,7 @@ public static class AiConversationEndpoints
             var messages = await db.Messages.AsNoTracking()
                 .Where(m => m.ConversationId == id && m.TenantId == tenantId)
                 .OrderBy(m => m.Seq)
-                .Select(m => new { m.Id, m.Seq, m.Role, m.Content, m.CreatedAt })
+                .Select(m => new { m.Id, m.Seq, m.Role, m.Content, m.Kind, m.CreatedAt })
                 .ToListAsync(ct);
 
             var runs = await db.Runs.AsNoTracking()
@@ -170,6 +170,7 @@ public static class AiConversationEndpoints
                     m.Seq,
                     m.Role,
                     content = JsonNode.Parse(m.Content),
+                    kind = m.Kind,
                     m.CreatedAt,
                 }),
                 runs = runs.Select(r => new
@@ -215,6 +216,47 @@ public static class AiConversationEndpoints
         .RequirePermission(UsePermission)
         .AuditExempt("Opening a scratch conversation changes nothing in the workspace; the turns "
                      + "inside it are recorded by ai.request, and anything it writes by that write's own action.");
+
+        // Recall (ADR 0034): the passages of a compacted part of a conversation that mention what an
+        // agent is looking for, so detail its summary dropped can still be found. Read as the
+        // conversation is: by whoever may read it.
+        app.MapGet("/api/admin/ai/conversations/{id:guid}/excerpts", async (
+            Guid id, int? from, int? to, string? q, AiDbContext db, ITenantContext tenant, CurrentUser me,
+            IPermissionResolver permissions, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(q)) return Results.BadRequest(new { error = "q is required." });
+            var tenantId = tenant.TenantId!.Value;
+            var userId = me.RequireUserId();
+            var conversation = await db.Conversations.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId, ct);
+            if (conversation is null || !await CanReadAsync(conversation, permissions, me, tenantId, userId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var low = from ?? 0;
+            var high = to ?? int.MaxValue;
+            // ponytail: scanned in memory, capped; a full-text index on messages when ranges grow past it.
+            var messages = await db.Messages.AsNoTracking()
+                .Where(m => m.ConversationId == id && m.TenantId == tenantId && m.Seq >= low && m.Seq <= high)
+                .OrderBy(m => m.Seq)
+                .Take(MaxRecallMessages)
+                .Select(m => new { m.Seq, m.Role, m.Content })
+                .ToListAsync(ct);
+
+            var terms = q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var excerpts = messages
+                .Select(m => (m.Seq, m.Role, Text: TextOf(m.Content)))
+                .Select(m => (m.Seq, m.Role, m.Text, Hits: terms.Count(t => m.Text.Contains(t, StringComparison.OrdinalIgnoreCase))))
+                .Where(m => m.Hits > 0)
+                .OrderByDescending(m => m.Hits)
+                .ThenBy(m => m.Seq)
+                .Take(10)
+                .OrderBy(m => m.Seq)
+                .Select(m => new { seq = m.Seq, role = m.Role, excerpt = Excerpt(m.Text, terms) })
+                .ToList();
+            return Results.Ok(new { conversationId = id, from = low, to = to, excerpts });
+        }).RequirePermission(UsePermission);
 
         app.MapPost("/api/admin/ai/conversations/{id:guid}/messages", async (
             Guid id, AppendMessagesRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -264,6 +306,8 @@ public static class AiConversationEndpoints
                     Seq = ++next,
                     Role = message.Role,
                     Content = json,
+                    // The one kind there is; anything else is an ordinary turn.
+                    Kind = message.Kind == "compaction" ? "compaction" : null,
                 });
             }
 
@@ -480,7 +524,7 @@ public static class AiConversationEndpoints
         return app;
     }
 
-    private static async Task<bool> CanReadAsync(
+    internal static async Task<bool> CanReadAsync(
         AiConversation conversation, IPermissionResolver permissions, CurrentUser me,
         Guid tenantId, Guid userId, CancellationToken ct) =>
         conversation.OwnerUserId == userId
@@ -558,6 +602,38 @@ public static class AiConversationEndpoints
     private sealed record UpdateConversationRequest(
         string? Title, string? Visibility, string? Mode, bool? Archived);
 
+    private const int MaxRecallMessages = 2000;
+
+    /// <summary>The readable text of a stored turn: its text, tool inputs and tool results.</summary>
+    private static string TextOf(string contentJson)
+    {
+        if (JsonNode.Parse(contentJson) is not JsonArray blocks) return "";
+        var text = new System.Text.StringBuilder();
+        foreach (var block in blocks.OfType<JsonObject>())
+        {
+            var type = block["type"]?.GetValue<string>();
+            var part = type switch
+            {
+                "text" => block["text"]?.GetValue<string>(),
+                "tool_use" => $"[{block["name"]}] {block["input"]?.ToJsonString()}",
+                "tool_result" => block["content"] is JsonValue v ? v.ToString() : block["content"]?.ToJsonString(),
+                _ => null,
+            };
+            if (!string.IsNullOrEmpty(part)) text.Append(part).Append('\n');
+        }
+        return text.ToString();
+    }
+
+    /// <summary>About 600 characters around the first term found.</summary>
+    private static string Excerpt(string text, IEnumerable<string> terms)
+    {
+        var at = terms.Select(t => text.IndexOf(t, StringComparison.OrdinalIgnoreCase)).Where(i => i >= 0).DefaultIfEmpty(0).Min();
+        var start = Math.Max(0, at - 300);
+        var length = Math.Min(600, text.Length - start);
+        var slice = text.Substring(start, length).Trim();
+        return (start > 0 ? "…" : "") + slice + (start + length < text.Length ? "…" : "");
+    }
+
     private sealed record AppendMessagesRequest(
         List<AppendMessage>? Messages, string? Title, string? Mode, string? Branch);
 
@@ -570,5 +646,5 @@ public static class AiConversationEndpoints
         JsonNode? Changes, JsonNode? Validation, JsonNode? Metrics, bool? Finished,
         string? ClientId = null);
 
-    private sealed record AppendMessage(string Role, JsonArray? Content);
+    private sealed record AppendMessage(string Role, JsonArray? Content, string? Kind = null);
 }

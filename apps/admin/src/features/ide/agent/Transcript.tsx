@@ -5,6 +5,7 @@ import {
   CirclePause,
   CircleCheck,
   CircleSlash,
+  Layers,
   Loader2,
   RotateCw,
   X,
@@ -70,6 +71,9 @@ function Entry({ entry }: { entry: AgentEntry }) {
           </span>
         </p>
       );
+
+    case 'compaction':
+      return <CompactionDivider entry={entry} />;
 
     case 'notice':
       return (
@@ -271,4 +275,25 @@ function CheckLine({ status }: { status: 'running' | 'passed' | 'failed' | 'skip
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * Where the conversation was compacted (ADR 0034): everything above was summarized, and the agent
+ * continued from the summary. The summary opens on demand; the archive is in AI knowledge.
+ */
+function CompactionDivider({ entry }: { entry: Extract<AgentEntry, { kind: 'compaction' }> }) {
+  const { t } = useTranslation();
+  return (
+    <details className="group rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5">
+        <Layers className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="flex-1">{entry.pending ? t('ide.agent.compacting') : t('ide.agent.compacted')}</span>
+        {entry.archivedAt ? <code className="truncate">{entry.archivedAt}</code> : null}
+      </summary>
+      {entry.summary ? <div className="mt-1.5 whitespace-pre-wrap text-foreground/80">{entry.summary}</div> : null}
+      {entry.saved.length > 0 ? (
+        <p className="mt-1">{t('ide.agent.compactedSaved', { paths: entry.saved.join(', ') })}</p>
+      ) : null}
+    </details>
+  );
 }

@@ -51,15 +51,21 @@ export function kindOfRenderMode(renderMode: string | undefined): SiteAgentKind 
   }
 }
 
-export async function kitFor(kind: SiteAgentKind, opts: { functionsApi?: string } = {}): Promise<SiteKit> {
-  const [{ ALL_TOOLS }, { PREVIEW_TOOLS, SKILL_TOOLS, TENANT_TOOLS }] = await Promise.all([
+export async function kitFor(
+  kind: SiteAgentKind,
+  opts: { functionsApi?: string; siteId?: string } = {},
+): Promise<SiteKit> {
+  const [{ ALL_TOOLS }, { PREVIEW_TOOLS, SKILL_TOOLS, TENANT_TOOLS, fromAssistantTool }, { knowledgeTools }] = await Promise.all([
     import('../ide/agent/checkTools'),
     import('../ide/agent/tenantTools'),
+    import('./knowledgeTools'),
   ]);
+  // Every kind, at every scope: the workspace's knowledge is not tenant reach (ADR 0034).
+  const knowledge = opts.siteId ? knowledgeTools(opts.siteId).map(fromAssistantTool) : [];
   const base = (ALL_TOOLS as ToolSpec<TenantToolContext>[]).filter(
     (tool) => kind === 'react' || !REACT_ONLY_TOOLS.has(tool.name),
   );
-  const reach = [...SKILL_TOOLS, ...PREVIEW_TOOLS, ...TENANT_TOOLS];
+  const reach = [...SKILL_TOOLS, ...PREVIEW_TOOLS, ...TENANT_TOOLS, ...knowledge];
 
   switch (kind) {
     case 'react':
@@ -76,6 +82,7 @@ export async function kitFor(kind: SiteAgentKind, opts: { functionsApi?: string 
             (tool) => tool.name === 'check_types' || !REACT_ONLY_TOOLS.has(tool.name),
           ),
           ...functionsTools(api),
+          ...knowledge,
         ],
         validate: (files) => checkDraft(api, files),
         // A function runs with the language and the web's worker APIs only (ADR 0029).

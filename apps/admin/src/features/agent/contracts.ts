@@ -181,6 +181,14 @@ export type AgentEvent =
    * and saying so is what tells the person to continue it rather than trust it.
    */
   | { type: 'agent.paused'; runId: string; turns: number }
+  /** The conversation reached the compaction threshold and is being summarized (ADR 0034). */
+  | { type: 'context.compacting' }
+  /**
+   * It was: the context now starts from this summary. `archivedAt` is the knowledge path the
+   * compacted part was saved to, `saved` what was learnt from it — both empty when nothing could
+   * be saved.
+   */
+  | { type: 'context.compacted'; summary: string; archivedAt: string | null; saved: string[] }
   | { type: 'agent.failed'; runId: string; message: string }
   | { type: 'agent.stopped'; runId: string };
 
@@ -238,31 +246,8 @@ export interface SearchHit {
 }
 
 // ---------------------------------------------------------------------------
-// Context budget
+// Token estimates
 // ---------------------------------------------------------------------------
-
-/**
- * The ceiling a run reasons inside.
- *
- * <p>Without one the agent's strategy is "read everything", which is correct exactly until the
- * project stops being small. With one, the context manager has to choose — read this file, or
- * summarise what it already has — and choosing is the behaviour the whole rework is trying to
- * buy.</p>
- */
-export interface ContextBudget {
-  /** Ceiling on the assembled request, before the model is called. */
-  maxInputTokens: number;
-}
-
-/**
- * Starting budgets, to be re-tuned against `benchmarks/ai-agent.json` rather than by feel.
- *
- * <p>These are the plan's Phase 6 acceptance targets expressed as limits: a simple edit inside
- * 10k input tokens, a normal feature inside 40k.</p>
- */
-export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
-  maxInputTokens: 40_000,
-};
 
 /**
  * Rough token count for a string.

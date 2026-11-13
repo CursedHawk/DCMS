@@ -283,3 +283,51 @@ test('an agent that finishes while you are elsewhere says so, and the toast open
   // Its row is open on the transcript, not just listed.
   await expect(dock.getByText('Changed the heading on Acme.')).toBeVisible();
 });
+
+test('an agent looks up what was decided, then compacts its conversation into the knowledge store', async ({ page, api }) => {
+  api
+    // A threshold this low compacts at the first call after a tool round.
+    .on('GET', '/api/admin/ai/agent-policy', { maxTurns: 100, assistantMaxTurns: 10, compactAtTokens: 100, prompts: {} })
+    .on('GET', '/api/admin/ai/knowledge', {
+      folder: '',
+      folders: [],
+      entries: [
+        {
+          id: 'k1',
+          siteId: null,
+          path: 'decisions/hero-layout',
+          title: 'Hero layout',
+          description: 'Cards, not a carousel',
+          source: 'agent',
+          updatedAt: '2026-11-13T10:00:00Z',
+        },
+      ],
+    })
+    .on('PUT', '/api/admin/ai/knowledge/entry', ({ body }) => ({ ...(body as object), id: 'k2', updatedAt: '2026-11-13T11:00:00Z' }));
+
+  const model = scriptModel(page, {
+    'Acme site': [
+      { tool: { id: 'k1', name: 'knowledge_search', input: { query: 'hero layout' } } },
+      {
+        text: '<summary>Looked up the hero decision: cards, not a carousel.</summary><knowledge>[{"path":"decisions/hero-copy","title":"Hero copy","description":"Says Get started","body":"Agreed with the user."}]</knowledge>',
+      },
+      { text: 'Kept the cards, as decided.' },
+    ],
+  });
+  model.release();
+
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto(`/sites/${A}`);
+  await openAgent(page);
+  await ask(page, 'Is the hero a carousel?');
+
+  await expect(page.getByText('Kept the cards, as decided.')).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(/Conversation compacted/)).toBeVisible();
+
+  // It searched as this site's agent, and archived the compacted part in the site's knowledge.
+  expect(api.requestsTo('GET', '/api/admin/ai/knowledge').some((r) => r.query.get('siteId') === A)).toBe(true);
+  const saves = api.requestsTo('PUT', '/api/admin/ai/knowledge/entry').map((r) => r.body as Record<string, unknown>);
+  expect(saves[0]).toMatchObject({ siteId: A, source: 'compaction' });
+  expect(String(saves[0].path)).toMatch(/^conversations\/.+\/part-1$/);
+  expect(saves[1]).toMatchObject({ path: 'decisions/hero-copy' });
+});

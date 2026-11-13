@@ -61,6 +61,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     descriptionKey: 'settings.aiHint',
     perm: Perm.AiSettings,
   },
+  // Any member may read what the agents know; curating it takes ai:knowledge (ADR 0034).
+  {
+    to: '/settings/knowledge',
+    labelKey: 'nav.knowledge',
+    descriptionKey: 'settings.knowledgeHint',
+  },
   {
     to: '/settings/audit',
     labelKey: 'nav.audit',
@@ -158,6 +164,9 @@ export const OPEN_ROUTES: readonly string[] = [
   // one permission would refuse people who hold a different one.
   '/settings',
   '/settings/api',
+  // Every member's agents read the knowledge store, so every member may see it; writing is
+  // ai:knowledge, checked on the page and by the server (ADR 0034).
+  '/settings/knowledge',
   '/account',
   '/notifications',
   // Lists only the jobs the caller may see; the server filters, so there is nothing to guard.

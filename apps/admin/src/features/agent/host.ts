@@ -33,6 +33,8 @@ import {
   useAgentHost,
 } from './hostStore';
 import { DEFAULT_MODE } from './modes';
+import { can } from '@dcms/core';
+import { archive, COMPACTION_HEADER, compactions } from './compaction';
 import { agentPolicy } from './policy';
 import { createRunChecks } from './runChecks';
 import { runAgent } from './runtime';
@@ -61,14 +63,17 @@ export async function resumeSite(key: string, conversationId: string): Promise<v
     queryKey: [conversationsKey, 'detail', conversationId],
     staleTime: Infinity,
     queryFn: () =>
-      api.get<{ messages: { seq: number; role: 'user' | 'assistant'; content: unknown }[] }>(
+      api.get<{ messages: { seq: number; role: 'user' | 'assistant'; content: unknown; kind?: string | null }[] }>(
         `/admin/ai/conversations/${conversationId}`,
       ),
   });
   if (sessionOf(key)?.running) return;
   const i = inner(key);
-  i.messages = detail.messages.map((m) => ({ role: m.role, content: m.content }) as Message);
+  i.messages = detail.messages.map(
+    (m) => ({ role: m.role, content: m.content, ...(m.kind === 'compaction' ? { kind: 'compaction' } : {}) }) as Message,
+  );
   i.lastSeq = detail.messages.reduce((max, m) => Math.max(max, m.seq), 0);
+  i.compactedThrough = detail.messages.filter((m) => m.kind === 'compaction').reduce((max, m) => Math.max(max, m.seq), 0);
   patch(key, {
     conversationId,
     unsaved: false,
@@ -221,6 +226,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
   if (queued.origin === 'delegated') {
     i.messages = [];
     i.lastSeq = 0;
+    i.compactedThrough = 0;
     patch(key, { conversationId: null, entries: [], changes: [] });
   }
 
@@ -293,6 +299,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
   let thinkingId: string | null = null;
   let thinkingText = '';
   let checkId: string | null = null;
+  let compactionId: string | null = null;
   let runFromSeq = 0;
   /** Set when the server refused the lease: no run row exists, so nothing is closed. */
   let refused = false;
@@ -419,6 +426,21 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
         break;
       }
 
+      case 'context.compacting':
+        compactionId = uid();
+        push(key, { id: compactionId, kind: 'compaction', summary: '', archivedAt: null, saved: [], pending: true });
+        patch(key, { step: 'compacting the conversation' });
+        break;
+
+      case 'context.compacted': {
+        const done = { summary: event.summary, archivedAt: event.archivedAt, saved: event.saved, pending: false };
+        if (compactionId) updateEntry(key, compactionId, (e) => (e.kind === 'compaction' ? { ...e, ...done } : e));
+        compactionId = null;
+        patch(key, { step: null });
+        void flush();
+        break;
+      }
+
       case 'agent.retrying':
         push(key, { id: uid(), kind: 'retry', attempt: event.attempt, of: event.of, because: event.because });
         break;
@@ -449,7 +471,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
 
   try {
     const current = sessionOf(key)!;
-    const [kit, policy] = await Promise.all([kitFor(current.kind, { functionsApi: current.functionsApi }), agentPolicy()]);
+    const [kit, policy] = await Promise.all([kitFor(current.kind, { functionsApi: current.functionsApi, siteId: key.replace(/^repo:/, '') }), agentPolicy()]);
 
     // The previous run's draft may still be saving a revert; it lands before this one loads.
     await i.draft?.flush();
@@ -533,6 +555,30 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
       system: buildSystemPrompt({ kind: current.kind, siteName: current.siteName, overrides: policy.prompts }),
       // Set per tenant from the platform console (default 100).
       maxIterations: policy.maxTurns,
+      compaction: {
+        atTokens: policy.compactAtTokens,
+        overrides: policy.prompts,
+        // Save what was compacted, so the agent can look back into it; the seq range is what
+        // the stored transcript holds of it once the pending turns are flushed.
+        archive: async (result) => {
+          await flush();
+          const fromSeq = i.compactedThrough + 1;
+          const toSeq = i.lastSeq;
+          const saved = await archive({
+            siteId: key.replace(/^repo:/, ''),
+            conversationId: sessionOf(key)?.conversationId ?? null,
+            title: titleFrom(queued.task),
+            part: compactions(i.messages) + 1,
+            fromSeq,
+            toSeq,
+            summary: result.summary,
+            knowledge: result.knowledge,
+            mayWrite: can(agentPermissions(), 'ai:knowledge'),
+          });
+          i.compactedThrough = toSeq;
+          return saved;
+        },
+      },
       tools,
       context,
       mode: current.mode,
@@ -746,6 +792,12 @@ export function projectEntries(messages: readonly Message[]): AgentEntry[] {
   const entries: AgentEntry[] = [];
 
   for (const message of messages) {
+    if (message.kind === 'compaction') {
+      // The divider, not a bubble: the person did not write it.
+      const text = (message.content as { type: string; text?: string }[]).map((b) => b.text ?? '').join('');
+      entries.push({ id: uid(), kind: 'compaction', summary: text.replace(COMPACTION_HEADER, '').trim(), archivedAt: null, saved: [] });
+      continue;
+    }
     if (typeof message.content === 'string') {
       entries.push({ id: uid(), kind: message.role === 'user' ? 'user' : 'assistant', text: message.content });
       continue;

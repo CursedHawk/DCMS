@@ -39,3 +39,4 @@ as their implementation phase lands.
 - [0031](0031-functions-packages-and-local-development.md) — Functions: external APIs through a checked broker, desktop development with the dcms CLI and device sign-in, npm and NuGet packages locked and verified
 - [0032](0032-dcms-cli-and-desktop-agents.md) — The dcms command line in .NET: full workspace control from the desktop for people and their own AI agents, scoped on the server
 - [0033](0033-background-agents.md) — Background agents: site agents and the assistant outlive the page, one agent per site, the assistant delegates site changes
+- [0034](0034-compaction-and-knowledge.md) — Whole-conversation compaction (summary, append-only after, cache-friendly) and the AI knowledge store agents read on demand, archiving each compacted part

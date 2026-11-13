@@ -112,6 +112,10 @@ function StepBody({
     return <AgentMarkdown text={step.text} className="max-w-[68ch] leading-relaxed" />;
   }
 
+  if (step.kind === 'compaction') {
+    return <CompactionNote step={step} />;
+  }
+
   if (step.kind === 'error') {
     return (
       <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-destructive">
@@ -153,6 +157,7 @@ const isTool = (step: Step): step is ToolStep => step.kind === 'tool';
 function nodeStatus(step: Step): StepStatus | 'said' | 'asked' {
   if (step.kind === 'tool') return step.status;
   if (step.kind === 'error') return 'error';
+  if (step.kind === 'compaction') return step.pending ? 'running' : 'said';
   return step.kind === 'user' ? 'asked' : 'said';
 }
 
@@ -160,4 +165,19 @@ function format(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/** Where the conversation was compacted: the summary it continued from, open on demand. */
+function CompactionNote({ step }: { step: Extract<Step, { kind: 'compaction' }> }) {
+  const { t } = useTranslation();
+  return (
+    <details className="rounded-md border border-dashed px-2.5 py-1.5 text-xs text-muted-foreground">
+      <summary className="cursor-pointer">
+        {step.pending ? t('ide.agent.compacting') : t('ide.agent.compacted')}
+        {step.archivedAt ? <code className="ml-1.5">{step.archivedAt}</code> : null}
+      </summary>
+      {step.summary ? <div className="mt-1.5 whitespace-pre-wrap text-foreground/80">{step.summary}</div> : null}
+      {step.saved.length > 0 ? <p className="mt-1">{t('ide.agent.compactedSaved', { paths: step.saved.join(', ') })}</p> : null}
+    </details>
+  );
 }

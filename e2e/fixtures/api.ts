@@ -318,6 +318,7 @@ export function adminApi(
     // The tenant's AI agent policy (platform console): the defaults unless a test says otherwise.
     .on('GET', '/api/admin/ai/agent-policy', { maxTurns: 100, assistantMaxTurns: 10, compactAtTokens: 100000, prompts: {} })
     .on('GET', '/api/admin/ai/user-credentials', [])
+    .on('GET', '/api/admin/ai/knowledge', { folder: '', folders: [], entries: [] })
     .on('GET', '/api/admin/openapi.json', { openapi: '3.1.0', info: { title: 'DCMS', version: '1' }, paths: {} })
     .on('POST', '/api/admin/content/:id/publish', { status: 'published' })
     .on('POST', '/api/admin/content/:id/unpublish', { status: 'draft' })

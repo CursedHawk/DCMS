@@ -34,6 +34,13 @@ public sealed class AiMessage
     /// <summary>The content blocks as JSON. Always an array, even for a one-line question.</summary>
     public string Content { get; set; } = "[]";
 
+    /// <summary>
+    /// Null for an ordinary turn; <c>compaction</c> for the summary a conversation was compacted
+    /// into (ADR 0034). The model's context starts at the last one; the transcript keeps
+    /// everything before it.
+    /// </summary>
+    public string? Kind { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public AiConversation? Conversation { get; set; }

@@ -26,6 +26,13 @@ public static class PlatformPermissions
     /// answer for the workspace.</para>
     /// </summary>
     public const string AiChatsReadAll = "ai:chats:read-all";
+
+    /// <summary>
+    /// Write and delete entries of the AI knowledge store, in the console or through an agent
+    /// (ADR 0034). Reading needs nothing: every member's agents read it. Writing does, because
+    /// what is written there is read by every other member's agents.
+    /// </summary>
+    public const string AiKnowledge = "ai:knowledge";
     public const string AnalyticsRead = "analytics:read";
     public const string ContentRead = "content:read";
     public const string ContentWrite = "content:write";
@@ -48,7 +55,7 @@ public static class PlatformPermissions
     public static readonly IReadOnlyList<string> All =
     [
         TenantSettings, MembersManage, RolesManage, DomainsManage, PluginsManage,
-        MediaRead, MediaWrite, SiteEdit, SitePublish, AiSettings, AiChatsReadAll, AnalyticsRead,
+        MediaRead, MediaWrite, SiteEdit, SitePublish, AiSettings, AiChatsReadAll, AiKnowledge, AnalyticsRead,
         ContentRead, ContentWrite, ContentPublish, ChatRead, ChatManage, AuditRead, AuditExport,
         EnvironmentsManage, EnvironmentsPromote,
     ];

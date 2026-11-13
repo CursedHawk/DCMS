@@ -511,6 +511,7 @@ app.MapAlertEndpoints();
 app.MapSitePreview();
 app.MapAiSettingsEndpoints();
 app.MapAiAgentPolicyEndpoints();
+app.MapAiKnowledgeEndpoints();
 app.MapAiAgentEndpoints();
 app.MapAiConversationEndpoints();
 app.MapOpenApiPreview();

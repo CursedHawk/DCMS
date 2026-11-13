@@ -37,8 +37,9 @@ export interface SystemPromptContext {
 /** The text of each kind's prompt lives in `@dcms/core`'s catalogue, where the console shows it. */
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const key: AiPromptKey = `site.${ctx.kind ?? 'react'}`;
-  return fillPrompt(aiPrompt(key, ctx.overrides), {
+  const prompt = fillPrompt(aiPrompt(key, ctx.overrides), {
     site: ctx.siteName ? ` ("${ctx.siteName}")` : '',
     rules: aiPrompt('site.rules', ctx.overrides),
   });
+  return `${prompt}\n\n${aiPrompt('knowledge', ctx.overrides)}`;
 }

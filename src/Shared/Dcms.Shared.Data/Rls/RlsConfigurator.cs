@@ -78,6 +78,8 @@ public static class RlsConfigurator
         ("ai", "conversations"),
         ("ai", "messages"),
         ("ai", "runs"),
+        // Decisions and setups agents and members saved (ADR 0034): read by every agent of the tenant.
+        ("ai", "knowledge"),
         ("search", "search_documents"),
         ("analytics", "events"),
         ("analytics", "daily_rollups"),

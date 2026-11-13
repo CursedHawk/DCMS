@@ -585,3 +585,92 @@ describe('deterministic repair loop', () => {
     expect(validate).not.toHaveBeenCalled();
   });
 });
+
+describe('compaction (ADR 0034)', () => {
+  /** A transport that records every request and answers by what it was asked. */
+  function recording(turns: Partial<AssistantTurn>[]) {
+    const bodies: Record<string, unknown>[] = [];
+    let i = 0;
+    const transport: ModelTransport = async (body) => {
+      bodies.push(JSON.parse(JSON.stringify(body)));
+      const last = (body.messages as Message[]).at(-1);
+      if (JSON.stringify(last).includes('Do not call any tools while writing this summary')) {
+        return {
+          content: [{ type: 'text', text: '<summary>Read the file; half done.</summary><knowledge>[]</knowledge>' }],
+          stopReason: 'end_turn',
+          usage: null,
+          model: 'test-model',
+        };
+      }
+      const turn = turns[Math.min(i++, turns.length - 1)];
+      return {
+        content: turn.content ?? [],
+        stopReason: turn.stopReason ?? 'end_turn',
+        usage: turn.usage ?? null,
+        model: 'test-model',
+      };
+    };
+    return { transport, bodies };
+  }
+
+  it('summarizes the whole conversation once the prompt reaches the threshold, and carries on from the summary', async () => {
+    const { transport, bodies } = recording([
+      {
+        ...useTools({ id: 't1', name: 'read' }),
+        usage: { inputTokens: 500, cacheReadTokens: 60_000, cacheCreationTokens: 0, outputTokens: 100 },
+      },
+      say('Done.'),
+    ]);
+    const archived: string[] = [];
+    const { events, messages } = run({
+      transport,
+      tools: [tool('read')],
+      compaction: {
+        atTokens: 50_000,
+        archive: async (result) => {
+          archived.push(result.summary);
+          return { archivedAt: 'conversations/x/part-1', saved: [] };
+        },
+      },
+    });
+    const seen = await events;
+
+    // Three calls: the work, the summary (the previous request plus one message), the work again.
+    expect(bodies).toHaveLength(3);
+    const [first, summary, after] = bodies as { messages: Message[] }[];
+    expect(JSON.stringify(summary.messages.slice(0, -1))).toBe(JSON.stringify([...first.messages, messages[1], messages[2]]));
+
+    // Afterwards only the continuation is sent: no earlier turn, no thinking, no orphan.
+    expect(after.messages).toHaveLength(1);
+    expect(JSON.stringify(after.messages[0])).toContain('Read the file; half done.');
+    expect(JSON.stringify(after.messages[0])).toContain('conversations/x/part-1');
+    expect(after.messages[0]).not.toHaveProperty('kind');
+
+    // The transcript keeps everything, the summary marked as such.
+    expect(messages.filter((m) => m.kind === 'compaction')).toHaveLength(1);
+    expect(archived).toEqual(['Read the file; half done.']);
+    expect(seen.map((e) => e.type)).toEqual(expect.arrayContaining(['context.compacting', 'context.compacted', 'agent.completed']));
+  });
+
+  it('does not compact below the threshold, and never without the setting', async () => {
+    const { transport, bodies } = recording([
+      { ...useTools({ id: 't1', name: 'read' }), usage: { inputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0, outputTokens: 10 } },
+      say('Done.'),
+    ]);
+    await run({ transport, tools: [tool('read')], compaction: { atTokens: 50_000 } }).events;
+    expect(bodies).toHaveLength(2);
+    // Append-only: the second request starts with the first one's messages.
+    const [first, second] = bodies as { messages: Message[] }[];
+    expect(JSON.stringify(second.messages.slice(0, first.messages.length))).toBe(JSON.stringify(first.messages));
+  });
+
+  it('a summary that fails ends the run as failed, rather than trimming silently', async () => {
+    const failing: ModelTransport = async (body) => {
+      const last = (body.messages as Message[]).at(-1);
+      if (JSON.stringify(last).includes('Do not call any tools')) throw new Error('provider down');
+      return { content: [{ type: 'tool_use', id: 't1', name: 'read', input: {} }], stopReason: 'tool_use', usage: { inputTokens: 90_000, cacheReadTokens: 0, cacheCreationTokens: 0, outputTokens: 0 }, model: 'm' };
+    };
+    const seen = await run({ transport: failing, tools: [tool('read')], compaction: { atTokens: 50_000 } }).events;
+    expect(seen.at(-1)).toMatchObject({ type: 'agent.failed', message: 'provider down' });
+  });
+});

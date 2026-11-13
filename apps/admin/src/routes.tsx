@@ -24,6 +24,7 @@ const page = <T extends string>(load: () => Promise<Record<T, React.FunctionComp
 
 const AccountPage = page(() => import('./features/account/AccountPage'), 'AccountPage');
 const AiSettingsPage = page(() => import('./features/ai/AiSettingsPage'), 'AiSettingsPage');
+const KnowledgePage = page(() => import('./features/ai/KnowledgePage'), 'KnowledgePage');
 const AssistantPage = page(() => import('./features/assistant/AssistantPage'), 'AssistantPage');
 const AuditPage = page(() => import('./features/audit/AuditPage'), 'AuditPage');
 const ContentPage = page(() => import('./features/content/ContentPage'), 'ContentPage');
@@ -249,6 +250,7 @@ const settingsMembersRoute = settingsChild('members', MembersPage);
 const settingsRolesRoute = settingsChild('roles', RolesPage);
 const settingsDomainsRoute = settingsChild('domains', DomainsPage);
 const settingsAiRoute = settingsChild('ai', AiSettingsPage);
+const settingsKnowledgeRoute = settingsChild('knowledge', KnowledgePage);
 const settingsAuditRoute = settingsChild('audit', AuditPage);
 const settingsApiRoute = settingsChild('api', OpenApiPage);
 const settingsConnectionsRoute = settingsChild('connections', ConnectionsPage);
@@ -346,6 +348,7 @@ export const routeTree = rootRoute.addChildren([
       settingsRolesRoute,
       settingsDomainsRoute,
       settingsAiRoute,
+      settingsKnowledgeRoute,
       settingsAuditRoute,
       settingsConnectionsRoute,
       settingsUsageRoute,
