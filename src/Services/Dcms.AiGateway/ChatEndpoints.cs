@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using Dcms.AiGateway.Providers;
 using Dcms.Shared.Telemetry;
+using Dcms.Shared.Data.Ai;
+using Dcms.Shared.Data.Rls;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AiGateway;
 
@@ -89,7 +92,34 @@ public static class ChatEndpoints
             }
         }).RequireAuthorization();
 
+        // The site chatbot's prompt overrides from the platform console. The gateway already reads
+        // the tenant's AI settings for every call, so the bot (in content-api) asks here rather
+        // than being given a grant on the ai schema. Only server-built prompts leave: the browser
+        // agents read theirs from admin-api.
+        app.MapGet("/v1/prompt-overrides", async (Guid tenantId, AiDbContext db, CancellationToken ct) =>
+            tenantId == Guid.Empty
+                ? Results.BadRequest(new { error = "tenantId is required." })
+                : Results.Ok(await ServerPromptOverridesAsync(db, tenantId, ct)))
+            .RequireAuthorization();
+
         return app;
+    }
+
+    /// <summary>
+    /// A tenant's overrides of the server-built prompts, read as that tenant: the gateway is
+    /// called service to service, so nothing ambient tells the database whose row this is.
+    /// </summary>
+    public static async Task<Dictionary<string, string>> ServerPromptOverridesAsync(
+        AiDbContext db, Guid tenantId, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(tenantId);
+        var json = await db.Settings.AsNoTracking()
+            .Where(s => s.TenantId == tenantId)
+            .Select(s => s.PromptOverridesJson)
+            .FirstOrDefaultAsync(ct);
+        return ServerPrompts.ParseOverrides(json)
+            .Where(kv => ServerPrompts.Keys.Contains(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
     }
 
     public sealed record ChatCompletionRequest(Guid TenantId, string Prompt, string? System, int? MaxTokens, Guid? UserId = null);

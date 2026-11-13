@@ -22,11 +22,38 @@ test('an operator raises the turn limit and rewrites one prompt for a tenant', a
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('AI agent policy saved')).toBeVisible();
   const put = api.requestsTo('PUT', `/api/platform/tenants/${data.TENANT.tenantId}/ai-agent-policy`).at(-1);
-  expect(put?.body).toEqual({ maxTurns: 150, prompts: { 'site.react': 'You build{{site}} for HR teams.\n\n{{rules}}' } });
+  expect(put?.body).toEqual({
+    maxTurns: 150,
+    assistantMaxTurns: null,
+    compactAtTokens: null,
+    prompts: { 'site.react': 'You build{{site}} for HR teams.\n\n{{rules}}' },
+  });
 });
 
 test('a turn limit out of bounds cannot be saved', async ({ page }) => {
   await page.goto(`/tenants/${data.TENANT.tenantId}`);
   await page.getByLabel('Turn limit per site agent run').fill('501');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+});
+
+test("the site chatbot's prompt and the assistant's limits are set here too", async ({ page, api }) => {
+  await page.goto(`/tenants/${data.TENANT.tenantId}`);
+
+  await page.getByLabel('Turn limit per assistant question').fill('25');
+  await page.getByLabel('Compact conversations at (tokens)').fill('60000');
+  // The chatbot's prompt is built on the server; the console shows the one it sends.
+  await page.getByRole('button', { name: /^Site chatbot/ }).click();
+  const prompt = page.getByLabel('Site chatbot prompt');
+  await expect(prompt).toHaveValue(/^You are \{\{botName\}\}/);
+  await prompt.fill('You are {{botName}}, the HR helpdesk. Answer in English.');
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('AI agent policy saved')).toBeVisible();
+  const put = api.requestsTo('PUT', `/api/platform/tenants/${data.TENANT.tenantId}/ai-agent-policy`).at(-1);
+  expect(put?.body).toEqual({
+    maxTurns: null,
+    assistantMaxTurns: 25,
+    compactAtTokens: 60000,
+    prompts: { chatbot: 'You are {{botName}}, the HR helpdesk. Answer in English.' },
+  });
 });

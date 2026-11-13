@@ -30,6 +30,18 @@ public sealed class TenantAiSettings
     public int? AgentMaxTurns { get; set; }
 
     /// <summary>
+    /// How many model turns the console assistant may take for one question. Null is
+    /// <see cref="DefaultAssistantMaxTurns"/>. Platform console only.
+    /// </summary>
+    public int? AssistantMaxTurns { get; set; }
+
+    /// <summary>
+    /// The prompt size, in tokens, at which an agent's conversation is compacted into a summary of
+    /// the whole of it. Null is <see cref="DefaultCompactAtTokens"/>. Platform console only.
+    /// </summary>
+    public int? CompactAtTokens { get; set; }
+
+    /// <summary>
     /// The tenant's overrides of the agents' system prompts, a JSON object keyed by the catalogue
     /// in <c>packages/core/src/aiPrompts.ts</c>. Null is none. Platform console only, like
     /// <see cref="AgentMaxTurns"/>.
@@ -41,4 +53,9 @@ public sealed class TenantAiSettings
 
     public const int DefaultAgentMaxTurns = 100;
     public const int MaxAgentMaxTurns = 500;
+    public const int DefaultAssistantMaxTurns = 10;
+    public const int MaxAssistantMaxTurns = 100;
+    public const int DefaultCompactAtTokens = 100_000;
+    public const int MinCompactAtTokens = 20_000;
+    public const int MaxCompactAtTokens = 800_000;
 }

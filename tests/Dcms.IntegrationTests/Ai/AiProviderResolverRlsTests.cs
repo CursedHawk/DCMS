@@ -73,6 +73,31 @@ public sealed class AiProviderResolverRlsTests : IAsyncLifetime
         resolved.Model.Should().Be("tenant-model");
     }
 
+    [DockerFact]
+    public async Task The_chatbot_gets_only_its_own_tenants_server_prompt_overrides()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tenant = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        await using (var owner = new AiDbContext(
+            new DbContextOptionsBuilder<AiDbContext>().UseNpgsql(_postgres.GetConnectionString()).Options))
+        {
+            owner.Settings.Add(new TenantAiSettings
+            {
+                TenantId = tenant,
+                PromptOverridesJson = """{"chatbot":"You are {{botName}}, the HR desk.","site.react":"browser only"}""",
+            });
+            owner.Settings.Add(new TenantAiSettings { TenantId = other, PromptOverridesJson = """{"chatbot":"other"}""" });
+            await owner.SaveChangesAsync(ct);
+        }
+
+        await using var app = AppRoleContext();
+        var overrides = await AiGatewayApp::Dcms.AiGateway.ChatEndpoints.ServerPromptOverridesAsync(app, tenant, ct);
+
+        // Its own row under the app role, and only what the server builds.
+        overrides.Should().Equal(new Dictionary<string, string> { ["chatbot"] = "You are {{botName}}, the HR desk." });
+    }
+
     private AiDbContext AppRoleContext()
     {
         var connection = new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())

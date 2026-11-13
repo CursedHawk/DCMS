@@ -41,12 +41,6 @@ import { agentPolicy } from '../agent/policy';
 import { ASK_USER, type AgentAnswers, describeAsk, formatAnswers, parseQuestions } from '../agent/ask';
 import type { PendingQuestion } from '../agent/hostStore';
 
-/*
- * Shorter than a site agent's limit (100 unless the platform console sets another). That one is writing code across many files and genuinely
- * needs the rounds; this one answers a question about a workspace, and a loop that keeps going
- * past ten turns is not converging, it is stuck — and every turn costs the operator money.
- */
-const MAX_ITERATIONS = 10;
 const MAX_TOKENS = 4000;
 
 /** A call waiting on the operator, with everything the card needs to describe it honestly. */
@@ -393,7 +387,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
           // The prompts this tenant's agents use (platform console); the shipped ones if unreadable.
           const policy = await agentPolicy(queryClient);
-          for (let round = 0; round < MAX_ITERATIONS; round++) {
+          for (let round = 0; round < policy.assistantMaxTurns; round++) {
             let streamed = '';
             /*
              * The bubble this turn is writing into, created on its first delta.

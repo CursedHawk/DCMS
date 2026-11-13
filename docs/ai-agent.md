@@ -87,10 +87,20 @@ the admin SPA builds its agents' prompts from and the console shows — so what 
 operator reads there is what an agent gets. An override replaces one entry's whole
 text; `{{site}}` and `{{rules}}` are filled when the prompt is built. Only
 overrides are stored, so a tenant without any follows every change to the shipped
-prompts. The server keeps its own list of keys; `AiAgentPolicyTests` fails if it
-drifts from the catalogue. The console assistant's own turn limit (10) and the
-site chatbot's prompt (the plugin's per-instance instructions, server-side) are
-not part of the policy.
+prompts. The server keeps its own list of keys; `AiPromptCatalogueTests` fails if
+it drifts from the catalogue.
+
+The policy also holds the console assistant's turn limit per question (10 by
+default, 1–100) and the prompt size at which a conversation is compacted
+(100 000 tokens by default, 20 000–800 000).
+
+The site chatbot's prompts are built on the server, so their shipped text lives in
+C# (`Dcms.Shared.Data/Ai/ServerPrompts.cs`: `chatbot`, `chatbot.grounded`,
+`chatbot.ungrounded`, `chatbot.tools`) and admin-api sends their definitions to the
+console with the policy. The bot runs in content-api, which has no grant on the
+`ai` schema; it asks ai-gateway (`GET /v1/prompt-overrides`, which already reads
+the tenant's AI settings) and caches the answer for a minute. Any failure means the
+shipped prompt. The instance's own instructions still follow the prompt as before.
 
 ### The build gate
 

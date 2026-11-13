@@ -111,6 +111,23 @@ export interface AgentPolicy {
   maxTurns: number | null;
   defaultMaxTurns: number;
   maxMaxTurns: number;
+  assistantMaxTurns: number | null;
+  defaultAssistantMaxTurns: number;
+  maxAssistantMaxTurns: number;
+  compactAtTokens: number | null;
+  defaultCompactAtTokens: number;
+  minCompactAtTokens: number;
+  maxCompactAtTokens: number;
+  prompts: Record<string, string>;
+  /** Prompts built on the server (the site chatbot's), which @dcms/core does not carry. */
+  serverPrompts: { key: string; title: string; usedFor: string; placeholders: string[]; text: string }[];
+}
+
+/** What the console saves: null limits are the defaults, absent prompts the shipped ones. */
+export interface AgentPolicyUpdate {
+  maxTurns: number | null;
+  assistantMaxTurns: number | null;
+  compactAtTokens: number | null;
   prompts: Record<string, string>;
 }
 
@@ -125,7 +142,7 @@ export function useAgentPolicy(tenantId: string) {
 export function useSetAgentPolicy(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (policy: { maxTurns: number | null; prompts: Record<string, string> }) =>
+    mutationFn: (policy: AgentPolicyUpdate) =>
       platformApi.put<void>(`/tenants/${tenantId}/ai-agent-policy`, policy),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-tenants', 'ai-agent-policy', tenantId] }),
   });

@@ -25,6 +25,8 @@ public class AiAgentPolicyTests(AdminApiFixture fixture)
 
         var policy = await PolicyAsync(client, owner, slug, ct);
         policy.GetProperty("maxTurns").GetInt32().Should().Be(100);
+        policy.GetProperty("assistantMaxTurns").GetInt32().Should().Be(10);
+        policy.GetProperty("compactAtTokens").GetInt32().Should().Be(100_000);
         policy.GetProperty("prompts").EnumerateObject().Should().BeEmpty();
     }
 
@@ -66,6 +68,34 @@ public class AiAgentPolicyTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task The_console_sets_the_assistant_limit_compaction_and_the_chatbot_prompt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (tenantId, owner, slug) = await TenantAsync(client, ct);
+
+        (await SetAsync(client, tenantId, new
+        {
+            assistantMaxTurns = 30,
+            compactAtTokens = 60_000,
+            prompts = new Dictionary<string, string> { ["chatbot"] = "You are {{botName}}, the HR desk." },
+        }, ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var policy = await PolicyAsync(client, owner, slug, ct);
+        policy.GetProperty("maxTurns").GetInt32().Should().Be(100);
+        policy.GetProperty("assistantMaxTurns").GetInt32().Should().Be(30);
+        policy.GetProperty("compactAtTokens").GetInt32().Should().Be(60_000);
+
+        // The console is shown the chatbot's prompts, which only the server can build.
+        var console = await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/tenants/{tenantId}/ai-agent-policy",
+            Guid.NewGuid(), null, asSuperAdmin: true), ct);
+        var body = await console.Content.ReadFromJsonAsync<JsonElement>(ct);
+        body.GetProperty("serverPrompts").EnumerateArray().Select(p => p.GetProperty("key").GetString())
+            .Should().Contain(["chatbot", "chatbot.grounded", "chatbot.ungrounded", "chatbot.tools"]);
+        body.GetProperty("prompts").GetProperty("chatbot").GetString().Should().Be("You are {{botName}}, the HR desk.");
+    }
+
+    [DockerFact]
     public async Task Only_the_console_sets_it_and_only_within_bounds()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -78,7 +108,9 @@ public class AiAgentPolicyTests(AdminApiFixture fixture)
 
         (await SetAsync(client, tenantId, new { maxTurns = 0 }, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await SetAsync(client, tenantId, new { maxTurns = 501 }, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await SetAsync(client, tenantId, new { prompts = new Dictionary<string, string> { ["chatbot"] = "x" } }, ct))
+        (await SetAsync(client, tenantId, new { assistantMaxTurns = 101 }, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await SetAsync(client, tenantId, new { compactAtTokens = 19_999 }, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await SetAsync(client, tenantId, new { prompts = new Dictionary<string, string> { ["nope"] = "x" } }, ct))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await SetAsync(client, Guid.NewGuid(), new { maxTurns = 10 }, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -136,7 +168,7 @@ public partial class AiPromptCatalogueTests
         var keys = CatalogueKey().Matches(catalogue).Select(m => m.Groups[1].Value).ToList();
 
         keys.Should().NotBeEmpty();
-        keys.Should().BeEquivalentTo(AiAgentPolicyEndpoints.PromptKeys);
+        keys.Should().BeEquivalentTo(AiAgentPolicyEndpoints.BrowserPromptKeys);
     }
 
     [GeneratedRegex(@"^\s*key: '([\w.]+)',", RegexOptions.Multiline)]

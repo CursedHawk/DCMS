@@ -20,6 +20,8 @@ using Microsoft.Extensions.Logging;
 using Dcms.Shared.Data.Rls;
 
 using Dcms.Shared.Data;
+using Dcms.Shared.Data.Ai;
+using System.Collections.Concurrent;
 namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
@@ -210,7 +212,7 @@ public sealed class ChatBotResponder(
         IServiceTokenProvider tokens, Guid tenantId, BotConfig config, string? context,
         IEnumerable<(ChatSender Sender, string Body)> history, CancellationToken ct)
     {
-        var system = SystemPrompt(config, context);
+        var system = await SystemPromptAsync(tokens, tenantId, config, context, withTools: false, ct);
 
         var transcript = new StringBuilder();
         foreach (var (sender, body) in history)
@@ -259,7 +261,7 @@ public sealed class ChatBotResponder(
         var token = await tokens.GetTokenAsync(AiScope, ct);
         var reply = await ContractToolLoop.RunAsync(
             httpClientFactory.CreateClient("ai-gateway"), token, tenantId,
-            SystemPrompt(config, context) + "\nUse the tools when they can answer the visitor's question from this website's data.",
+            await SystemPromptAsync(tokens, tenantId, config, context, withTools: true, ct),
             Conversation(history), tools,
             async (tool, input) =>
             {
@@ -310,32 +312,51 @@ public sealed class ChatBotResponder(
         return new JsonArray(turns.Select(t => (JsonNode)new JsonObject { ["role"] = t.Role, ["content"] = t.Text }).ToArray());
     }
 
-    private static string SystemPrompt(BotConfig config, string? context)
+    /// <summary>
+    /// The system prompt, from the shared catalogue (<see cref="ServerPrompts"/>) with the tenant's
+    /// overrides from the platform console applied. Without overrides it is the prompt the bot
+    /// always sent.
+    /// </summary>
+    private async Task<string> SystemPromptAsync(
+        IServiceTokenProvider tokens, Guid tenantId, BotConfig config, string? context, bool withTools, CancellationToken ct) =>
+        ServerPrompts.ChatbotPrompt(config.BotName, config.Instructions, context, withTools,
+            await PromptOverridesAsync(tokens, tenantId, ct));
+
+    // ponytail: one process-wide cache keyed by tenant, never evicted; a size bound if tenant counts grow large.
+    private static readonly ConcurrentDictionary<Guid, (DateTimeOffset At, Dictionary<string, string> Overrides)> PromptCache = new();
+
+    /// <summary>
+    /// The tenant's chatbot prompt overrides, through ai-gateway (which already reads the tenant's
+    /// AI settings), cached for a minute. Any failure is "no overrides": a reply with the shipped
+    /// prompt beats no reply.
+    /// </summary>
+    private async Task<Dictionary<string, string>> PromptOverridesAsync(
+        IServiceTokenProvider tokens, Guid tenantId, CancellationToken ct)
     {
-        var system = new StringBuilder();
-        system.Append("You are ").Append(config.BotName)
-            .AppendLine(", a helpful assistant embedded on a website, chatting with a visitor.");
-        system.AppendLine("Be concise, friendly and accurate. Answer in the visitor's language.");
-        if (!string.IsNullOrWhiteSpace(config.Instructions))
+        if (PromptCache.TryGetValue(tenantId, out var hit) && DateTimeOffset.UtcNow - hit.At < TimeSpan.FromMinutes(1))
         {
-            system.AppendLine().AppendLine(config.Instructions);
-        }
-        if (!string.IsNullOrWhiteSpace(context))
-        {
-            system.AppendLine()
-                .AppendLine("Use the following content from this website to answer. Prefer it over prior knowledge. "
-                            + "If the answer isn't in it and you're unsure, say so plainly and offer to connect a team member.")
-                .AppendLine()
-                .AppendLine("=== SITE CONTENT ===")
-                .AppendLine(context)
-                .AppendLine("=== END SITE CONTENT ===");
-        }
-        else
-        {
-            system.AppendLine("If you don't know the answer, say so plainly and offer to connect a team member.");
+            return hit.Overrides;
         }
 
-        return system.ToString();
+        Dictionary<string, string> found = [];
+        try
+        {
+            var token = await tokens.GetTokenAsync(AiScope, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/prompt-overrides?tenantId={tenantId}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await httpClientFactory.CreateClient("ai-gateway").SendAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                found = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>(ct) ?? [];
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            logger.LogDebug(ex, "No chatbot prompt overrides for tenant {TenantId}; using the shipped prompt", tenantId);
+        }
+
+        PromptCache[tenantId] = (DateTimeOffset.UtcNow, found);
+        return found;
     }
 
     private sealed record ChatCompletion(string Provider, string Model, string Text);

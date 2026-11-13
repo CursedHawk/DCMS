@@ -23,12 +23,17 @@ namespace Dcms.AdminApi.Ai;
 /// </summary>
 public static class AiAgentPolicyEndpoints
 {
-    /// <summary>The catalogue's keys (<c>packages/core/src/aiPrompts.ts</c>); a test keeps them in step.</summary>
-    public static readonly IReadOnlySet<string> PromptKeys = new HashSet<string>(StringComparer.Ordinal)
+    /// <summary>The browser catalogue's keys (<c>packages/core/src/aiPrompts.ts</c>); a test keeps them in step.</summary>
+    public static readonly IReadOnlySet<string> BrowserPromptKeys = new HashSet<string>(StringComparer.Ordinal)
     {
         "site.react", "site.static", "site.visual", "site.functions", "site.rules",
         "assistant", "assistant.writes", "assistant.attachments", "assistant.dataPlatform",
+        "compaction",
     };
+
+    /// <summary>Every prompt a tenant may override: the browser agents' and the server-built ones.</summary>
+    public static readonly IReadOnlySet<string> PromptKeys =
+        BrowserPromptKeys.Concat(ServerPrompts.Keys).ToHashSet(StringComparer.Ordinal);
 
     private const int MaxPromptChars = 100_000;
 
@@ -45,6 +50,8 @@ public static class AiAgentPolicyEndpoints
             return Results.Ok(new
             {
                 maxTurns = settings?.AgentMaxTurns ?? TenantAiSettings.DefaultAgentMaxTurns,
+                assistantMaxTurns = settings?.AssistantMaxTurns ?? TenantAiSettings.DefaultAssistantMaxTurns,
+                compactAtTokens = settings?.CompactAtTokens ?? TenantAiSettings.DefaultCompactAtTokens,
                 prompts = Prompts(settings),
             });
         }).RequireAuthorization();
@@ -60,7 +67,19 @@ public static class AiAgentPolicyEndpoints
                 maxTurns = settings?.AgentMaxTurns,
                 defaultMaxTurns = TenantAiSettings.DefaultAgentMaxTurns,
                 maxMaxTurns = TenantAiSettings.MaxAgentMaxTurns,
+                assistantMaxTurns = settings?.AssistantMaxTurns,
+                defaultAssistantMaxTurns = TenantAiSettings.DefaultAssistantMaxTurns,
+                maxAssistantMaxTurns = TenantAiSettings.MaxAssistantMaxTurns,
+                compactAtTokens = settings?.CompactAtTokens,
+                defaultCompactAtTokens = TenantAiSettings.DefaultCompactAtTokens,
+                minCompactAtTokens = TenantAiSettings.MinCompactAtTokens,
+                maxCompactAtTokens = TenantAiSettings.MaxCompactAtTokens,
                 prompts = Prompts(settings),
+                // The server-built prompts, which the console cannot read from @dcms/core.
+                serverPrompts = ServerPrompts.All.Select(p => new
+                {
+                    key = p.Key, title = p.Title, usedFor = p.UsedFor, placeholders = p.Placeholders, text = p.Text,
+                }),
             });
         })
             .RequireAuthorization()
@@ -76,6 +95,18 @@ public static class AiAgentPolicyEndpoints
             if (body.MaxTurns is { } turns && turns is < 1 or > TenantAiSettings.MaxAgentMaxTurns)
             {
                 return Results.BadRequest(new { error = $"The turn limit must be between 1 and {TenantAiSettings.MaxAgentMaxTurns}." });
+            }
+            if (body.AssistantMaxTurns is { } assistantTurns && assistantTurns is < 1 or > TenantAiSettings.MaxAssistantMaxTurns)
+            {
+                return Results.BadRequest(new { error = $"The assistant's turn limit must be between 1 and {TenantAiSettings.MaxAssistantMaxTurns}." });
+            }
+            if (body.CompactAtTokens is { } compactAt
+                && compactAt is < TenantAiSettings.MinCompactAtTokens or > TenantAiSettings.MaxCompactAtTokens)
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"Compaction must start between {TenantAiSettings.MinCompactAtTokens} and {TenantAiSettings.MaxCompactAtTokens} tokens.",
+                });
             }
 
             var prompts = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -108,8 +139,12 @@ public static class AiAgentPolicyEndpoints
                 .For("tenant", tenantId, tenant.Identifier)
                 .With("maxTurnsFrom", settings.AgentMaxTurns)
                 .With("maxTurnsTo", body.MaxTurns)
+                .With("assistantMaxTurnsTo", body.AssistantMaxTurns)
+                .With("compactAtTokensTo", body.CompactAtTokens)
                 .With("prompts", string.Join(", ", prompts.Keys.Order(StringComparer.Ordinal)));
             settings.AgentMaxTurns = body.MaxTurns;
+            settings.AssistantMaxTurns = body.AssistantMaxTurns;
+            settings.CompactAtTokens = body.CompactAtTokens;
             settings.PromptOverridesJson = prompts.Count == 0 ? null : JsonSerializer.Serialize(prompts);
             settings.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
@@ -125,10 +160,9 @@ public static class AiAgentPolicyEndpoints
     }
 
     private static Dictionary<string, string> Prompts(TenantAiSettings? settings) =>
-        string.IsNullOrEmpty(settings?.PromptOverridesJson)
-            ? []
-            : JsonSerializer.Deserialize<Dictionary<string, string>>(settings.PromptOverridesJson) ?? [];
+        ServerPrompts.ParseOverrides(settings?.PromptOverridesJson);
 
     /// <summary>The whole policy: a null turn limit is the default, a missing prompt the shipped one.</summary>
-    public sealed record AgentPolicyRequest(int? MaxTurns, Dictionary<string, string>? Prompts);
+    public sealed record AgentPolicyRequest(
+        int? MaxTurns, Dictionary<string, string>? Prompts, int? AssistantMaxTurns = null, int? CompactAtTokens = null);
 }

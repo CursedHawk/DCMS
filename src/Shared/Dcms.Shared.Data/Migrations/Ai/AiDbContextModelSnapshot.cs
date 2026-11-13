@@ -200,9 +200,15 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.Property<string>("ApiKeyCiphertext")
                         .HasColumnType("text");
 
+                    b.Property<int?>("AssistantMaxTurns")
+                        .HasColumnType("integer");
+
                     b.Property<string>("BaseUrl")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<int?>("CompactAtTokens")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Model")
                         .HasMaxLength(128)
