@@ -194,6 +194,9 @@ namespace Dcms.Shared.Data.Migrations.Ai
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("AgentMaxTurns")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ApiKeyCiphertext")
                         .HasColumnType("text");
 
@@ -204,6 +207,9 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.Property<string>("Model")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("PromptOverridesJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("Provider")
                         .IsRequired()

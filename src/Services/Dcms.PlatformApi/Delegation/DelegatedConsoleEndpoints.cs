@@ -103,6 +103,11 @@ public static class DelegatedConsoleEndpoints
             PlatformConsolePermissions.TenantsRead);
         Delegate(tenants, HttpMethod.Post, "/{id:guid}/usage/recalculate", "/api/admin/tenants/{0}/usage/recalculate",
             PlatformConsolePermissions.TenantsWrite);
+        // The tenant's AI agent policy: the site agents' turn limit and the system prompt overrides.
+        Delegate(tenants, HttpMethod.Get, "/{id:guid}/ai-agent-policy", "/api/admin/tenants/{0}/ai-agent-policy",
+            PlatformConsolePermissions.TenantsRead);
+        Delegate(tenants, HttpMethod.Put, "/{id:guid}/ai-agent-policy", "/api/admin/tenants/{0}/ai-agent-policy",
+            PlatformConsolePermissions.TenantsWrite);
 
         // ---- Retention (a batched delete on analytics.events) ----
 

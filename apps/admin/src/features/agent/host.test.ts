@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterEach } from 'vitest';
 import { api, ApiError } from '../../lib/api';
 import { streamAssistantTurn } from '../ide/agent/client';
+import { queryClient } from '../../lib/queryClient';
 import { requestSiteChange, sendToSite } from './host';
+import { agentPolicyKey } from './policy';
 import { answerSite, configureSite, resetAgentHost, sessionOf, stopSite, useAgentHost } from './hostStore';
 
 vi.mock('../ide/agent/client', async (original) => ({
@@ -46,6 +48,7 @@ async function until(check: () => boolean) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetAgentHost();
+  queryClient.removeQueries({ queryKey: agentPolicyKey });
   let seq = 0;
   vi.mocked(api.get).mockImplementation(async (path: string) => {
     if (path.endsWith('/ide')) return { branch: 'main', baseSha: null, version: 1, files: { 'src/App.tsx': 'x' }, hashes: {} } as never;
@@ -197,6 +200,27 @@ describe('agent host', () => {
     stopSite('site-a');
     await until(() => sessionOf('site-a')?.running === false);
     expect(sessionOf('site-a')).toMatchObject({ question: null, outcome: 'stopped' });
+  });
+
+  it("follows the tenant's policy: its prompt and its turn limit", async () => {
+    const base = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === '/admin/ai/agent-policy'
+        ? ({ maxTurns: 2, prompts: { 'site.react': 'You build{{site}} carefully. {{rules}}' } } as never)
+        : base(path),
+    );
+    // A model that never stops calling tools: only the limit ends it.
+    vi.mocked(streamAssistantTurn).mockImplementation(
+      async () => ({ content: [{ type: 'tool_use', id: crypto.randomUUID(), name: 'nothing', input: {} }], stopReason: 'tool_use' }) as never,
+    );
+    configureSite('site-a', { kind: 'react', siteName: 'HR portal' });
+    sendToSite('site-a', 'work forever');
+
+    await until(() => sessionOf('site-a')?.outcome === 'paused');
+    expect(streamAssistantTurn).toHaveBeenCalledTimes(2);
+    const sent = vi.mocked(streamAssistantTurn).mock.calls[0][0].system as unknown;
+    const system = typeof sent === 'string' ? sent : (sent as { text: string }[]).map((block) => block.text).join('');
+    expect(system).toMatch(/^You build \("HR portal"\) carefully\. ## What is an instruction/);
   });
 });
 

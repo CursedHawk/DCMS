@@ -40,6 +40,7 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
         {
             e.ToTable("tenant_ai_settings");
             e.HasKey(s => s.TenantId);
+            e.Property(s => s.PromptOverridesJson).HasColumnType("jsonb");
             e.Property(s => s.Provider).HasConversion<string>().HasMaxLength(16);
             e.Property(s => s.Model).HasMaxLength(128);
             e.Property(s => s.BaseUrl).HasMaxLength(512);

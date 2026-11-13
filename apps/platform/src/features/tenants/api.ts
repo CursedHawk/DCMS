@@ -105,3 +105,28 @@ export function useSetStorageQuota() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-tenants'] }),
   });
 }
+
+/** A tenant's AI agent policy as admin-api stores it: null turns and absent prompts are the defaults. */
+export interface AgentPolicy {
+  maxTurns: number | null;
+  defaultMaxTurns: number;
+  maxMaxTurns: number;
+  prompts: Record<string, string>;
+}
+
+export function useAgentPolicy(tenantId: string) {
+  return useQuery({
+    queryKey: ['platform-tenants', 'ai-agent-policy', tenantId],
+    queryFn: () => platformApi.get<AgentPolicy>(`/tenants/${tenantId}/ai-agent-policy`),
+  });
+}
+
+/** The whole policy at once. Performed by admin-api, checked here against platform:tenants:write. */
+export function useSetAgentPolicy(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (policy: { maxTurns: number | null; prompts: Record<string, string> }) =>
+      platformApi.put<void>(`/tenants/${tenantId}/ai-agent-policy`, policy),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-tenants', 'ai-agent-policy', tenantId] }),
+  });
+}

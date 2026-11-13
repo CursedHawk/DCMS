@@ -11,6 +11,7 @@ import { bytes, count, date, ofLimit, since } from '../../lib/format';
 import { can, useMe, Perm } from '../../lib/permissions';
 import { useRecalculateUsage, useSetTenantStatus, useTenant, useTenantDirectory, type TenantDetail, type TenantRow } from './api';
 import { OpenInAdmin, StatusPill, StorageLimitDialog } from './parts';
+import { AgentPolicySection } from './AgentPolicySection';
 
 /**
  * Everything about one tenant, and everything that can be done to it.
@@ -54,6 +55,7 @@ export function TenantDetailPage() {
 
       <StorageLimit tenant={tenant} originalBytes={originalBytes} variantBytes={variantBytes} />
       <DataUsage tenantId={tenant.tenantId} usage={usage} />
+      <AgentPolicySection tenantId={tenant.tenantId} />
       <Directory tenantId={tenant.tenantId} />
     </div>
   );

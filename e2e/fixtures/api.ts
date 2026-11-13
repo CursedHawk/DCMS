@@ -315,6 +315,8 @@ export function adminApi(
     .on('GET', '/api/admin/content/scheduled', { items: data.SCHEDULED })
     .on('GET', '/api/admin/audit', { items: [], nextCursor: null })
     .on('GET', '/api/admin/ai/settings', { provider: 'anthropic', model: null, hasKey: false })
+    // The tenant's AI agent policy (platform console): the defaults unless a test says otherwise.
+    .on('GET', '/api/admin/ai/agent-policy', { maxTurns: 100, prompts: {} })
     .on('GET', '/api/admin/ai/user-credentials', [])
     .on('GET', '/api/admin/openapi.json', { openapi: '3.1.0', info: { title: 'DCMS', version: '1' }, paths: {} })
     .on('POST', '/api/admin/content/:id/publish', { status: 'published' })
@@ -391,6 +393,8 @@ export function platformApi(options: { permissions?: string[]; isSuperAdmin?: bo
     .on('GET', '/api/platform/tenants/:id/directory', data.PLATFORM_TENANT_DIRECTORY)
     .on('POST', '/api/platform/tenants/:id/usage/recalculate', {})
     .on('PUT', '/api/platform/tenants/:id/storage-quota', {})
+    .on('GET', '/api/platform/tenants/:id/ai-agent-policy', { maxTurns: null, defaultMaxTurns: 100, maxMaxTurns: 500, prompts: {} })
+    .on('PUT', '/api/platform/tenants/:id/ai-agent-policy', {})
     .on('POST', '/api/platform/tenants/:id/suspend', {})
     .on('POST', '/api/platform/tenants/:id/resume', {});
 

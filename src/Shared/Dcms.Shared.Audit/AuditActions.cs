@@ -448,6 +448,8 @@ public static class AuditActions
     public const string PlatformTenantSuspended = "platform.tenant.suspended";
     public const string PlatformTenantResumed = "platform.tenant.resumed";
     public const string PlatformTenantStorageQuotaChanged = "platform.tenant.storage_quota.changed";
+    /// <summary>A tenant's AI agent policy: the site agents' turn limit and the system prompt overrides.</summary>
+    public const string PlatformTenantAiAgentPolicyChanged = "platform.tenant.ai_agent_policy.changed";
 
     /// <summary>
     /// Irreversible deletion from a telemetry store. Recorded BEFORE the delete runs, not

@@ -10,3 +10,4 @@ export * from './auth';
 export * from './http';
 export * from './permissions';
 export * from './format';
+export * from './aiPrompts';

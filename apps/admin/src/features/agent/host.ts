@@ -33,6 +33,7 @@ import {
   useAgentHost,
 } from './hostStore';
 import { DEFAULT_MODE } from './modes';
+import { agentPolicy } from './policy';
 import { createRunChecks } from './runChecks';
 import { runAgent } from './runtime';
 import { toolsFor } from './scope';
@@ -448,7 +449,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
 
   try {
     const current = sessionOf(key)!;
-    const kit = await kitFor(current.kind, { functionsApi: current.functionsApi });
+    const [kit, policy] = await Promise.all([kitFor(current.kind, { functionsApi: current.functionsApi }), agentPolicy()]);
 
     // The previous run's draft may still be saving a revert; it lands before this one loads.
     await i.draft?.flush();
@@ -529,7 +530,9 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
     for await (const event of runAgent<TenantToolContext>({
       task: prompt,
       messages: i.messages,
-      system: buildSystemPrompt({ kind: current.kind, siteName: current.siteName }),
+      system: buildSystemPrompt({ kind: current.kind, siteName: current.siteName, overrides: policy.prompts }),
+      // Set per tenant from the platform console (default 100).
+      maxIterations: policy.maxTurns,
       tools,
       context,
       mode: current.mode,

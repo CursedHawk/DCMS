@@ -127,6 +127,21 @@ describe('agent mode', () => {
   });
 });
 
+describe("the tenant's prompts", () => {
+  it('speaks with the prompt the platform console set for this tenant', async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === '/admin/ai/agent-policy' ? ({ maxTurns: 100, prompts: { assistant: 'You are a pirate.' } } as never) : (undefined as never),
+    );
+    turns('noop', {});
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+    act(() => result.current.send('hi'));
+    await waitFor(() => expect(result.current.running).toBe(false));
+    const sent = vi.mocked(streamAssistantTurn).mock.calls[0][0].system as unknown;
+    const system = typeof sent === 'string' ? sent : (sent as { text: string }[]).map((b) => b.text).join('');
+    expect(system).toMatch(/^You are a pirate\.\n\nYou can change things/);
+  });
+});
+
 describe('asking the operator', () => {
   const ask = () =>
     turns('ask_user', { questions: [{ question: 'Which tone?', options: [{ label: 'Formal' }, { label: 'Casual' }] }] });

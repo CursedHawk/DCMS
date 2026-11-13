@@ -5,6 +5,7 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from '../ide/agent/client';
+import { DEFAULT_AGENT_MAX_TURNS } from '@dcms/core';
 import { classify, type Classification } from './classify';
 import { newPruneState, pruneHistory, type WorkingMemory } from './context';
 import {
@@ -93,7 +94,7 @@ export interface RunOptions<TContext> {
   fileCount?: number;
 }
 
-const DEFAULT_MAX_ITERATIONS = 25;
+const DEFAULT_MAX_ITERATIONS = DEFAULT_AGENT_MAX_TURNS;
 const DEFAULT_MAX_REPAIRS = 3;
 
 /**

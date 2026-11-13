@@ -66,11 +66,31 @@ iteration is one model turn:
 5. When the model stops asking for tools, **validate** — but only if the run
    actually wrote something, and only up to 3 times.
 
-Ceilings: 25 iterations, 3 build repairs. A model that cannot fix a build in
+Ceilings: the tenant's turn limit (100 unless the platform console sets another,
+1–500; see "Agent policy" below), 3 build repairs. A model that cannot fix a build in
 three attempts is usually making it worse, and each attempt is billed. A run that
 reaches the iteration ceiling while still asking for tools ends **paused**, not
 completed: it validates what it wrote first, leaves a failing build in the
 transcript, and the panel says to continue.
+
+### Agent policy: turn limit and system prompts
+
+Both are platform decisions, set per tenant on the tenant's page in the platform
+console ("AI agents") and stored on `ai.tenant_ai_settings` (`AgentMaxTurns`,
+`PromptOverridesJson`). No tenant permission writes them: admin-api's
+`PUT /api/admin/tenants/{id}/ai-agent-policy` is console-only, reached through
+platform-api with `platform:tenants:write`. The agents read
+`GET /api/admin/ai/agent-policy` (cached a minute; unreadable means the defaults).
+
+The shipped prompts live in one catalogue, `packages/core/src/aiPrompts.ts`, which
+the admin SPA builds its agents' prompts from and the console shows — so what an
+operator reads there is what an agent gets. An override replaces one entry's whole
+text; `{{site}}` and `{{rules}}` are filled when the prompt is built. Only
+overrides are stored, so a tenant without any follows every change to the shipped
+prompts. The server keeps its own list of keys; `AiAgentPolicyTests` fails if it
+drifts from the catalogue. The console assistant's own turn limit (10) and the
+site chatbot's prompt (the plugin's per-instance instructions, server-side) are
+not part of the policy.
 
 ### The build gate
 

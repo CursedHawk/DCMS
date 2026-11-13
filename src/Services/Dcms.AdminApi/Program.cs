@@ -510,6 +510,7 @@ app.MapAnalyticsPruneEndpoints();
 app.MapAlertEndpoints();
 app.MapSitePreview();
 app.MapAiSettingsEndpoints();
+app.MapAiAgentPolicyEndpoints();
 app.MapAiAgentEndpoints();
 app.MapAiConversationEndpoints();
 app.MapOpenApiPreview();
