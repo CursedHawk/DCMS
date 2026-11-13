@@ -40,6 +40,7 @@ export function fromAssistantTool(tool: AssistantTool): ToolSpec<TenantToolConte
     permission: tool.permission,
     risk: tool.risk,
     invalidates: tool.invalidates,
+    untrustedSource: tool.untrustedSource,
     summarize: tool.summarize,
     describe: tool.describe,
     run: async (input, ctx) => {

@@ -39,4 +39,11 @@ describe('knowledge tools', () => {
     expect(byName.knowledge_save.risk).toBe('safe');
     expect(byName.knowledge_read.permission).toBeUndefined();
   });
+
+  it('fences what the store returns: an entry may quote text from outside the workspace', () => {
+    const byName = Object.fromEntries(knowledgeTools('site-a').map((t) => [t.name, t]));
+    for (const name of ['knowledge_search', 'knowledge_read', 'conversation_recall']) {
+      expect(byName[name].untrustedSource, name).toBeTruthy();
+    }
+  });
 });

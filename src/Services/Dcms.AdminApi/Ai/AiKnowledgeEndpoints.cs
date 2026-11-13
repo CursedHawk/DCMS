@@ -165,12 +165,14 @@ public static partial class AiKnowledgeEndpoints
             .WithAudit(AuditActions.AiKnowledgeSaved, "ai_knowledge");
 
         app.MapDelete("/api/admin/ai/knowledge/{id:guid}", async (
-            Guid id, AiDbContext db, ITenantContext tenant, IAuditRecorder audit, CancellationToken ct) =>
+            Guid id, AiDbContext db, ITenantContext tenant, CurrentUser me, IPermissionResolver permissions,
+            IAuditRecorder audit, CancellationToken ct) =>
         {
             if (!tenant.HasTenant) return Results.BadRequest(new { error = "No tenant." });
             var tenantId = tenant.TenantId!.Value;
             var entry = await db.Knowledge.FirstOrDefaultAsync(k => k.TenantId == tenantId && k.Id == id, ct);
-            if (entry is null) return Results.NotFound();
+            // An archive the caller may not read is one they may not delete either.
+            if (entry is null || !await MayReadAsync(entry, db, permissions, me, tenantId, ct)) return Results.NotFound();
             audit.Declared?.For("ai_knowledge", entry.Id, entry.Path);
             db.Knowledge.Remove(entry);
             await db.SaveChangesAsync(ct);
