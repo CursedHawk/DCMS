@@ -1,6 +1,7 @@
 extern alias SiteBuilderApp;
 using Dcms.Shared.Data.Sites;
 using SitemapPageList = SiteBuilderApp::Dcms.SiteBuilder.SitemapPageList;
+using ReactAppBuilder = SiteBuilderApp::Dcms.SiteBuilder.ReactAppBuilder;
 
 namespace Dcms.IntegrationTests.Sites;
 
@@ -81,5 +82,59 @@ public class SitemapPageListTests
         SitemapPageList.FromRoutesJson("""{ "path": "/" }""").Should().BeEmpty();
         SitemapPageList.FromRoutesJson("[" + string.Join(',', Enumerable.Range(0, 50_010).Select(i => $$"""{"path":"/p{{i}}"}""")) + "]")
             .Should().HaveCount(50_000);
+    }
+    [Fact]
+    public async Task The_page_list_script_is_never_written_through_a_link_the_sites_build_left()
+    {
+        var work = Directory.CreateTempSubdirectory().FullName;
+        var target = Path.Combine(Directory.CreateTempSubdirectory().FullName, "service-file");
+        await File.WriteAllTextAsync(target, "the service's own", TestContext.Current.CancellationToken);
+        File.CreateSymbolicLink(Path.Combine(work, ".dcms-sitemap.mjs"), target);
+
+        await ReactAppBuilder.WriteSitemapScriptAsync(work, TestContext.Current.CancellationToken);
+
+        (await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken)).Should().Be("the service's own");
+        new FileInfo(Path.Combine(work, ".dcms-sitemap.mjs")).LinkTarget.Should().BeNull();
+        (await File.ReadAllTextAsync(Path.Combine(work, ".dcms-sitemap.mjs"), TestContext.Current.CancellationToken))
+            .Should().Contain("pagesFromRoutes");
+    }
+
+    [Fact]
+    public async Task The_page_list_is_read_back_only_from_a_plain_file_of_a_sane_size()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var work = Directory.CreateTempSubdirectory().FullName;
+        var output = Path.Combine(work, ".dcms-sitemap.json");
+        Task<IReadOnlyList<SitemapPage>?> Read() => ReactAppBuilder.ReadSitemapPagesAsync(work, ct);
+
+        (await Read()).Should().BeNull("there is none");
+
+        await File.WriteAllTextAsync(output, """[{"path":"/"},{"path":"/about"}]""", ct);
+        (await Read()).Should().Equal(new SitemapPage("/"), new SitemapPage("/about"));
+
+        File.Delete(output);
+        var elsewhere = Path.Combine(Directory.CreateTempSubdirectory().FullName, "pages.json");
+        await File.WriteAllTextAsync(elsewhere, """[{"path":"/secret"}]""", ct);
+        File.CreateSymbolicLink(output, elsewhere);
+        (await Read()).Should().BeNull("a link is not followed");
+
+        File.Delete(output);
+        await File.WriteAllTextAsync(output, "", ct);
+        (await Read()).Should().BeNull("an empty file is not read");
+
+        if (OperatingSystem.IsLinux())
+        {
+            // Opening a FIFO would wait for a writer forever; it reports no size, so it is never opened.
+            File.Delete(output);
+            using (var mkfifo = System.Diagnostics.Process.Start("mkfifo", output)) await mkfifo.WaitForExitAsync(ct);
+            (await Read().WaitAsync(TimeSpan.FromSeconds(10), ct)).Should().BeNull("a FIFO is not read");
+            File.Delete(output);
+        }
+
+        await using (var big = new FileStream(output, FileMode.Create))
+        {
+            big.SetLength(17 * 1024 * 1024);
+        }
+        (await Read()).Should().BeNull("an oversized file is not read");
     }
 }
