@@ -18,7 +18,7 @@ whoever made it — anyone who can edit the site can deploy a branch. Release wo
 
 ## What differs from release
 
-- **Kept out of search.** A branch's domains answer with `X-Robots-Tag: noindex, nofollow`.
+- **Kept out of search.** A branch's domains answer with `X-Robots-Tag: noindex, nofollow`, `robots.txt` disallows everything, and there is no `sitemap.xml`.
 - **Never the primary domain.** The primary is the site's own address (API docs, the builder
   preview's sign-in rules), so only a release domain can be it.
 - **Same content and users.** Branches are code. Every branch reads the workspace's live content

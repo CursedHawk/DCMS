@@ -222,6 +222,12 @@ public static class SiteAuthentication
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
         }
+        if (string.Equals(path, "/sitemap.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            // site-host makes the sitemap and knows no rules: say which pages need signing in for.
+            context.Request.Headers[Dcms.Shared.Data.Sites.SitemapPages.GatedPrefixesHeader] = string.Join(',',
+                gate.Rules.Where(r => r.Access != SiteAccess.Public).Select(r => Uri.EscapeDataString(r.Prefix)));
+        }
 
         var auth = context.RequestServices.GetRequiredService<IOptions<EdgeAuthOptions>>().Value;
         var session = auth.SitesEnabled ? await CurrentAsync(context, gate, auth) : null;

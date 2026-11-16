@@ -62,7 +62,14 @@ public class SiteGateMiddlewareTests
         return gates;
     }
 
-    private static async Task<int> SendAsync(SiteGates gates, string host, string path, bool tenantSite)
+    [Fact]
+    public async Task A_gated_sites_sitemap_is_told_which_pages_need_signing_in() =>
+        // Only the gated prefix: /portal/news is public and stays listed (#343).
+        (await SendAsync(Loaded(), "corp.example", "/sitemap.xml", tenantSite: true,
+            seen: c => c.Request.Headers[Dcms.Shared.Data.Sites.SitemapPages.GatedPrefixesHeader].ToString().Should().Be("%2Fportal")))
+            .Should().Be(200);
+
+    private static async Task<int> SendAsync(SiteGates gates, string host, string path, bool tenantSite, Action<HttpContext>? seen = null)
     {
         var services = new ServiceCollection()
             .AddSingleton(gates)
@@ -73,6 +80,7 @@ public class SiteGateMiddlewareTests
         app.UseSiteGates();
         app.Run(context =>
         {
+            seen?.Invoke(context);
             context.Response.StatusCode = 200;
             return Task.CompletedTask;
         });

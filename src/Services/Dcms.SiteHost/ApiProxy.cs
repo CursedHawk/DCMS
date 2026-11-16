@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using Yarp.ReverseProxy.Forwarder;
 using Dcms.Shared.Sites;
@@ -44,21 +45,27 @@ public static class ApiProxy
         return app;
     }
 
+    /// <summary>Which tenant and site a request to content-api is for, as only site-host knows it.</summary>
+    internal static void SetSiteHeaders(HttpRequestHeaders headers, SiteRoute route, string host)
+    {
+        headers.Remove("X-Dcms-Tenant");
+        headers.Add("X-Dcms-Tenant", route.TenantSlug);
+
+        // Set, never passed through: the edge scrubs both, and this is the only hop that
+        // knows which site the Host resolved to.
+        headers.Remove("X-Dcms-Site");
+        headers.Add("X-Dcms-Site", route.SiteId.ToString());
+        headers.Remove("X-Dcms-Site-Host");
+        headers.TryAddWithoutValidation("X-Dcms-Site-Host", host.ToLowerInvariant());
+    }
+
     private sealed class TenantHeaderTransformer(SiteRoute route) : HttpTransformer
     {
         public override async ValueTask TransformRequestAsync(
             HttpContext httpContext, HttpRequestMessage proxyRequest, string destinationPrefix, CancellationToken cancellationToken)
         {
             await base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
-            proxyRequest.Headers.Remove("X-Dcms-Tenant");
-            proxyRequest.Headers.Add("X-Dcms-Tenant", route.TenantSlug);
-
-            // Set, never passed through: the edge scrubs both, and this is the only hop that
-            // knows which site the Host resolved to.
-            proxyRequest.Headers.Remove("X-Dcms-Site");
-            proxyRequest.Headers.Add("X-Dcms-Site", route.SiteId.ToString());
-            proxyRequest.Headers.Remove("X-Dcms-Site-Host");
-            proxyRequest.Headers.TryAddWithoutValidation("X-Dcms-Site-Host", httpContext.Request.Host.Host.ToLowerInvariant());
+            SetSiteHeaders(proxyRequest.Headers, route, httpContext.Request.Host.Host);
 
             // YARP's default transformer copies headers but adds no X-Forwarded-* of its own,
             // and UseForwardedHeaders upstream has already consumed the edge's. Restate them from

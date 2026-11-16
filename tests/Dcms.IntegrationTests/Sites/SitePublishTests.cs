@@ -2,6 +2,9 @@ extern alias SiteHostApp;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Xml.Linq;
+using Microsoft.AspNetCore.TestHost;
+using SitemapEndpoints = SiteHostApp::Dcms.SiteHost.SitemapEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -208,6 +211,81 @@ public class SitePublishTests(SitePublishFixture fixture)
         var onDev = await GetAsync(dev);
         (await onDev.Content.ReadAsStringAsync(ct)).Should().Contain("On dev");
         onDev.Headers.GetValues("X-Robots-Tag").Should().ContainSingle().Which.Should().Contain("noindex");
+    }
+
+    [DockerFact]
+    public async Task A_published_site_has_a_sitemap_of_its_pages_and_published_items_and_a_robots_txt_naming_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = fixture.Admin.CreateClient();
+        var slug = "map-" + Guid.NewGuid().ToString("N")[..8];
+        var hostname = $"{slug}.example.com";
+        await Id(admin, Admin(HttpMethod.Post, "/api/admin/tenants", slug,
+            new { slug, name = slug, ownerUserId = Owner, ownerEmail = "o@dcms.test" }, superAdmin: true), ct);
+
+        var events = await Id(admin, Admin(HttpMethod.Post, "/api/admin/plugins/instances", slug,
+            new { pluginId = "events", slug = "events", name = "Events", config = "{}" }), ct);
+        foreach (var (item, published) in new[] { ("opening", true), ("closing", true), ("draft-only", false) })
+        {
+            var id = await Id(admin, Admin(HttpMethod.Post, "/api/admin/content", slug, new
+            {
+                pluginInstanceId = events, contentType = "event", slug = item,
+                data = new { title = item, date = "2026-12-01T20:00:00Z", venue = "Roxy" },
+            }), ct);
+            if (published)
+            {
+                (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/content/{id}/publish", slug, null), ct)).EnsureSuccessStatusCode();
+            }
+        }
+
+        var definition = new
+        {
+            files = new Dictionary<string, string>
+            {
+                ["site.json"] = """
+                    { "version": 2, "theme": { "colors": {}, "fonts": {} }, "nav": [], "pages": [
+                      { "id": "home", "slug": "home", "path": "/", "title": "Home", "home": true, "seo": { "title": "Home" } },
+                      { "id": "about", "slug": "about", "path": "/about", "title": "About", "seo": { "title": "About" } },
+                      { "id": "draft", "slug": "draft", "path": "/draft", "title": "Draft", "seo": { "title": "Draft", "noIndex": true } },
+                      { "id": "event", "slug": "event", "path": "/events/:slug", "title": "Event", "seo": { "title": "Event" } } ] }
+                    """,
+                ["pages/home.html"] = "<h1>Mapped</h1>",
+                ["pages/about.html"] = "<p>About</p>",
+                ["pages/draft.html"] = "<p>Draft</p>",
+                ["pages/event.html"] = """<div data-dcms-component="Events.Event" data-dcms-bindings='[{"propPath":"item","instanceSlug":"events","query":{"contentType":"event"}}]'></div>""",
+            },
+        };
+        var siteId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/sites", slug,
+            new { name = "Main", renderMode = "StaticPrerender", definition = JsonSerializer.Serialize(definition) }), ct);
+        var domainId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/domains", slug, new { hostname }), ct);
+        (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/domains/{domainId}/verify", slug, null), ct)).EnsureSuccessStatusCode();
+        (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/domains/{domainId}/site", slug, new { siteId }), ct)).EnsureSuccessStatusCode();
+        (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{siteId}/publish", slug, null), ct)).EnsureSuccessStatusCode();
+
+        // site-host lists items through content-api: here, the in-memory one.
+        await using var hostFactory = fixture.Host.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+            s.AddHttpClient(SitemapEndpoints.ContentApiClient).ConfigurePrimaryHttpMessageHandler(() => fixture.Content.Server.CreateHandler())));
+        var host = hostFactory.CreateClient();
+        async Task<HttpResponseMessage> GetAsync(string path)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, path);
+            req.Headers.Host = hostname;
+            return await host.SendAsync(req, ct);
+        }
+        await PollUntil(async () => (await GetAsync("/")).StatusCode == HttpStatusCode.OK, TimeSpan.FromSeconds(30));
+
+        var sitemap = await GetAsync("/sitemap.xml");
+        sitemap.StatusCode.Should().Be(HttpStatusCode.OK, await sitemap.Content.ReadAsStringAsync(ct));
+        sitemap.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+        var locs = XDocument.Parse(await sitemap.Content.ReadAsStringAsync(ct)).Root!
+            .Elements(ns + "url").Select(u => u.Element(ns + "loc")!.Value).ToList();
+        locs.Should().BeEquivalentTo(
+            [$"http://{hostname}/", $"http://{hostname}/about", $"http://{hostname}/events/opening", $"http://{hostname}/events/closing"],
+            "noindex pages and unpublished items are left out");
+
+        (await (await GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain($"Sitemap: http://{hostname}/sitemap.xml");
+        (await GetAsync("/_dcms/pages.json")).StatusCode.Should().Be(HttpStatusCode.NotFound, "it names gated pages too");
     }
 
     private static HttpRequestMessage Admin(HttpMethod method, string url, string slug, object? body, bool superAdmin = false)

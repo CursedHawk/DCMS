@@ -30,6 +30,7 @@ builder.Services.AddDcmsSiteRouting();
 builder.Services.AddSingleton<SiteArtifactCache>();
 
 var contentApi = builder.Configuration["Services:ContentApi"] ?? "http://localhost:5003";
+builder.Services.AddSitemap(contentApi);
 
 var app = builder.Build();
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
@@ -70,6 +71,7 @@ app.MapGet("/internal/tls-hostnames", async (DomainResolver resolver, Cancellati
     Results.Ok(await resolver.TlsAllowedHostnamesAsync(ct)));
 
 app.MapApiProxy(contentApi);   // /api, /hub → content-api, for any that reach here rather than the edge's direct route
+app.MapSitemap();              // /sitemap.xml, /robots.txt — the site's own, else made (#343)
 app.MapSiteHost();             // everything else → static artifacts
 app.Run();
 

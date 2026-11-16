@@ -23,6 +23,12 @@ published site untouched. `pages/`, `regions/` and `blocks/` are **not**:
 they are assembled into documents, and publishing them as files would expose the
 source and serve markup fragments at guessable URLs.
 
+Every hosted site gets `/sitemap.xml` and `/robots.txt` without any of this (#343): the
+sitemap lists the published pages under the domain asked — less those marked noindex and
+those User Authentication gates — and each detail page (`/events/:slug`) once per published
+item of the collection its `item` binding names. A `sitemap.xml` or `robots.txt` committed
+here replaces the made one.
+
 Cascade order on a published page is theme → global → page, and the home page is
 published both at its path and at `index.html`.
 

@@ -22,6 +22,11 @@ public static class SiteHostEndpoints
             {
                 return Results.NotFound("No site is published for this domain.");
             }
+            // The sitemap's source names every page, gated ones too; only sitemap.xml is public (#343).
+            if (string.Equals(path, Dcms.Shared.Data.Sites.SitemapPages.Key, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound();
+            }
             // A branch's domain is a working copy of the site, not the site (#277).
             if (route.NoIndex)
             {

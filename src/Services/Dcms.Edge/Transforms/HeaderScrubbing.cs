@@ -50,7 +50,7 @@ public static class HeaderScrubbing
     /// <c>X-Dcms-Tenant</c> no client — operator or visitor — ever has a reason to send one,
     /// so they are scrubbed everywhere rather than per route.
     /// </summary>
-    private static readonly string[] SiteAttributionHeaders = ["X-Dcms-Site", "X-Dcms-Site-Host"];
+    private static readonly string[] SiteAttributionHeaders = ["X-Dcms-Site", "X-Dcms-Site-Host", Dcms.Shared.Data.Sites.SitemapPages.GatedPrefixesHeader];
 
     /// <summary>
     /// Headers that select a tenant or its environment (ADR 0028), or mark a site preview. These are legitimate <b>client</b> headers
