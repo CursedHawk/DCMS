@@ -93,7 +93,11 @@ export interface ToolSpec<TContext> {
    */
   untrustedSource?: string;
 
-  run: (input: Record<string, unknown>, context: TContext) => Promise<ToolOutcome>;
+  /**
+   * `signal` is the run's: a tool that waits — on a build, an audit — stops waiting when the
+   * person presses Stop instead of holding the run open.
+   */
+  run: (input: Record<string, unknown>, context: TContext, signal?: AbortSignal) => Promise<ToolOutcome>;
 }
 
 /**

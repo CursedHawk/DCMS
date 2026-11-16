@@ -34,6 +34,9 @@ public sealed class SitePublishFixture : IAsyncLifetime
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
 
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
+
+    /// <summary>What PageSpeed Insights was asked, by every audit in this collection.</summary>
+    public PageSpeedFake PageSpeed { get; } = new();
     public WebApplicationFactory<SiteHostApp::Program> Host { get; private set; } = null!;
     public WebApplicationFactory<Program> Content { get; private set; } = null!;
     private WebApplicationFactory<SiteBuilderApp::Program> _builder = null!;
@@ -51,6 +54,8 @@ public sealed class SitePublishFixture : IAsyncLifetime
             await js.CreateStreamAsync(new StreamConfig("SITES_EVENTS", ["site.published", "site.build.failed", "site.settings.changed"]));
             // The jobs ledger's hints: site-builder reports each build's progress here (ADR 0024).
             await js.CreateStreamAsync(new StreamConfig("JOBS_EVENTS", ["jobs.changed", "jobs.state"]));
+            // Worker jobs (ADR 0024): a site's audit runs on one (#649).
+            await js.CreateStreamAsync(new StreamConfig("JOBS", ["jobs.run.>"]) { Retention = StreamConfigRetention.Workqueue });
         }
 
         var endpoint = $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}";
@@ -74,8 +79,16 @@ public sealed class SitePublishFixture : IAsyncLifetime
             Storage(b);
             b.UseSetting("Tenancy:Migrate", "true");
             b.UseSetting("Domains:AutoVerify", "true");
-            b.ConfigureTestServices(s => s.AddAuthentication(TestAuthHandler.SchemeName)
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { }));
+            // Google PageSpeed Insights, stood in by PageSpeed (#649).
+            b.UseSetting("PageSpeed:ApiKey", "test-key");
+            b.UseSetting("PageSpeed:ApiBase", "http://pagespeed.test/");
+            b.ConfigureTestServices(s =>
+            {
+                s.AddAuthentication(TestAuthHandler.SchemeName)
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+                s.AddHttpClient<AdminApiApp::Dcms.AdminApi.Sites.Audits.PageSpeedClient>()
+                    .ConfigurePrimaryHttpMessageHandler(() => PageSpeed);
+            });
         });
         using (Admin.CreateClient()) { } // migrate first
 

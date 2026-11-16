@@ -251,7 +251,9 @@ test.describe('at 360px, the rest', () => {
         pages: null,
         sitemapUrl: 'https://quarterly-investor-relations.example/sitemap.xml',
         environmentKey: '22222222-2222-2222-2222-222222222222',
-      });
+      })
+      // Its Audit section (#649).
+      .on('GET', '/api/admin/sites/:id/audits', { configured: false, audits: [] });
     await page.goto('/sites/22222222-2222-2222-2222-222222222222');
     // Focus mode: no app sidebar, but always a way back.
     await expect(page.getByRole('link', { name: 'Back to Sites' })).toBeVisible();

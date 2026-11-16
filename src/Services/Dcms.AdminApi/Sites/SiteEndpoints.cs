@@ -202,7 +202,7 @@ public static class SiteEndpoints
             if (site.ActiveBuildId is { } releaseLive) live.Add(releaseLive);
             var take = Math.Clamp(limit ?? 30, 1, 100);
             var builds = await db.Builds
-                .Where(b => b.SiteId == id)
+                .Where(b => b.SiteId == id && b.AuditToken == null)
                 .OrderByDescending(b => b.CreatedAt)
                 .Take(take)
                 .Select(b => new
@@ -769,7 +769,7 @@ public static class SiteEndpoints
 
             // Coalesce: never stack builds for the same site and branch.
             var inFlight = await db.Builds.IgnoreTenantFilter().AnyAsync(
-                b => b.SiteId == site.Id && b.Branch == publishBranch &&
+                b => b.SiteId == site.Id && b.Branch == publishBranch && b.AuditToken == null &&
                      (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
             if (inFlight) return Results.Ok(new { skipped = "build in flight" });
 
@@ -1034,7 +1034,7 @@ public static class SiteEndpoints
             // terminal event that already queued the catch-up): let it be — its own completion
             // re-checks the head, so the chain still converges on the latest commit.
             var inFlight = await db.Builds.IgnoreTenantFilter().AnyAsync(
-                b => b.SiteId == site.Id && b.Branch == publishBranch &&
+                b => b.SiteId == site.Id && b.Branch == publishBranch && b.AuditToken == null &&
                      (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
             if (inFlight) return;
 
@@ -1070,7 +1070,7 @@ public static class SiteEndpoints
     /// tenant), so the query filter is bypassed and the tenant matched explicitly.
     /// A failure still errs towards asking rather than tracking.
     /// </summary>
-    private static async Task<bool> AnalyticsEnabledAsync(CmsDbContext cms, Guid tenantId, CancellationToken ct)
+    internal static async Task<bool> AnalyticsEnabledAsync(CmsDbContext cms, Guid tenantId, CancellationToken ct)
     {
         try
         {

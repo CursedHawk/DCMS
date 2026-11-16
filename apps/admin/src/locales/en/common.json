@@ -541,7 +541,16 @@
       "description": "The code editor and the visual builder put a file tree, a buffer and a live preview side by side. There is no arrangement of those that works on a phone, so they are desktop tools.",
       "continueAnyway": "Show it anyway"
     },
-    "backToSites": "Back to Sites"
+    "backToSites": "Back to Sites",
+    "audit": {
+      "errors": {
+        "gone": "The audit no longer exists.",
+        "failed": "The audit failed.",
+        "buildGone": "The build for the audit no longer exists.",
+        "buildFailed": "The site did not build, so it could not be audited.",
+        "buildSlow": "The site took too long to build for the audit."
+      }
+    }
   },
   "editor": {
     "publishQueued": "Publish queued"
@@ -1602,6 +1611,12 @@
       },
       "functionsRun": {
         "title": "Running function {{function}}"
+      },
+      "siteAudit": {
+        "title": "Auditing {{site}}"
+      },
+      "siteAuditBuild": {
+        "title": "Preparing {{site}} for an audit"
       }
     },
     "stages": {
@@ -1621,7 +1636,10 @@
         "visitors": "Copying visitor accounts",
         "form-submissions": "Copying form submissions",
         "chat": "Copying chat conversations"
-      }
+      },
+      "auditBuilding": "Building the unpublished site",
+      "auditMobile": "Testing on mobile",
+      "auditDesktop": "Testing on desktop"
     }
   },
   "marketplace": {
@@ -2904,5 +2922,46 @@
     },
     "sitemapUrls": "Sitemap URLs",
     "sitemapUrlsHint": "The pages the sitemap lists, such as / and /about. With none, the site has no sitemap."
+  },
+  "siteAudit": {
+    "title": "Audit",
+    "run": "Run audit",
+    "notConfigured": "PageSpeed Insights isn't set up on this platform yet: an operator adds a Google API key (PageSpeed__ApiKey).",
+    "target": "What to audit",
+    "targets": {
+      "draft": "Unpublished",
+      "live": "Live site"
+    },
+    "targetHint": {
+      "draft": "Your current changes, built and tested at a temporary address that nobody else knows. It takes a minute or two.",
+      "live": "The site at its domain, as visitors get it."
+    },
+    "queued": "Waiting to start…",
+    "failed": "The audit failed",
+    "none": "No audits yet. Run one to see how fast and findable the site is.",
+    "result": "Audit result",
+    "strategies": {
+      "mobile": "Mobile",
+      "desktop": "Desktop"
+    },
+    "openInPsi": "Open the full report in PageSpeed Insights",
+    "history": "Past audits",
+    "status": {
+      "Queued": "Queued",
+      "Building": "Building",
+      "Testing": "Testing",
+      "Succeeded": "Done",
+      "Failed": "Failed"
+    },
+    "categories": {
+      "performance": "Performance",
+      "accessibility": "Accessibility",
+      "best-practices": "Best practices",
+      "seo": "SEO"
+    },
+    "field": "Real visitors' experience: {{category}}.",
+    "allPassed": "Every audit passed.",
+    "moreItems_one": "and {{count}} more",
+    "moreItems_other": "and {{count}} more"
   }
 }

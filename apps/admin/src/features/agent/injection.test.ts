@@ -96,7 +96,8 @@ describe('the tools that read outside the workspace', () => {
     // If a tool starts returning visitor-reachable text, it belongs in this list — and this
     // test is what makes adding it a deliberate act rather than an oversight.
     const marked = ALL_TOOLS.filter((t) => t.untrustedSource).map((t) => t.name).sort();
-    expect(marked).toEqual(['preview_console', 'preview_dom', 'preview_text']);
+    // get_site_audit quotes the audited page's own URLs and markup (#649).
+    expect(marked).toEqual(['get_site_audit', 'preview_console', 'preview_dom', 'preview_text']);
   });
 
   it('never mark a tool that writes', () => {

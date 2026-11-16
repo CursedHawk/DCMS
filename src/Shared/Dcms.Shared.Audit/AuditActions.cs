@@ -136,6 +136,8 @@ public static class AuditActions
     public const string SiteBuildActivated = "site.build.activated";
     /// <summary>What search engines may see of a site (#648): hidden pages, extra URLs, indexing at all.</summary>
     public const string SiteSearchChanged = "site.search.changed";
+    /// <summary>A PageSpeed Insights audit of a site asked for (#649); a draft one builds and briefly serves it.</summary>
+    public const string SiteAuditRequested = "site.audit.requested";
     public const string SiteBuildCreated = "site.build.created";
     public const string SitePublishBranchAdded = "site.publish_branch.added";
     public const string SitePublishBranchRemoved = "site.publish_branch.removed";

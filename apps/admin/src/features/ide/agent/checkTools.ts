@@ -8,6 +8,7 @@ import { checkTypes } from '../diagnostics/checkTypes';
 import { isCheckable } from '../diagnostics/typeCheck';
 import type { BuildProblem } from '../preview/problems';
 import { IDE_TOOLS, type IdeToolContext } from './workspaceTools';
+import { AUDIT_TOOLS } from './auditTools';
 
 /**
  * Tools that answer questions the server or the compiler already knows.
@@ -370,4 +371,6 @@ export const ALL_TOOLS: CheckTool[] = [
   ...(IDE_TOOLS as CheckTool[]),
   ...CHECK_TOOLS,
   ...PREVIEW_TOOLS,
+  // PageSpeed Insights (#649): every site kind, not only the IDE's React sites.
+  ...AUDIT_TOOLS,
 ];

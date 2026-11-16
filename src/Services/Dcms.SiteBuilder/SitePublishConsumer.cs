@@ -246,6 +246,15 @@ public sealed class SitePublishConsumer(
         build.Status = SiteBuildStatus.Succeeded;
         build.CompletedAt = DateTimeOffset.UtcNow;
 
+        // An audit build (#649) is never made live: its own address serves it while it lasts, and
+        // nothing is announced — no site was published.
+        if (build.IsAudit)
+        {
+            await db.SaveChangesAsync(ct);
+            await Reporter.SucceededAsync(build.Id, build.TenantId, null, ct);
+            return;
+        }
+
         // BUG-03: resolve the site from the build, not the message, so a message pairing one
         // site's id with another site's build cannot activate a foreign artifact; and only
         // advance the active build when this one is at least as new as the current active build,
@@ -474,8 +483,12 @@ public sealed class SitePublishConsumer(
                 build.CompletedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(ct);
             }
-            await events.PublishAsync(Subjects.SiteBuildFailed, new SiteBuildFailed(
-                Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, job.BuildId, error, build?.EnvironmentId), ct);
+            // An audit build's failure is the audit's to report (#649), not a broken site.
+            if (build?.IsAudit != true)
+            {
+                await events.PublishAsync(Subjects.SiteBuildFailed, new SiteBuildFailed(
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, job.BuildId, error, build?.EnvironmentId), ct);
+            }
             await Reporter.FailedAsync(job.BuildId, job.TenantId, "jobs.error.buildFailed", error, ct);
         }
         catch (Exception ex)

@@ -62,6 +62,7 @@ test('in the IDE, a React site lists the URLs entered, hides a path and can hide
 test('a Mode C site has the same panel on its page', async ({ api, page }) => {
   api
     .on('GET', '/api/admin/sites/:id', { id: SITE, name: 'Files site', renderMode: 'StaticFiles', environmentKey: SITE })
+    .on('GET', '/api/admin/sites/:id/audits', { configured: false, audits: [] })
     .on('GET', '/api/admin/sites/:id/search', MANUAL)
     .on('PUT', '/api/admin/sites/:id/search', ({ body }) => body)
     .on('GET', '/api/admin/sites/:id/builds', []);

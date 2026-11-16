@@ -1,18 +1,18 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch, Globe, History, Package, Rocket, Search, Zap } from 'lucide-react';
+import { Files, Gauge, GitBranch, Globe, History, Package, Rocket, Search, Zap } from 'lucide-react';
 import { AgentRailIcon } from '../agent/AgentRailIcon';
 import { useAgentFocus } from '../agent/hostStore';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
-import { DeploymentsView, FileTree, SearchEnginesView, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
+import { AuditView, DeploymentsView, FileTree, SearchEnginesView, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 import { FunctionsView } from './functions/FunctionsView';
 import { PackagesView } from './functions/PackagesView';
 import { RunsView, type Replay } from './functions/RunsView';
 import { NewFunctionDialog } from './functions/NewFunctionDialog';
 
-export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'searchEngines' | 'functions' | 'packages' | 'runs';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'searchEngines' | 'audit' | 'functions' | 'packages' | 'runs';
 
 /**
  * The left sidebar: a slim activity rail plus the active view.
@@ -126,6 +126,12 @@ export function IdeSidebar({
           <Globe className="h-5 w-5" />
         </RailButton>
         )}
+        {/* PageSpeed Insights of the live site or the changes not yet published (#649). */}
+        {repo ? null : (
+        <RailButton active={view === 'audit'} label={t('siteAudit.title')} onClick={() => onViewChange('audit')}>
+          <Gauge className="h-5 w-5" />
+        </RailButton>
+        )}
         {functionsApi && (
           <RailButton
             active={view === 'functions'}
@@ -183,6 +189,7 @@ export function IdeSidebar({
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
         {view === 'searchEngines' && <SearchEnginesView siteId={siteId} />}
+        {view === 'audit' && <AuditView siteId={siteId} branch={branch} />}
         {view === 'functions' && functionsApi && <FunctionsView functionsApi={functionsApi} onNew={onNewFunction} />}
         {view === 'packages' && functionsApi && <PackagesView functionsApi={functionsApi} />}
         {view === 'runs' && functionsApi && (

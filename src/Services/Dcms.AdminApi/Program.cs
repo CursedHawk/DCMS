@@ -188,6 +188,16 @@ if (runsBackgroundWork)
 }
 // Google Drive import (Media/GoogleDriveImport.cs). Optional: GoogleDrive__* in
 // secret/dcms/admin-api; unset, the console does not offer Drive.
+// PageSpeed Insights audits of sites (#649): Google's API, with a key from Vault (PageSpeed__ApiKey).
+builder.Services.Configure<Dcms.AdminApi.Sites.Audits.PageSpeedOptions>(
+    builder.Configuration.GetSection(Dcms.AdminApi.Sites.Audits.PageSpeedOptions.Section));
+builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Audits.PageSpeedClient>((sp, client) =>
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Dcms.AdminApi.Sites.Audits.PageSpeedOptions>>().Value;
+    client.BaseAddress = new Uri(options.ApiBase.EndsWith('/') ? options.ApiBase : options.ApiBase + "/");
+    // A Lighthouse run on Google's side takes 10-60 s; a slow page more.
+    client.Timeout = TimeSpan.FromSeconds(150);
+});
 builder.Services.Configure<Dcms.AdminApi.Media.GoogleDriveOptions>(
     builder.Configuration.GetSection(Dcms.AdminApi.Media.GoogleDriveOptions.SectionName));
 builder.Services.AddJobHandler<Dcms.AdminApi.Media.DriveFileJob, Dcms.AdminApi.Media.DriveFilePayload>(
@@ -215,6 +225,8 @@ builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentRollbackJob
     Dcms.AdminApi.Environments.EnvironmentRollbackJob.Kind);
 builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentCopyJob, Dcms.AdminApi.Environments.EnvironmentCopyPayload>(
     Dcms.AdminApi.Environments.EnvironmentCopyJob.Kind);
+builder.Services.AddJobHandler<Dcms.AdminApi.Sites.Audits.SiteAuditJob, Dcms.AdminApi.Sites.Audits.SiteAuditPayload>(
+    Dcms.AdminApi.Sites.Audits.SiteAuditJob.Kind);
 
 // Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
 builder.Services.AddDcmsPermissionAuthorization();
@@ -491,6 +503,7 @@ app.MapSiteEndpoints();
 app.MapRepoEndpoints();
 app.MapPublishBranchEndpoints();
 app.MapSiteSearchEndpoints();
+Dcms.AdminApi.Sites.Audits.SiteAuditEndpoints.MapSiteAuditEndpoints(app);
 app.MapTableViewEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();

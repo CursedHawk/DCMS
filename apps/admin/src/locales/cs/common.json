@@ -561,7 +561,16 @@
       "description": "Kódový editor i vizuální builder staví vedle sebe strom souborů, editační okno a živý náhled. Na telefonu to nelze rozumně uspořádat, takže jsou to nástroje pro počítač.",
       "continueAnyway": "Přesto zobrazit"
     },
-    "backToSites": "Zpět na weby"
+    "backToSites": "Zpět na weby",
+    "audit": {
+      "errors": {
+        "gone": "Audit už neexistuje.",
+        "failed": "Audit selhal.",
+        "buildGone": "Sestavení pro audit už neexistuje.",
+        "buildFailed": "Web se nesestavil, nešlo ho auditovat.",
+        "buildSlow": "Sestavení webu pro audit trvalo příliš dlouho."
+      }
+    }
   },
   "editor": {
     "publishQueued": "Publikace zařazena"
@@ -1635,6 +1644,12 @@
       },
       "functionsRun": {
         "title": "Spuštění funkce {{function}}"
+      },
+      "siteAudit": {
+        "title": "Audit webu {{site}}"
+      },
+      "siteAuditBuild": {
+        "title": "Příprava webu {{site}} na audit"
       }
     },
     "stages": {
@@ -1654,7 +1669,10 @@
         "visitors": "Kopírují se účty návštěvníků",
         "form-submissions": "Kopírují se odeslané formuláře",
         "chat": "Kopírují se konverzace v chatu"
-      }
+      },
+      "auditBuilding": "Sestavuji nepublikovaný web",
+      "auditMobile": "Test na mobilu",
+      "auditDesktop": "Test na počítači"
     }
   },
   "marketplace": {
@@ -2971,5 +2989,47 @@
     },
     "sitemapUrls": "Adresy v sitemapě",
     "sitemapUrlsHint": "Stránky, které sitemapa uvede, např. / a /about. Bez nich web sitemapu nemá."
+  },
+  "siteAudit": {
+    "title": "Audit",
+    "run": "Spustit audit",
+    "notConfigured": "PageSpeed Insights zatím na této platformě není nastavené: správce přidá klíč Google API (PageSpeed__ApiKey).",
+    "target": "Co auditovat",
+    "targets": {
+      "draft": "Nepublikované",
+      "live": "Živý web"
+    },
+    "targetHint": {
+      "draft": "Vaše aktuální změny, sestavené a otestované na dočasné adrese, kterou nikdo jiný nezná. Trvá to minutu či dvě.",
+      "live": "Web na své doméně, jak ho vidí návštěvníci."
+    },
+    "queued": "Čeká na spuštění…",
+    "failed": "Audit selhal",
+    "none": "Zatím žádné audity. Spusťte jeden a uvidíte, jak rychlý a dohledatelný web je.",
+    "result": "Výsledek auditu",
+    "strategies": {
+      "mobile": "Mobil",
+      "desktop": "Počítač"
+    },
+    "openInPsi": "Otevřít celou zprávu v PageSpeed Insights",
+    "history": "Předchozí audity",
+    "status": {
+      "Queued": "Ve frontě",
+      "Building": "Sestavuje se",
+      "Testing": "Testuje se",
+      "Succeeded": "Hotovo",
+      "Failed": "Selhalo"
+    },
+    "categories": {
+      "performance": "Výkon",
+      "accessibility": "Přístupnost",
+      "best-practices": "Osvědčené postupy",
+      "seo": "SEO"
+    },
+    "field": "Zkušenost skutečných návštěvníků: {{category}}.",
+    "allPassed": "Všechny audity prošly.",
+    "moreItems_one": "a {{count}} další",
+    "moreItems_few": "a {{count}} další",
+    "moreItems_other": "a {{count}} dalších"
   }
 }

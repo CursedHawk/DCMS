@@ -19,6 +19,7 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
     public DbSet<Site> Sites => Set<Site>();
     public DbSet<SiteBuild> Builds => Set<SiteBuild>();
     public DbSet<SiteDraft> Drafts => Set<SiteDraft>();
+    public DbSet<SiteAudit> Audits => Set<SiteAudit>();
     public DbSet<SitePublishBranch> PublishBranches => Set<SitePublishBranch>();
     public DbSet<RepoBinding> RepoBindings => Set<RepoBinding>();
 
@@ -50,6 +51,22 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
                 .HasQueryFilter(QueryFilters.Environment, s => CurrentEnvironmentId == null || s.EnvironmentId == CurrentEnvironmentId);
         });
 
+        builder.Entity<SiteAudit>(e =>
+        {
+            e.ToTable("site_audits");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Target).HasMaxLength(16);
+            e.Property(a => a.Branch).HasMaxLength(256);
+            e.Property(a => a.Url).HasMaxLength(2048);
+            e.Property(a => a.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(a => a.MobileJson).HasColumnType("jsonb");
+            e.Property(a => a.DesktopJson).HasColumnType("jsonb");
+            e.Property(a => a.Error).HasMaxLength(2048);
+            e.HasIndex(a => new { a.SiteId, a.CreatedAt });
+            e.HasQueryFilter(QueryFilters.Tenant, a => a.TenantId == CurrentTenantId)
+                .HasQueryFilter(QueryFilters.Environment, a => CurrentEnvironmentId == null || a.EnvironmentId == CurrentEnvironmentId);
+        });
+
         builder.Entity<SiteBuild>(e =>
         {
             e.ToTable("site_builds");
@@ -60,6 +77,9 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.Property(b => b.LogObjectKey).HasMaxLength(256);
             e.Property(b => b.GitCommitSha).HasMaxLength(64);
             e.Property(b => b.Branch).HasMaxLength(256);
+            e.Property(b => b.AuditToken).HasMaxLength(64);
+            e.HasIndex(b => b.AuditToken).IsUnique().HasFilter("\"AuditToken\" IS NOT NULL");
+            e.Ignore(b => b.IsAudit);
             e.HasIndex(b => new { b.SiteId, b.CreatedAt });
             e.HasQueryFilter(QueryFilters.Tenant, b => b.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, b => CurrentEnvironmentId == null || b.EnvironmentId == CurrentEnvironmentId);

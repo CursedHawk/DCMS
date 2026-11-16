@@ -197,6 +197,71 @@ namespace Dcms.Shared.Data.Migrations.Sites
                     b.ToTable("sites", "sites");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Sites.SiteAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Branch")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid?>("BuildId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DesktopJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<Guid?>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MobileJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiteId", "CreatedAt");
+
+                    b.ToTable("site_audits", "sites");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Sites.SiteBuild", b =>
                 {
                     b.Property<Guid>("Id")
@@ -207,6 +272,13 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset?>("AuditExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AuditToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Branch")
                         .HasMaxLength(256)
@@ -248,6 +320,10 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AuditToken")
+                        .IsUnique()
+                        .HasFilter("\"AuditToken\" IS NOT NULL");
 
                     b.HasIndex("SiteId", "CreatedAt");
 

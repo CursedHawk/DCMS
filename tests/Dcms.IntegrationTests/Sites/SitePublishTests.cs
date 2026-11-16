@@ -219,7 +219,7 @@ public class SitePublishTests(SitePublishFixture fixture)
     }
 
     private sealed record MapSite(HttpClient Admin, string Slug, string Hostname, Guid TenantId, Guid SiteId,
-        Func<string, Task<HttpResponseMessage>> GetAsync, IAsyncDisposable Host);
+        Func<string, Task<HttpResponseMessage>> GetAsync, IAsyncDisposable Host, HttpClient HostClient);
 
     /// <summary>A published one-page-plus Mode A site with an Events instance (two published events,
     /// one draft), served by a site-host that lists items through the in-memory content-api.</summary>
@@ -277,7 +277,7 @@ public class SitePublishTests(SitePublishFixture fixture)
             return await host.SendAsync(req, ct);
         }
         await PollUntil(async () => (await GetAsync("/")).StatusCode == HttpStatusCode.OK, TimeSpan.FromSeconds(30));
-        return new MapSite(admin, slug, hostname, tenantId, siteId, GetAsync, hostFactory);
+        return new MapSite(admin, slug, hostname, tenantId, siteId, GetAsync, hostFactory, host);
     }
 
     private static readonly XNamespace SitemapNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
@@ -366,6 +366,87 @@ public class SitePublishTests(SitePublishFixture fixture)
         view.GetProperty("automaticPages").GetBoolean().Should().BeTrue();
         view.GetProperty("pages").EnumerateArray().Select(p => p.GetProperty("path").GetString()).Should().Equal("/", "/about", "/events/:slug");
         view.GetProperty("sitemapUrl").GetString().Should().Be($"https://{site.Hostname}/sitemap.xml");
+    }
+
+    [DockerFact]
+    public async Task A_site_is_audited_live_and_unpublished_through_PageSpeed_Insights()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var site = await PublishMapSiteAsync(ct);
+        await using var _ = site.Host;
+
+        async Task<JsonElement> AuditAsync(object body)
+        {
+            var res = await site.Admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{site.SiteId}/audits", site.Slug, body), ct);
+            res.StatusCode.Should().Be(HttpStatusCode.Accepted, await res.Content.ReadAsStringAsync(ct));
+            var auditId = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("auditId").GetGuid();
+            JsonElement audit = default;
+            await PollUntil(async () =>
+            {
+                audit = await (await site.Admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{site.SiteId}/audits/{auditId}", site.Slug, null), ct))
+                    .Content.ReadFromJsonAsync<JsonElement>(ct);
+                var status = audit.GetProperty("status").GetString();
+                status.Should().NotBe("Failed", audit.GetProperty("error").ToString());
+                return status == "Succeeded";
+            }, TimeSpan.FromSeconds(90));
+            return audit;
+        }
+
+        // The live site: its own address, on both strategies, with the platform's key.
+        var live = await AuditAsync(new { target = "live" });
+        live.GetProperty("mobile").GetProperty("scores").GetProperty("performance").GetInt32().Should().Be(62);
+        live.GetProperty("desktop").GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("id").GetString())
+            .Should().Equal("render-blocking-resources", "uses-optimized-images", "image-alt", "meta-description");
+        fixture.PageSpeed.Calls.Where(c => c.Url == $"https://{site.Hostname}/").Select(c => (c.Strategy, c.Key))
+            .Should().BeEquivalentTo([("mobile", "test-key"), ("desktop", "test-key")]);
+
+        // The unpublished site (#649): built, never made live, and served at its own address meanwhile.
+        Guid? liveBuild;
+        using (var scope = fixture.Admin.Services.CreateScope())
+        using (RlsScope.Environment(site.TenantId, site.TenantId))
+        {
+            liveBuild = (await scope.ServiceProvider.GetRequiredService<SitesDbContext>().Sites.IgnoreTenantFilter()
+                .SingleAsync(x => x.Id == site.SiteId, ct)).ActiveBuildId;
+        }
+        var draft = await AuditAsync(new { target = "draft" });
+        draft.GetProperty("target").GetString().Should().Be("draft");
+        draft.GetProperty("url").ValueKind.Should().Be(JsonValueKind.Null, "an unpublished site's address is not handed out");
+
+        SiteBuild auditBuild;
+        using (var scope = fixture.Admin.Services.CreateScope())
+        using (RlsScope.Environment(site.TenantId, site.TenantId))
+        {
+            var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+            auditBuild = await sites.Builds.IgnoreTenantFilter().AsNoTracking().SingleAsync(b => b.SiteId == site.SiteId && b.AuditToken != null, ct);
+            (await sites.Sites.IgnoreTenantFilter().SingleAsync(x => x.Id == site.SiteId, ct)).ActiveBuildId
+                .Should().Be(liveBuild, "an audit build never goes live");
+        }
+        var auditHost = $"audit-{auditBuild.AuditToken}.dcms.highgeek.eu";
+        fixture.PageSpeed.Calls.Select(c => c.Url).Should().Contain($"https://{auditHost}/");
+
+        var page = new HttpRequestMessage(HttpMethod.Get, "/");
+        page.Headers.Host = auditHost;
+        var served = await site.HostClient.SendAsync(page, ct);
+        served.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await served.Content.ReadAsStringAsync(ct)).Should().Contain("Mapped");
+        served.Headers.Contains("X-Robots-Tag").Should().BeFalse("PageSpeed's SEO audit must see the site as it would go live");
+
+        var builds = await (await site.Admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{site.SiteId}/builds", site.Slug, null), ct))
+            .Content.ReadAsStringAsync(ct);
+        builds.Should().NotContain(auditBuild.Id.ToString(), "an audit build is no deployment");
+
+        // Its hour over, the address answers nothing.
+        using (var scope = fixture.Admin.Services.CreateScope())
+        using (RlsScope.Environment(site.TenantId, site.TenantId))
+        {
+            var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+            (await sites.Builds.IgnoreTenantFilter().SingleAsync(b => b.Id == auditBuild.Id, ct)).AuditExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            await sites.SaveChangesAsync(ct);
+        }
+        await using var fresh = fixture.Host.WithWebHostBuilder(_ => { });
+        var expired = new HttpRequestMessage(HttpMethod.Get, "/");
+        expired.Headers.Host = auditHost;
+        (await fresh.CreateClient().SendAsync(expired, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private static HttpRequestMessage Admin(HttpMethod method, string url, string slug, object? body, bool superAdmin = false)

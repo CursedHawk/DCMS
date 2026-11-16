@@ -11,6 +11,7 @@ export function ProgressRing({
   stroke = 2.5,
   label,
   className,
+  arcClassName = 'stroke-primary',
   children,
 }: {
   value: number | null;
@@ -18,6 +19,8 @@ export function ProgressRing({
   stroke?: number;
   label?: string;
   className?: string;
+  /** The filled arc's stroke, e.g. a score band's colour. */
+  arcClassName?: string;
   children?: ReactNode;
 }) {
   const r = (size - stroke) / 2;
@@ -54,7 +57,7 @@ export function ProgressRing({
             strokeWidth={stroke}
             strokeLinecap="round"
             strokeDasharray={`${filled} ${circumference}`}
-            className="stroke-primary transition-[stroke-dasharray] duration-300 ease-out"
+            className={cn(arcClassName, 'transition-[stroke-dasharray] duration-300 ease-out')}
           />
         ) : null}
       </svg>

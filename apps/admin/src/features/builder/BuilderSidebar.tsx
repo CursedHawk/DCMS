@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Editor } from 'grapesjs';
-import { Blocks, FileText, GitBranch, Globe, Layers, LayoutTemplate, Puzzle, Rocket } from 'lucide-react';
+import { Blocks, FileText, Gauge, GitBranch, Globe, Layers, LayoutTemplate, Puzzle, Rocket } from 'lucide-react';
 import { AgentRailIcon } from '../agent/AgentRailIcon';
 import { useAgentFocus } from '../agent/hostStore';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
-import { DeploymentsView, SearchEnginesView, SourceControlView, gitApi, useVfs } from '../site-source';
+import { AuditView, DeploymentsView, SearchEnginesView, SourceControlView, gitApi, useVfs } from '../site-source';
 import { AgentPanel } from '../ide/agent/AgentPanel';
 import { BlocksPanel } from './panels/BlocksPanel';
 import { LayersPanel } from './panels/LayersPanel';
@@ -24,6 +24,7 @@ export type SidebarView =
   | 'scm'
   | 'deploy'
   | 'searchEngines'
+  | 'audit'
   | 'agent';
 
 /**
@@ -99,6 +100,9 @@ export function BuilderSidebar({
         <RailButton active={view === 'searchEngines'} label={t('searchEngines.title')} onClick={() => onViewChange('searchEngines')}>
           <Globe className="h-5 w-5" />
         </RailButton>
+        <RailButton active={view === 'audit'} label={t('siteAudit.title')} onClick={() => onViewChange('audit')}>
+          <Gauge className="h-5 w-5" />
+        </RailButton>
         <RailButton
           active={view === 'agent'}
           label={t('ide.agent.title')}
@@ -129,6 +133,7 @@ export function BuilderSidebar({
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
         {view === 'searchEngines' && <SearchEnginesView siteId={siteId} />}
+        {view === 'audit' && <AuditView siteId={siteId} branch={branch} />}
         {/* Kept mounted once opened, so the conversation stays on screen across views. The run
             itself lives in the agent host and outlives the page (ADR 0033). */}
         {agentOpened && (

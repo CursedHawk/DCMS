@@ -65,6 +65,7 @@ public static class RlsConfigurator
         ("sites", "site_builds"),
         ("sites", "site_drafts"),
         ("sites", "site_publish_branches"),
+        ("sites", "site_audits"),
         ("sites", "repo_bindings"),
         ("ai", "tenant_ai_settings"),
         // Holds every user's Vault-Transit-encrypted provider key. Added a release after its
@@ -174,6 +175,7 @@ public static class RlsConfigurator
         ("sites", "site_builds"),
         ("sites", "site_drafts"),
         ("sites", "site_publish_branches"),
+        ("sites", "site_audits"),
         ("sites", "repo_bindings"),
         ("search", "search_documents"),
         ("visitors", "visitor_accounts"),

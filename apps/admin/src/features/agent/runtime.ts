@@ -439,7 +439,7 @@ async function runOne<TContext>(
   });
 
   try {
-    const outcome = await spec.run(call.input, opts.context);
+    const outcome = await spec.run(call.input, opts.context, opts.signal);
     const capped = capResult(outcome.content, spec.maxResultChars);
     const result: ToolResult = {
       ...outcome,

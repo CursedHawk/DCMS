@@ -124,4 +124,19 @@ public sealed class SiteBuild : EnvironmentEntity
     public string? Error { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
+
+    /// <summary>
+    /// Set on an <b>audit build</b> (#649): built like any other, never made live, and served for
+    /// a while at <c>audit-{token}.{managed zone}</c> so PageSpeed Insights can reach an unpublished
+    /// site. Null on every build that publishes.
+    /// </summary>
+    public string? AuditToken { get; set; }
+
+    /// <summary>When an audit build's address stops answering.</summary>
+    public DateTimeOffset? AuditExpiresAt { get; set; }
+
+    public bool IsAudit => AuditToken is not null;
+
+    /// <summary>The first label of an audit build's address: <c>audit-{token}.{managed zone}</c>.</summary>
+    public const string AuditHostPrefix = "audit-";
 }

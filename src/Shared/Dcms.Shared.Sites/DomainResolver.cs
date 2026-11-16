@@ -26,6 +26,9 @@ public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, st
     /// <summary>Whether this site has a sitemap: Mode D always, any other once its people list a page.</summary>
     public bool HasSitemap => RenderMode == SiteRenderMode.ReactBuilder || Search.Include.Count > 0;
 
+    /// <summary>An audit build's address (#649): served until then, and never cached past it.</summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
+
     /// <summary>Whether search engines may index anything here: not a branch's domain, not a hidden site.</summary>
     public bool Indexable => !NoIndex && Search.Indexable;
 }
@@ -47,8 +50,9 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             return cached;
         }
 
-        var route = await LoadAsync(hostname, ct);
-        cache.Set(Key(hostname), route, Ttl);
+        var route = AuditToken(hostname) is { } token ? await LoadAuditAsync(token, ct) : await LoadAsync(hostname, ct);
+        var until = DateTimeOffset.UtcNow + Ttl;
+        cache.Set(Key(hostname), route, route?.ExpiresAt is { } expires && expires < until ? expires : until);
         return route;
     }
 
@@ -189,4 +193,61 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
     }
 
     private static string Key(string hostname) => $"siteroute:{hostname}";
+
+    public const string AuditHostPrefix = SiteBuild.AuditHostPrefix;
+
+    /// <summary>The token an audit build's address carries: 32 lowercase hex characters; null for any other host.</summary>
+    public static string? AuditToken(string hostname)
+    {
+        var label = hostname.Split('.')[0];
+        if (!label.StartsWith(AuditHostPrefix, StringComparison.Ordinal)) return null;
+        var token = label[AuditHostPrefix.Length..];
+        return token.Length == 32 && token.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') ? token : null;
+    }
+
+    /// <summary>
+    /// An audit build (#649), at the address PageSpeed Insights is given: the unpublished site as it
+    /// would be served live (its search settings, no forced noindex — that would fail the SEO audit),
+    /// until it expires. Found platform-wide by its token, as a domain is by its name.
+    /// </summary>
+    private async Task<SiteRoute?> LoadAuditAsync(string token, CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+        SiteBuild? build;
+        using (RlsScope.Platform())
+        {
+            build = await sites.Builds.IgnoreTenantFilter().AsNoTracking()
+                .FirstOrDefaultAsync(b => b.AuditToken == token, ct);
+        }
+        if (build is null || build.Status != SiteBuildStatus.Succeeded || build.AuditExpiresAt is not { } expires || expires <= DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        using var rls = RlsScope.Environment(build.TenantId, build.EnvironmentId);
+        var site = await sites.Sites.IgnoreTenantFilter().AsNoTracking().FirstOrDefaultAsync(s => s.Id == build.SiteId, ct);
+        var tenant = await tenancy.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == build.TenantId.ToString(), ct);
+        if (site is null || tenant is null || tenant.Status == TenantStatus.Suspended)
+        {
+            return null;
+        }
+        var environmentName = build.EnvironmentId == build.TenantId
+            ? TenantEnvironment.Production
+            : await tenancy.Environments.IgnoreTenantFilter().AsNoTracking()
+                .Where(e => e.Id == build.EnvironmentId).Select(e => e.Name).FirstOrDefaultAsync(ct);
+        if (environmentName is null)
+        {
+            return null;
+        }
+        return new SiteRoute(build.TenantId, tenant.Identifier, site.Id, build.ArtifactPrefix)
+        {
+            EnvironmentId = build.EnvironmentId,
+            EnvironmentName = environmentName,
+            Search = SiteSearchSettings.Parse(site.SearchSettingsJson),
+            RenderMode = site.RenderMode,
+            ExpiresAt = expires,
+        };
+    }
 }
