@@ -232,7 +232,7 @@ public sealed class SitePublishConsumer(
         if (mode.IsViteApp())
         {
             build.LogObjectKey = LogKey(build.ArtifactPrefix);
-            await BuildReactAppAsync(job, build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
+            await BuildReactAppAsync(job, mode, build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }
         else if (mode == SiteRenderMode.StaticFiles)
         {
@@ -397,7 +397,7 @@ public sealed class SitePublishConsumer(
     // install + build. The full step log is stored to object storage (under a
     // deterministic key) whether the build succeeds or fails, so the IDE can show
     // the user exactly why a build failed.
-    private async Task BuildReactAppAsync(SitePublishRequested job, string definitionJson, string artifactPrefix, CancellationToken ct)
+    private async Task BuildReactAppAsync(SitePublishRequested job, SiteRenderMode mode, string definitionJson, string artifactPrefix, CancellationToken ct)
     {
         // Per-build dir lives directly under the work root so the sandbox can bind-mount
         // it by host path (DCMS_BUILD_WORK_HOST_ROOT + leaf). Defaults to the temp dir
@@ -421,6 +421,10 @@ public sealed class SitePublishConsumer(
         {
             // Install and build have no count of their own; the bar turns until the artifacts do.
             var artifacts = await reactBuilder.BuildAsync(definitionJson, workDir, log, ct);
+            // Mode D's pages are its documents; Mode B's are in its React routes, read by running them.
+            IReadOnlyList<SitemapPage> pages = mode == SiteRenderMode.ReactApp
+                ? await reactBuilder.ListPagesAsync(workDir, log, ct) is { Count: > 0 } listed ? listed : [new SitemapPage("/")]
+                : SitemapPageList.ForViteApp(SiteFileMap.Parse(definitionJson));
             var stored = 0;
             foreach (var artifact in artifacts)
             {
@@ -428,7 +432,7 @@ public sealed class SitePublishConsumer(
                 await storage.PutAsync(Bucket, $"{artifactPrefix}/{artifact.RelativePath}", stream, stream.Length, artifact.ContentType, ct);
                 await StoredAsync(job, ++stored, artifacts.Count, ct);
             }
-            await StorePagesAsync(artifactPrefix, SitemapPageList.ForViteApp(SiteFileMap.Parse(definitionJson)), ct);
+            await StorePagesAsync(artifactPrefix, pages, ct);
             log.AppendLine($"✓ Build succeeded — {artifacts.Count} file(s) in dist/.");
         }
         finally

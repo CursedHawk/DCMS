@@ -43,6 +43,7 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
     // builder (a stuck build is also reaped server-side).
     private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(8);
+    private static readonly TimeSpan PagesTimeout = TimeSpan.FromMinutes(2);
 
     private readonly SandboxOptions _sandbox = SandboxOptions.FromEnvironment();
 
@@ -333,6 +334,31 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             {
                 return false;
             }
+        }
+    }
+
+    /// <summary>
+    /// Mode B: the pages its React routes declare, for its sitemap (#343). After <see cref="BuildAsync"/>,
+    /// in the same work dir and sandbox (no network): <c>node</c> runs the platform's
+    /// <c>sitemap-routes.mjs</c>, which loads <c>src/routes.tsx</c> with the site's own Vite. Null
+    /// when they could not be read — the sitemap then lists <c>/</c>; never a failed build.
+    /// </summary>
+    public async Task<IReadOnlyList<SitemapPage>?> ListPagesAsync(string workDir, StringBuilder log, CancellationToken ct)
+    {
+        var output = Path.Combine(workDir, Runtime.SitemapRuntime.OutputFile);
+        try
+        {
+            // A file of the site's own by that name must not stand in for what the script reads.
+            File.Delete(output);
+            await File.WriteAllBytesAsync(Path.Combine(workDir, Runtime.SitemapRuntime.ScriptFile), Runtime.SitemapRuntime.Bytes, ct);
+            await RunPhaseAsync(BuildPhase.Build, "node", Runtime.SitemapRuntime.ScriptFile, workDir,
+                "list the pages", PagesTimeout, log, ct);
+            return File.Exists(output) ? SitemapPageList.FromRoutesJson(await File.ReadAllTextAsync(output, ct)) : null;
+        }
+        catch (Exception e) when (e is InvalidOperationException or IOException or JsonException or UnauthorizedAccessException)
+        {
+            log.AppendLine($"› Sitemap: the pages could not be listed ({e.Message}); only / is listed.");
+            return null;
         }
     }
 

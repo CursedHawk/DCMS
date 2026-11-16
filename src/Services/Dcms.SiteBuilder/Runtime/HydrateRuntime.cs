@@ -9,15 +9,15 @@ namespace Dcms.SiteBuilder.Runtime;
 /// </summary>
 public static class HydrateRuntime
 {
-    public static byte[] Bytes { get; } = Load();
+    public static byte[] Bytes { get; } = Load("Dcms.SiteBuilder.Runtime.hydrate.js");
 
-    private static byte[] Load()
+    /// <summary>An embedded runtime file of this assembly.</summary>
+    internal static byte[] Load(string name)
     {
         var assembly = typeof(HydrateRuntime).Assembly;
-        const string name = "Dcms.SiteBuilder.Runtime.hydrate.js";
         using var stream = assembly.GetManifestResourceStream(name)
             ?? throw new InvalidOperationException(
-                $"Embedded hydration runtime '{name}' not found. Available: {string.Join(", ", assembly.GetManifestResourceNames())}");
+                $"Embedded runtime '{name}' not found. Available: {string.Join(", ", assembly.GetManifestResourceNames())}");
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
         return ms.ToArray();

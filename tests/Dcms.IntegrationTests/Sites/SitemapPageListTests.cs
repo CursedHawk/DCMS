@@ -56,4 +56,30 @@ public class SitemapPageListTests
         SitemapPageList.ForStaticFiles(["index.html", "docs/guide.html", "404.html", "app.js", "docs/index.htm"])
             .Should().Equal(new SitemapPage("/"), new SitemapPage("/docs/guide.html"), new SitemapPage("/docs/index.htm"));
     }
+    [Fact]
+    public void A_react_apps_pages_from_its_routes_are_checked_like_any_input()
+    {
+        var json = """
+            [
+              { "path": "/" },
+              { "path": "/about" },
+              { "path": "/blog/:slug", "instance": "blog", "contentType": "post" },
+              { "path": "relative" },
+              { "path": "/a/../b" },
+              { "path": "/a//b" },
+              { "path": "/tab\there" },
+              { "path": "/half/:slug", "instance": "blog" },
+              { "path": "/bad/:slug", "instance": "a b", "contentType": "post" },
+              { "path": "/mid/:x/tail", "instance": "blog", "contentType": "post" },
+              { "path": 42 },
+              "nonsense"
+            ]
+            """;
+
+        SitemapPageList.FromRoutesJson(json).Should().Equal(
+            new SitemapPage("/"), new SitemapPage("/about"), new SitemapPage("/blog/:slug", "blog", "post"));
+        SitemapPageList.FromRoutesJson("""{ "path": "/" }""").Should().BeEmpty();
+        SitemapPageList.FromRoutesJson("[" + string.Join(',', Enumerable.Range(0, 50_010).Select(i => $$"""{"path":"/p{{i}}"}""")) + "]")
+            .Should().HaveCount(50_000);
+    }
 }

@@ -24,6 +24,11 @@ export const SKILLS: Record<string, string> = {
   iframe, where browser history is not usable — the preview bundler swaps \`createBrowserRouter\`
   for an in-memory router pinned to "/". So a route you add works in production and may not be
   reachable by clicking in the preview. Verify it by reading the code, not only by clicking.
+- Sitemap: publishing reads the \`createBrowserRouter([...])\` array in \`src/routes.tsx\` to list the
+  site's pages (JSX \`<Routes>\` is not read; no router means only "/"). The template's
+  \`:instance/:contentType(/:slug)\` routes list every collection and its items. A detail route of
+  your own needs \`handle: { sitemap: { instance, contentType } }\` to be listed per item;
+  \`handle: { sitemap: false }\` keeps a page and those under it out.
 - Styling: plain CSS on design tokens — change \`src/styles/tokens.css\` before rules. Tailwind also
   works (compiled in-browser for the preview, by the real build for production).
 - Static assets live beside the source and are referenced by relative path.`,

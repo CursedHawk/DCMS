@@ -166,9 +166,10 @@ export default tseslint.config(
     /*
      * Repo tooling. Node, and `.mjs` — which the main block above does not match at all, so
      * these files get `js.configs.recommended` with no globals and every `console` and
-     * `process` reads as undefined. The dcms command line is Node too.
+     * `process` reads as undefined. The dcms command line is Node too, and so is the script
+     * site-builder runs in a Mode B build to list its pages.
      */
-    files: ['scripts/**/*.mjs', '**/scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', '**/scripts/**/*.mjs', 'src/Services/Dcms.SiteBuilder/Runtime/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
 );

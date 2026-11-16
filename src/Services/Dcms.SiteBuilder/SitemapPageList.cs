@@ -45,7 +45,7 @@ public static partial class SitemapPageList
 
     /// <summary>
     /// Mode D: <c>dcms/app.json</c>'s routes less noindex pages; a detail route by its page's plugin
-    /// source. Mode B has no such file and nothing to read its routes from: just its root.
+    /// source. Without that file, just the root. (Mode B's pages come from <see cref="FromRoutesJson"/>.)
     /// </summary>
     public static List<SitemapPage> ForViteApp(IReadOnlyDictionary<string, string> files)
     {
@@ -99,6 +99,47 @@ public static partial class SitemapPageList
             .Where(p => !Path.GetFileName(p).StartsWith("404.", StringComparison.OrdinalIgnoreCase))
             .Select(p => new SitemapPage(string.Equals(p, "index.html", StringComparison.OrdinalIgnoreCase) ? "/" : "/" + p))
             .ToList();
+
+    /// <summary>The protocol's cap on one sitemap; more could never be listed.</summary>
+    private const int MaxPages = 50_000;
+
+    /// <summary>
+    /// Mode B: what the platform's script read from the site's own React routes. The site's code
+    /// ran to produce it, so it is checked like any input: an absolute path of plain segments, and a
+    /// detail page only with a slug-like plugin instance and content type and its parameter last.
+    /// Anything else is dropped.
+    /// </summary>
+    public static List<SitemapPage> FromRoutesJson(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+        var pages = new List<SitemapPage>();
+        foreach (var entry in doc.RootElement.EnumerateArray())
+        {
+            if (pages.Count >= MaxPages) break;
+            if (Text(entry, "path") is not { Length: > 0 and <= 2048 } path || path[0] != '/'
+                || path.Any(char.IsControl) || path.Split('/').Skip(1).Any(s => s is "" or "." or "..") && path != "/")
+            {
+                continue;
+            }
+            if (!path.Contains(':'))
+            {
+                pages.Add(new SitemapPage(path));
+            }
+            else if (DetailParamIsLast(path) && Text(entry, "instance") is { } instance && Text(entry, "contentType") is { } contentType
+                     && Slug().IsMatch(instance) && Slug().IsMatch(contentType))
+            {
+                pages.Add(new SitemapPage(path, instance, contentType));
+            }
+        }
+        return pages;
+    }
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
+    private static partial Regex Slug();
 
     /// <summary>site-host only wildcards the last segment, so <c>/a/:x/b</c> never resolves.</summary>
     private static bool DetailParamIsLast(string path)

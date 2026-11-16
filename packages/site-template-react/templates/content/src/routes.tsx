@@ -11,6 +11,11 @@ import { NotFoundPage } from './pages/NotFoundPage';
  * route here — static paths such as `/about` win over the `:instance` patterns below, so they
  * can be added in any order.
  *
+ * The site's sitemap.xml lists these routes, read when the site is published: the `:instance`
+ * routes list every collection and its items. A detail route of your own (`blog/:slug`) is listed
+ * per published item once it says which — `handle: { sitemap: { instance: 'blog', contentType: 'post' } }`
+ * — and `handle: { sitemap: false }` keeps a page, and those under it, out.
+ *
  * The root loader asks the site's access rules (User Authentication) before each page is drawn:
  * moving between pages inside the app never reaches them otherwise. Without rules it lets
  * everything through.

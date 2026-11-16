@@ -82,3 +82,6 @@ __pycache__/
 plugins/*
 !plugins/README.md
 dist-ssr/
+
+# site-template-react sitemap tests assemble projects here (removed after each run)
+packages/site-template-react/.sitemap-test-*/
