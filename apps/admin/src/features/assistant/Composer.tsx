@@ -1,5 +1,5 @@
 import { Paperclip, Send, Square, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, cn } from '@dcms/ui';
 import type { Attachment } from './attachments';
@@ -29,6 +29,7 @@ export function Composer({
   placeholder,
   prefill,
   onPrefillTaken,
+  toolbar,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
@@ -40,6 +41,8 @@ export function Composer({
   onAttach: (files: readonly File[]) => void;
   onDetach: (name: string) => void;
   toolCount: number;
+  /** Controls next to the mode switch, e.g. the provider picker. */
+  toolbar?: ReactNode;
   /** True when the last append to the stored conversation failed. */
   unsaved?: boolean;
   placeholder?: string;
@@ -139,6 +142,7 @@ export function Composer({
           </Button>
 
           <ModeSwitch mode={mode} onChange={onModeChange} disabled={!writable} />
+          {toolbar}
 
           <span className="ml-auto" />
 

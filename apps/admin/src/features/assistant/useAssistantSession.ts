@@ -159,6 +159,17 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   const standing = useRef<Set<string>>(new Set());
   const conversation = useRef<string | null>(conversationId);
   const loaded = useRef<string | null>(null);
+  /**
+   * The workspace provider this conversation runs on; null is the default. Picked before the
+   * first question and kept for the conversation (the ref is what the running loop reads).
+   */
+  const [providerId, setProviderState] = useState<string | null>(null);
+  const provider = useRef<string | null>(null);
+  const setProviderId = useCallback((id: string | null) => {
+    if (conversation.current) return;
+    provider.current = id;
+    setProviderState(id);
+  }, []);
 
   const pluginTools = useContractTools();
   // Plugin contract tools, and the hand-off to site agents — which is the assistant's alone.
@@ -321,6 +332,8 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
         requestShape.current = null;
         conversation.current = detail.id;
         loaded.current = detail.id;
+        provider.current = detail.providerId ?? null;
+        setProviderState(provider.current);
         standing.current = new Set();
         setSteps(stepsFromMessages(messages, [...available, askTool]));
         setAttachments([]);
@@ -396,6 +409,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
               title: titleFrom(question || files[0] || 'New conversation'),
               mode: effectiveMode,
               pageArea: page?.area ?? null,
+              providerId: provider.current,
             });
             conversation.current = created.id;
             loaded.current = created.id;
@@ -457,7 +471,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
               tools: definitions,
               context,
               overrides: policy.prompts,
-              transport: streamAssistantTurn,
+              transport: (body, handlers, signal) => streamAssistantTurn(body, handlers, signal, provider.current),
               signal: controller.signal,
             });
             const saved = await archive({
@@ -522,6 +536,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
                 },
               },
               controller.signal,
+              provider.current,
             );
 
             const assistantTurn: Message = { role: 'assistant', content: turn.content };
@@ -687,6 +702,9 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
     stop,
     reset,
     conversationId: conversation.current,
+    /** The provider the conversation runs on (null: the default), and picking it before it starts. */
+    providerId,
+    setProviderId,
     toolCount: available.length,
     /** Tools waved through for the rest of this conversation, for the composer's note. */
     standing: standing.current,

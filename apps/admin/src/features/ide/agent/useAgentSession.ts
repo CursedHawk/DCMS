@@ -16,6 +16,7 @@ import {
   revertSite,
   type RunOutcome,
   setSiteMode,
+  setSiteProvider,
   setSiteScope,
   type SiteSession,
   stopSite,
@@ -60,6 +61,9 @@ export interface AgentSession {
   queued: number;
   /** The stored conversation this session is writing to, once there is one. */
   conversationId: string | null;
+  /** The workspace AI provider the conversation runs on (null: the default); pickable until it starts. */
+  providerId: string | null;
+  setProviderId: (id: string | null) => void;
   /** True when a turn could not be stored — the panel says so rather than pretending. */
   unsaved: boolean;
   /** Answer the pending approval: once, for the rest of this run, or not at all. */
@@ -92,6 +96,7 @@ const EMPTY: Omit<SiteSession, 'key' | 'kind'> = {
   changes: [],
   lastRun: null,
   conversationId: null,
+  providerId: null,
   unsaved: false,
   task: null,
   origin: 'user',
@@ -140,6 +145,11 @@ export function useAgentSession(opts: {
     outcome: session.outcome,
     queued: session.queue.length,
     conversationId: session.conversationId,
+    providerId: session.providerId,
+    setProviderId: (id) => {
+      configureSite(key, { kind, siteName: opts.siteName, functionsApi: opts.functionsApi });
+      setSiteProvider(key, id);
+    },
     unsaved: session.unsaved,
     approve: (decision) => approveSite(key, decision),
     answer: (answers) => answerSite(key, answers),

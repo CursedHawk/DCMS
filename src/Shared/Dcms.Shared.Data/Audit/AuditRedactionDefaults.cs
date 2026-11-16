@@ -74,9 +74,10 @@ public static class AuditRedactionDefaults
         // The key ciphertext is denied explicitly as well as by heuristic: the record that a
         // tenant's provider credentials were replaced is exactly the kind of thing an
         // investigation needs, and exactly the kind of value it must not carry.
+        redactor.Allow(typeof(TenantAiSettings), "ai_settings");
         redactor.Allow(
-            typeof(TenantAiSettings), "ai_settings",
-            deny: [nameof(TenantAiSettings.ApiKeyCiphertext)]);
+            typeof(AiProviderConfig), "ai_provider", nameof(AiProviderConfig.Name),
+            deny: [nameof(AiProviderConfig.ApiKeyCiphertext)]);
         redactor.Allow(
             typeof(UserAiSettings), "ai_user_settings",
             deny: [nameof(UserAiSettings.ApiKeyCiphertext)]);

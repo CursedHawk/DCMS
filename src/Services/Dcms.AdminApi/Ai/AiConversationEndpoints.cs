@@ -157,6 +157,7 @@ public static class AiConversationEndpoints
                 surface = conversation.Surface,
                 siteId = conversation.SiteId,
                 branch = conversation.Branch,
+                providerId = conversation.ProviderId,
                 messageCount = conversation.MessageCount,
                 ownerUserId = conversation.OwnerUserId,
                 mine = conversation.OwnerUserId == userId,
@@ -207,6 +208,11 @@ public static class AiConversationEndpoints
                 // filter by site and the IDE rail does not look at the console surface.
                 SiteId = AiSurfaces.Normalise(body.Surface) == AiSurfaces.Ide ? body.SiteId : null,
                 Branch = Clamp(body.Branch, 200, null) is { Length: > 0 } b ? b : null,
+                // Only one of this workspace's providers; anything else is the default.
+                ProviderId = body.ProviderId is { } pid
+                             && await db.Providers.AnyAsync(p => p.Id == pid && p.TenantId == tenant.TenantId!.Value, ct)
+                    ? pid
+                    : null,
             };
 
             db.Conversations.Add(conversation);
@@ -597,7 +603,7 @@ public static class AiConversationEndpoints
         int MessageCount, Guid OwnerUserId, bool Mine, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
     private sealed record CreateConversationRequest(
-        string? Title, string? Mode, string? PageArea, string? Surface, Guid? SiteId, string? Branch);
+        string? Title, string? Mode, string? PageArea, string? Surface, Guid? SiteId, string? Branch, Guid? ProviderId = null);
 
     private sealed record UpdateConversationRequest(
         string? Title, string? Visibility, string? Mode, bool? Archived);

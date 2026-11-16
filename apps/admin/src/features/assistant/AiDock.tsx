@@ -1,4 +1,5 @@
 import { Bot, History, KeyRound, Maximize2, MessageSquarePlus } from 'lucide-react';
+import { ProviderPicker } from '../agent/ProviderPicker';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -245,6 +246,14 @@ export function AiDock() {
                 onAttach={session.attach}
                 onDetach={session.detach}
                 toolCount={session.toolCount}
+                toolbar={
+                  <ProviderPicker
+                    value={session.providerId}
+                    onChange={session.setProviderId}
+                    locked={!!session.conversationId}
+                    className="text-xs"
+                  />
+                }
                 unsaved={session.unsaved}
                 prefill={prefill}
                 onPrefillTaken={takePrefill}

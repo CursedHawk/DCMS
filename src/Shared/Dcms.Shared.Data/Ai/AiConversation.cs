@@ -78,6 +78,13 @@ public sealed class AiConversation
     public string? Branch { get; set; }
 
     /// <summary>
+    /// The workspace provider (<see cref="AiProviderConfig"/>) picked when the conversation was
+    /// started; null is the default. Kept for the whole conversation: a turn's thinking is bound
+    /// to the model that wrote it, so switching mid-conversation is starting a new one.
+    /// </summary>
+    public Guid? ProviderId { get; set; }
+
+    /// <summary>
     /// Denormalised so the conversation rail can be drawn from one query.
     /// </summary>
     public int MessageCount { get; set; }

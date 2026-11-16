@@ -46,8 +46,11 @@ translates for OpenAI-compatible providers and translates the stream back. One
 format in the client means one transcript shape, one set of tool blocks, and one
 thing to store.
 
-API keys are per-tenant, per-user, Vault-encrypted, and **injected server-side**.
-The browser never holds one.
+API keys are per workspace provider and per user, Vault-encrypted, and
+**injected server-side**. The browser never holds one. A workspace may have several
+providers; a conversation is started on one (`?provider=` on every turn) and keeps
+it, and every call is recorded per provider in `ai.usage` — see
+[ADR 0035](adr/0035-workspace-ai-providers-and-usage.md).
 
 ## The run loop
 

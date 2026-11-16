@@ -32,7 +32,7 @@ public static class EnvironmentConversion
 
     // E's copy of what is the workspace's: deleted, not moved.
     private static readonly (string Schema, string Table)[] Dropped =
-        [("tenancy", "invitations"), ("tenancy", "tenant_usage"), ("ai", "tenant_ai_settings")];
+        [("tenancy", "invitations"), ("tenancy", "tenant_usage"), ("ai", "tenant_ai_settings"), ("ai", "providers"), ("ai", "usage")];
 
     public static async Task ApplyAsync(TenancyDbContext db, ILogger logger, CancellationToken ct)
     {

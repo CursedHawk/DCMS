@@ -41,7 +41,8 @@
     "account": "Váš účet",
     "notifications": "Oznámení",
     "installed": "Nainstalované",
-    "knowledge": "Znalosti AI"
+    "knowledge": "Znalosti AI",
+    "aiUsage": "Využití AI"
   },
   "palette": {
     "pages": "Stránky",
@@ -1172,7 +1173,69 @@
     "inheritPlaceholder": "Stejné jako prostor",
     "localNeedsNoKey": "Model běžící na vašem počítači se neověřuje, takže klíč není potřeba.",
     "keyStorage": "Uloženo šifrovaně (Vault Transit); API ho nikdy nevrací.",
-    "compatibleHint": "Funguje jakákoli služba kompatibilní s OpenAI: zvolte „OpenAI-compatible“ a nasměrujte na ni základní URL (OpenRouter, Groq, Together, Azure OpenAI, vlastní vLLM…). Hostované služby musí používat https; dvě lokální volby mohou použít běžnou adresu ve vaší síti."
+    "compatibleHint": "Funguje jakákoli služba kompatibilní s OpenAI: zvolte „OpenAI-compatible“ a nasměrujte na ni základní URL (OpenRouter, Groq, Together, Azure OpenAI, vlastní vLLM…). Hostované služby musí používat https; dvě lokální volby mohou použít běžnou adresu ve vaší síti.",
+    "picker": {
+      "label": "Poskytovatel AI",
+      "hint": "Na kterém z poskytovatelů AI pracovního prostoru tato konverzace běží.",
+      "locked": "Konverzace zůstává u poskytovatele, se kterým začala. Pro změnu začněte novou.",
+      "own": "Váš vlastní klíč",
+      "default": "{{name}} (výchozí)",
+      "platform": "Výchozí platformy"
+    },
+    "providers": {
+      "title": "Poskytovatelé AI pracovního prostoru",
+      "body": "Přidejte každého poskytovatele, kterého pracovní prostor používá. Výchozí obsluhuje agenty, pokud si při zahájení konverzace někdo nevybere jiného.",
+      "add": "Přidat poskytovatele",
+      "edit": "Upravit {{name}}",
+      "name": "Název",
+      "default": "Výchozí",
+      "makeDefault": "Nastavit jako výchozí",
+      "removed": "Poskytovatel odebrán",
+      "confirmDelete": "Odebrat {{name}}?",
+      "confirmDeleteBody": "Konverzace na něm zahájené pokračují s výchozím poskytovatelem.",
+      "none": "Zatím žádní poskytovatelé",
+      "noneHint": "Dokud žádného nepřidáte, pracovní prostor používá výchozího poskytovatele AI platformy."
+    },
+    "usage": {
+      "link": "Zobrazit využití AI",
+      "title": "Využití AI",
+      "description": "Kolik byli poskytovatelé AI pracovního prostoru využíváni, den po dni.",
+      "range": "Období",
+      "lastDays_one": "Poslední {{count}} den",
+      "lastDays_few": "Posledních {{count}} dny",
+      "lastDays_other": "Posledních {{count}} dní",
+      "metric": "Měřit",
+      "tokens": "tokeny",
+      "calls": "volání",
+      "ownKey": "Váš vlastní klíč",
+      "platform": "Výchozí platformy",
+      "other": "Ostatní",
+      "ownTitle": "Používáte vlastní nastavení AI",
+      "ownBody": "Vaše konverzace běží na {{provider}} ({{model}}), pokud si nevyberete poskytovatele pracovního prostoru.",
+      "ownBilled": "Co utratí váš vlastní klíč, je uvedeno jako „Váš vlastní klíč“ a je účtováno vám.",
+      "ownNoKey": "Nemáte vlastní klíč, takže platí stále klíč pracovního prostoru.",
+      "workspaceKind": "poskytovateli pracovního prostoru",
+      "defaultModel": "jeho výchozí model",
+      "workspaceHidden": "Útratu pracovního prostoru vidí jen ti, kdo spravují jeho AI. Níže je, co utratil váš vlastní klíč.",
+      "none": "V tomto období žádné využití AI",
+      "noneHint": "Agenti a asistent sem zaznamenávají, co spotřebují, podle poskytovatele.",
+      "allTitle": "Všichni poskytovatelé, {{unit}} za den",
+      "allHint": "Všichni poskytovatelé na sobě, den po dni.",
+      "compareTitle": "Srovnání poskytovatelů, {{unit}}",
+      "compareHint": "Součet každého poskytovatele za období.",
+      "provider": "Poskytovatel",
+      "perProvider": "Jednotliví poskytovatelé",
+      "perProviderHint": "Jeho dny, rozdělené podle druhů účtovaných tokenů.",
+      "part": {
+        "inputTokens": "Vstup",
+        "outputTokens": "Výstup",
+        "cacheWriteTokens": "Zápisy do cache",
+        "cacheReadTokens": "Čtení z cache"
+      },
+      "metricTokens": "Tokeny",
+      "metricCalls": "Volání",
+      "totalTokens": "Tokenů celkem"
+    }
   },
   "account": {
     "menuItem": "Váš účet",
@@ -1770,7 +1833,8 @@
     "connectionsHint": "Externí API, ze kterých weby čtou; klíče zůstávají na serveru.",
     "usageHint": "Co tento prostor ukládá a kde",
     "environmentsHint": "Vývoj, test, staging a produkce, každé s vlastními daty",
-    "knowledgeHint": "Co agenti AI vědí: rozhodnutí, nastavení a dřívější konverzace"
+    "knowledgeHint": "Co agenti AI vědí: rozhodnutí, nastavení a dřívější konverzace",
+    "aiUsageHint": "Kolik byl který poskytovatel AI využíván, den po dni."
   },
   "pluginReference": {
     "title": "{{name}}: referenční příručka API",

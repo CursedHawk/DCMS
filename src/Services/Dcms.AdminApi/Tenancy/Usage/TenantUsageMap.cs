@@ -68,6 +68,8 @@ public static class TenantUsageMap
             [("ai", "messages")] = new("ai", "assistant"),
             [("ai", "runs")] = new("ai", "assistant"),
             [("ai", "knowledge")] = new("ai", "assistant"),
+            [("ai", "providers")] = new("ai", "assistant"),
+            [("ai", "usage")] = new("ai", "assistant"),
             [("search", "search_documents")] = Plugin("search"),
             [("analytics", "events")] = Plugin("analytics"),
             [("analytics", "daily_rollups")] = Plugin("analytics"),

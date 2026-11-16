@@ -107,6 +107,12 @@ export interface SiteSession {
   changes: FileChange[];
   lastRun: AgentRunMetrics | null;
   conversationId: string | null;
+  /**
+   * The workspace AI provider this conversation runs on; null is the default. Picked before the
+   * conversation starts and kept for all of it: a turn's thinking is bound to the model that
+   * wrote it.
+   */
+  providerId: string | null;
   /** True when a turn could not be stored — the panel says so rather than pretending. */
   unsaved: boolean;
   /** What the current (or last) run was asked. */
@@ -193,6 +199,7 @@ function blank(key: string, kind: SiteAgentKind): SiteSession {
     changes: [],
     lastRun: null,
     conversationId: null,
+    providerId: null,
     unsaved: false,
     task: null,
     origin: 'user',
@@ -329,6 +336,12 @@ export function resetSite(key: string): void {
   stopSite(key);
   inner(key).messages = [];
   patch(key, { entries: [], changes: [], classification: null, needsKey: false });
+}
+
+/** Pick the provider the next conversation starts on. A conversation already started keeps its own. */
+export function setSiteProvider(key: string, providerId: string | null): void {
+  if (sessionOf(key)?.conversationId) return;
+  patch(key, { providerId });
 }
 
 /** Start a fresh conversation; the previous one stays in history. */

@@ -147,7 +147,7 @@ public static class AiAgentEndpoints
     }
 
     private static readonly Delegate MessagesProxy = async (
-            JsonObject request, HttpContext ctx, ITenantContext tenant, CurrentUser me,
+            JsonObject request, Guid? provider, HttpContext ctx, ITenantContext tenant, CurrentUser me,
             IServiceTokenProvider tokens, IHttpClientFactory httpClientFactory, CancellationToken ct) =>
         {
             if (request is null)
@@ -160,6 +160,9 @@ public static class AiAgentEndpoints
                 tenantId = tenant.TenantId!.Value,
                 userId = me.RequireUserId(), // authoritative — never trust a client-supplied id
                 request,
+                // The workspace provider picked when the agent was started. The gateway resolves it
+                // within this tenant only, so an id from elsewhere is simply not found.
+                providerId = provider,
             };
 
             var token = await tokens.GetTokenAsync(AiScope, ct);

@@ -36,6 +36,7 @@ builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddDcmsDataProtection(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiProviderResolver>();
+builder.Services.AddScoped<AiUsageLedger>();
 // Singleton: it holds the per-replica fallback counters used while Redis is unreachable.
 builder.Services.AddSingleton<AiQuota>();
 // One outbound client for every provider: the upstream differs by base URL and dialect, not

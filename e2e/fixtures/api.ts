@@ -314,7 +314,10 @@ export function adminApi(
     .on('GET', '/api/admin/tenants', data.PLATFORM_TENANTS)
     .on('GET', '/api/admin/content/scheduled', { items: data.SCHEDULED })
     .on('GET', '/api/admin/audit', { items: [], nextCursor: null })
-    .on('GET', '/api/admin/ai/settings', { provider: 'anthropic', model: null, hasKey: false })
+    // The workspace's AI providers and what a member may pick: none, so the platform default serves.
+    .on('GET', '/api/admin/ai/providers', [])
+    .on('GET', '/api/admin/ai/provider-choices', { providers: [], own: null })
+    .on('GET', '/api/admin/ai/usage', { from: '2026-10-18', to: '2026-11-16', workspace: [], mine: [], own: null })
     // The tenant's AI agent policy (platform console): the defaults unless a test says otherwise.
     .on('GET', '/api/admin/ai/agent-policy', { maxTurns: 100, assistantMaxTurns: 10, compactAtTokens: 100000, prompts: {} })
     .on('GET', '/api/admin/ai/user-credentials', [])

@@ -200,7 +200,9 @@ public static class AuditActions
     public const string FormSubmissionsExported = "form.submissions.exported";
 
     // ---- ai ----
-    public const string AiSettingsUpdated = "ai.settings.updated";
+    public const string AiProviderCreated = "ai.provider.created";
+    public const string AiProviderUpdated = "ai.provider.updated";
+    public const string AiProviderDeleted = "ai.provider.deleted";
     public const string AiCredentialsUpdated = "ai.credentials.updated";
     public const string AiCredentialsDeleted = "ai.credentials.deleted";
     public const string AiCredentialsRead = "ai.credentials.read";

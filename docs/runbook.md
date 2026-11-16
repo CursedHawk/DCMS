@@ -189,12 +189,13 @@ editor-core unit tests.
 ai-gateway exposes an internal `POST /v1/chat` (dcms.ai client-credentials).
 `IChatProvider` has two implementations: `AnthropicProvider` (official `Anthropic`
 SDK) and `OpenAiCompatibleProvider` (the `OpenAI` SDK with a base URL — covers
-OpenAI, Ollama, LM Studio). `AiProviderResolver` picks the provider per tenant
-from `ai.tenant_ai_settings`, decrypting the tenant API key via Vault Transit at
-call time, falling back to the global defaults in Vault KV
-(`secret/dcms/ai-gateway` → `Ai:Defaults:*`). Tenant AI config is managed at
-`GET/PUT /api/admin/ai/settings` (the key is encrypted on write via Transit and
-never returned). AI editor generation: `POST /api/admin/ai/generate/component`
+OpenAI, Ollama, LM Studio). `AiProviderResolver` picks the provider from the
+workspace's `ai.providers` (the one picked for the conversation, else the default;
+ADR 0035), decrypting its API key via Vault Transit at call time, falling back to
+the global defaults in Vault KV (`secret/dcms/ai-gateway` → `Ai:Defaults:*`).
+Providers are managed at `/api/admin/ai/providers` (keys are encrypted on write via
+Transit and never returned); every call adds to `ai.usage`, charted at
+Settings → AI usage. AI editor generation: `POST /api/admin/ai/generate/component`
 and `.../site` assemble a prompt from the component contract + the tenant's
 enabled plugin instances, relay it to ai-gateway, and return validated JSON.
 Mode B sites: site-builder's `ReactAppBuilder` materializes the AI/editor file

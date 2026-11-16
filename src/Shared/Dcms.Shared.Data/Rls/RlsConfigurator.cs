@@ -80,6 +80,9 @@ public static class RlsConfigurator
         ("ai", "runs"),
         // Decisions and setups agents and members saved (ADR 0034): read by every agent of the tenant.
         ("ai", "knowledge"),
+        // A workspace's providers, each with its Transit-encrypted key, and what it spent on them.
+        ("ai", "providers"),
+        ("ai", "usage"),
         ("search", "search_documents"),
         ("analytics", "events"),
         ("analytics", "daily_rollups"),

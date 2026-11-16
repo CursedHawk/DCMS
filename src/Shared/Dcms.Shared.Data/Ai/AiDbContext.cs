@@ -23,6 +23,8 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
     public const string Schema = "ai";
 
     public DbSet<TenantAiSettings> Settings => Set<TenantAiSettings>();
+    public DbSet<AiProviderConfig> Providers => Set<AiProviderConfig>();
+    public DbSet<AiUsageDay> Usage => Set<AiUsageDay>();
     public DbSet<AiKnowledgeEntry> Knowledge => Set<AiKnowledgeEntry>();
     public DbSet<UserAiSettings> UserSettings => Set<UserAiSettings>();
     public DbSet<AiConversation> Conversations => Set<AiConversation>();
@@ -42,9 +44,32 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContex
             e.ToTable("tenant_ai_settings");
             e.HasKey(s => s.TenantId);
             e.Property(s => s.PromptOverridesJson).HasColumnType("jsonb");
-            e.Property(s => s.Provider).HasConversion<string>().HasMaxLength(16);
-            e.Property(s => s.Model).HasMaxLength(128);
-            e.Property(s => s.BaseUrl).HasMaxLength(512);
+        });
+
+        builder.Entity<AiProviderConfig>(e =>
+        {
+            e.ToTable("providers");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Name).HasMaxLength(AiProviderConfig.MaxName).IsRequired();
+            e.Property(p => p.Provider).HasConversion<string>().HasMaxLength(16);
+            e.Property(p => p.Model).HasMaxLength(128);
+            e.Property(p => p.BaseUrl).HasMaxLength(512);
+            e.HasIndex(p => new { p.TenantId, p.Name }).IsUnique();
+            // One default per workspace.
+            e.HasIndex(p => p.TenantId).IsUnique().HasFilter("\"IsDefault\"").HasDatabaseName("IX_providers_TenantId_default");
+        });
+
+        builder.Entity<AiUsageDay>(e =>
+        {
+            e.ToTable("usage");
+            e.HasKey(u => u.Id);
+            e.Property(u => u.Source).HasMaxLength(16).IsRequired();
+            e.Property(u => u.ProviderName).HasMaxLength(AiProviderConfig.MaxName).IsRequired();
+            e.Property(u => u.ProviderKind).HasMaxLength(16).IsRequired();
+            e.Property(u => u.Model).HasMaxLength(128).IsRequired();
+            // The gateway's ON CONFLICT target: one row per day, payer, provider and model.
+            e.HasIndex(u => new { u.TenantId, u.Day, u.Source, u.ProviderId, u.UserId, u.Model })
+                .IsUnique().AreNullsDistinct(false).HasDatabaseName("IX_usage_key");
         });
 
         builder.Entity<AiKnowledgeEntry>(e =>

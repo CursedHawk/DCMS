@@ -155,11 +155,13 @@ export async function streamAssistantTurn(
   body: Record<string, unknown>,
   handlers: StreamHandlers,
   signal: AbortSignal,
+  /** The workspace provider picked when the conversation was started; null is the default. */
+  providerId?: string | null,
 ): Promise<AssistantTurn> {
   // One turn, one key: the 401 replay below is the same turn to ai-gateway (ADR 0024).
   const idempotencyKey = crypto.randomUUID();
   const send = async () =>
-    fetch(`${base}${MESSAGES_PATH}`, {
+    fetch(`${base}${MESSAGES_PATH}${providerId ? `?provider=${encodeURIComponent(providerId)}` : ''}`, {
       method: 'POST',
       headers: { ...(await adminHeaders()), 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ ...body, stream: true }),

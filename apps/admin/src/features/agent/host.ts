@@ -63,7 +63,10 @@ export async function resumeSite(key: string, conversationId: string): Promise<v
     queryKey: [conversationsKey, 'detail', conversationId],
     staleTime: Infinity,
     queryFn: () =>
-      api.get<{ messages: { seq: number; role: 'user' | 'assistant'; content: unknown; kind?: string | null }[] }>(
+      api.get<{
+        providerId?: string | null;
+        messages: { seq: number; role: 'user' | 'assistant'; content: unknown; kind?: string | null }[];
+      }>(
         `/admin/ai/conversations/${conversationId}`,
       ),
   });
@@ -76,6 +79,7 @@ export async function resumeSite(key: string, conversationId: string): Promise<v
   i.compactedThrough = detail.messages.filter((m) => m.kind === 'compaction').reduce((max, m) => Math.max(max, m.seq), 0);
   patch(key, {
     conversationId,
+    providerId: detail.providerId ?? null,
     unsaved: false,
     entries: projectEntries(i.messages),
     changes: [],
@@ -227,7 +231,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
     i.messages = [];
     i.lastSeq = 0;
     i.compactedThrough = 0;
-    patch(key, { conversationId: null, entries: [], changes: [] });
+    patch(key, { conversationId: null, providerId: null, entries: [], changes: [] });
   }
 
   const controller = new AbortController();
@@ -527,6 +531,7 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
         // A repository's conversations are keyed by its binding, as a site's by the site.
         siteId: key.replace(/^repo:/, ''),
         branch: draft.branch,
+        providerId: sessionOf(key)?.providerId ?? null,
       });
       patch(key, { conversationId: created.id });
     }
@@ -583,7 +588,8 @@ async function runHeld(key: string, queued: QueuedTask): Promise<void> {
       context,
       mode: current.mode,
       signal: controller.signal,
-      transport: streamAssistantTurn,
+      // The conversation's provider, for every turn of it — the compaction summary included.
+      transport: (body, handlers, signal) => streamAssistantTurn(body, handlers, signal, sessionOf(key)?.providerId),
       fileCount: Object.keys(draft.files()).length,
       /*
        * The deterministic gate, after a turn that wrote files and then stopped. A kind with a

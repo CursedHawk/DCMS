@@ -55,6 +55,9 @@ namespace Dcms.Shared.Data.Migrations.Ai
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<Guid?>("ProviderId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("SiteId")
                         .HasColumnType("uuid");
 
@@ -209,6 +212,61 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.ToTable("messages", "ai");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Ai.AiProviderConfig", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ApiKeyCiphertext")
+                        .HasColumnType("text");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_providers_TenantId_default")
+                        .HasFilter("\"IsDefault\"");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("providers", "ai");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Ai.AiRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -271,6 +329,70 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.ToTable("runs", "ai");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Ai.AiUsageDay", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("CacheReadTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CacheWriteTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Calls")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<long>("InputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long>("OutputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("ProviderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProviderKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("ProviderName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Day", "Source", "ProviderId", "UserId", "Model")
+                        .IsUnique()
+                        .HasDatabaseName("IX_usage_key");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Day", "Source", "ProviderId", "UserId", "Model"), false);
+
+                    b.ToTable("usage", "ai");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Ai.TenantAiSettings", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -280,30 +402,14 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.Property<int?>("AgentMaxTurns")
                         .HasColumnType("integer");
 
-                    b.Property<string>("ApiKeyCiphertext")
-                        .HasColumnType("text");
-
                     b.Property<int?>("AssistantMaxTurns")
                         .HasColumnType("integer");
-
-                    b.Property<string>("BaseUrl")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
 
                     b.Property<int?>("CompactAtTokens")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Model")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
                     b.Property<string>("PromptOverridesJson")
                         .HasColumnType("jsonb");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");

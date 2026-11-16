@@ -1,4 +1,5 @@
 import { Check, History, KeyRound, Link2, PanelRightClose, Users } from 'lucide-react';
+import { ProviderPicker } from '../agent/ProviderPicker';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -225,6 +226,14 @@ export function AssistantPage() {
               onAttach={session.attach}
               onDetach={session.detach}
               toolCount={session.toolCount}
+              toolbar={
+                <ProviderPicker
+                  value={session.providerId}
+                  onChange={session.setProviderId}
+                  locked={!!session.conversationId}
+                  className="text-xs"
+                />
+              }
               unsaved={session.unsaved}
             />
           )}

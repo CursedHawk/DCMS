@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { ProviderPicker } from '../../agent/ProviderPicker';
 import { CloudOff, History, MessageSquarePlus, RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -334,6 +335,12 @@ export function AgentPanel({
               </option>
             ))}
           </select>
+
+          <ProviderPicker
+            value={session.providerId}
+            onChange={session.setProviderId}
+            locked={!!session.conversationId}
+          />
         </div>
       </div>
     </div>

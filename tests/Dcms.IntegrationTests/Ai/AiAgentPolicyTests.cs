@@ -51,8 +51,8 @@ public class AiAgentPolicyTests(AdminApiFixture fixture)
             .Should().Equal(("site.react", "You build {{site}}."));
 
         // The tenant's own AI settings write leaves the platform's policy alone.
-        (await client.SendAsync(Req(HttpMethod.Put, "/api/admin/ai/settings", owner, slug,
-            new { provider = "Anthropic", model = "x" }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/ai/providers", owner, slug,
+            new { name = "Anthropic", provider = "Anthropic", model = "x" }), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await PolicyAsync(client, owner, slug, ct)).GetProperty("maxTurns").GetInt32().Should().Be(40);
 
         var console = await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/tenants/{tenantId}/ai-agent-policy",

@@ -91,6 +91,7 @@ public class ReportingRoleTests(AdminApiFixture fixture)
                      "identity.\"AspNetUsers\"",
                      "audit.audit_events",
                      "ai.tenant_ai_settings",
+                     "ai.providers",
                      "tenancy.tenants",
                      // The whole audit record, metadata and client addresses included: platform-api's alone.
                      "obs_platform.v_audit_detail",

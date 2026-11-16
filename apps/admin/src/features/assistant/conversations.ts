@@ -82,6 +82,8 @@ export interface StoredMessage {
 }
 
 export interface ConversationDetail extends ConversationSummary {
+  /** The workspace provider it runs on; null is the default. */
+  providerId?: string | null;
   messages: StoredMessage[];
   runs: RunRecord[];
 }

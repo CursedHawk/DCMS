@@ -17,7 +17,7 @@ public static class ChatEndpoints
     {
         app.MapPost("/v1/chat", async (
             ChatCompletionRequest body, AiProviderResolver resolver, DcmsMetrics metrics,
-            AiQuota quota, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            AiQuota quota, AiUsageLedger usageLedger, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (body.TenantId == Guid.Empty || string.IsNullOrWhiteSpace(body.Prompt))
             {
@@ -73,6 +73,8 @@ public static class ChatEndpoints
                     completion.PromptTokens, completion.CompletionTokens, Stopwatch.GetElapsedTime(started));
                 await quota.RecordAsync(
                     body.TenantId, completion.PromptTokens + completion.CompletionTokens, ct);
+                await usageLedger.RecordAsync(body.TenantId, resolved.Credentials, resolved.Model,
+                    completion.PromptTokens, completion.CompletionTokens, 0, 0);
 
                 return Results.Ok(new ChatCompletionResponse(resolved.Provider.ProviderId, resolved.Model, completion.Text));
             }
@@ -85,6 +87,7 @@ public static class ChatEndpoints
                 // get them and inventing a zero-token success would understate the failure.
                 metrics.AiCall(body.TenantId, resolved.Provider.ProviderId, resolved.Model,
                     0, 0, Stopwatch.GetElapsedTime(started));
+                await usageLedger.RecordAsync(body.TenantId, resolved.Credentials, resolved.Model, 0, 0, 0, 0);
 
                 // Never include the request (which carries no secret) or the key in the message.
                 logger.LogError(ex, "AI completion failed for provider {Provider}", resolved.Provider.ProviderId);

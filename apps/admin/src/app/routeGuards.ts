@@ -61,6 +61,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     descriptionKey: 'settings.aiHint',
     perm: Perm.AiSettings,
   },
+  // Any member sees what their own key spent; the workspace's spend needs ai:settings (the server decides).
+  {
+    to: '/settings/ai-usage',
+    labelKey: 'nav.aiUsage',
+    descriptionKey: 'settings.aiUsageHint',
+  },
   // Any member may read what the agents know; curating it takes ai:knowledge (ADR 0034).
   {
     to: '/settings/knowledge',
@@ -167,6 +173,8 @@ export const OPEN_ROUTES: readonly string[] = [
   // Every member's agents read the knowledge store, so every member may see it; writing is
   // ai:knowledge, checked on the page and by the server (ADR 0034).
   '/settings/knowledge',
+  // Every member sees their own key's usage here; the workspace's only with ai:settings (server-side).
+  '/settings/ai-usage',
   '/account',
   '/notifications',
   // Lists only the jobs the caller may see; the server filters, so there is nothing to guard.

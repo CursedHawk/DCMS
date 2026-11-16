@@ -41,7 +41,8 @@
     "account": "Your account",
     "notifications": "Notifications",
     "installed": "Installed",
-    "knowledge": "AI knowledge"
+    "knowledge": "AI knowledge",
+    "aiUsage": "AI usage"
   },
   "palette": {
     "pages": "Pages",
@@ -1142,7 +1143,69 @@
     "inheritPlaceholder": "Same as the workspace",
     "localNeedsNoKey": "A model running on your own machine authenticates nothing, so no key is needed.",
     "keyStorage": "Stored encrypted (Vault Transit); never returned by the API.",
-    "compatibleHint": "Any OpenAI-compatible service works: choose “OpenAI-compatible” and point the base URL at it (OpenRouter, Groq, Together, Azure OpenAI, a self-hosted vLLM…). Hosted services must use https; the two local options may use a plain address on your own network."
+    "compatibleHint": "Any OpenAI-compatible service works: choose “OpenAI-compatible” and point the base URL at it (OpenRouter, Groq, Together, Azure OpenAI, a self-hosted vLLM…). Hosted services must use https; the two local options may use a plain address on your own network.",
+    "picker": {
+      "label": "AI provider",
+      "hint": "Which of the workspace’s AI providers this conversation runs on.",
+      "locked": "A conversation keeps the provider it started on. Start a new one to switch.",
+      "own": "Your own key",
+      "default": "{{name}} (default)",
+      "platform": "Platform default"
+    },
+    "providers": {
+      "title": "Workspace AI providers",
+      "body": "Add every provider the workspace uses. The default one serves the agents unless someone picks another when starting a conversation.",
+      "add": "Add provider",
+      "edit": "Edit {{name}}",
+      "name": "Name",
+      "default": "Default",
+      "makeDefault": "Make default",
+      "removed": "Provider removed",
+      "confirmDelete": "Remove {{name}}?",
+      "confirmDeleteBody": "Conversations started on it continue on the default provider.",
+      "none": "No providers yet",
+      "noneHint": "Until you add one, the workspace uses the platform’s default AI provider."
+    },
+    "usage": {
+      "link": "See AI usage",
+      "title": "AI usage",
+      "description": "How much the workspace’s AI providers were used, day by day.",
+      "range": "Range",
+      "lastDays_one": "Last {{count}} day",
+      "lastDays_few": "Last {{count}} days",
+      "lastDays_other": "Last {{count}} days",
+      "metric": "Measure",
+      "tokens": "tokens",
+      "calls": "calls",
+      "ownKey": "Your own key",
+      "platform": "Platform default",
+      "other": "Other",
+      "ownTitle": "You use your own AI settings",
+      "ownBody": "Your conversations run on {{provider}} ({{model}}) unless you pick a workspace provider.",
+      "ownBilled": "What your own key spends is shown as “Your own key” and is billed to you.",
+      "ownNoKey": "You have no key of your own, so the workspace’s key still pays.",
+      "workspaceKind": "the workspace’s provider",
+      "defaultModel": "its default model",
+      "workspaceHidden": "Only people who manage the workspace’s AI see what the workspace spent. Below is what your own key spent.",
+      "none": "No AI usage in this range",
+      "noneHint": "Agents and the assistant record what they use here, per provider.",
+      "allTitle": "All providers, {{unit}} per day",
+      "allHint": "Every provider stacked, day by day.",
+      "compareTitle": "Providers compared, {{unit}}",
+      "compareHint": "Each provider’s total over the range.",
+      "provider": "Provider",
+      "perProvider": "Each provider",
+      "perProviderHint": "Its days, split into the kinds of tokens it bills.",
+      "part": {
+        "inputTokens": "Input",
+        "outputTokens": "Output",
+        "cacheWriteTokens": "Cache writes",
+        "cacheReadTokens": "Cache reads"
+      },
+      "metricTokens": "Tokens",
+      "metricCalls": "Calls",
+      "totalTokens": "Total tokens"
+    }
   },
   "account": {
     "menuItem": "Your account",
@@ -1729,7 +1792,8 @@
     "connectionsHint": "External APIs your sites read, with their keys kept on the server.",
     "usageHint": "What this workspace stores, and where",
     "environmentsHint": "Development, test, staging and production, each with its own data",
-    "knowledgeHint": "What the AI agents know: decisions, setups and earlier conversations"
+    "knowledgeHint": "What the AI agents know: decisions, setups and earlier conversations",
+    "aiUsageHint": "How much each AI provider was used, day by day."
   },
   "pluginReference": {
     "title": "{{name}}: API reference",

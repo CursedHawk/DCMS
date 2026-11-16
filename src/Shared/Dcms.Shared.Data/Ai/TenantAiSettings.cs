@@ -11,17 +11,12 @@ public enum AiProvider
 }
 
 /// <summary>
-/// Per-tenant AI configuration. The API key is stored as Vault Transit
-/// ciphertext (never plaintext); local providers (Ollama, LM Studio) use BaseUrl
-/// and no key. Provider=Inherit falls back to the global Vault KV defaults.
+/// Per-tenant AI agent policy, set from the platform console. The workspace's providers are
+/// <see cref="AiProviderConfig"/> rows, several per workspace.
 /// </summary>
 public sealed class TenantAiSettings
 {
     public Guid TenantId { get; set; }
-    public AiProvider Provider { get; set; } = AiProvider.Inherit;
-    public string? Model { get; set; }
-    public string? ApiKeyCiphertext { get; set; }
-    public string? BaseUrl { get; set; }
     /// <summary>
     /// How many model turns a site agent may take in one run. Null is
     /// <see cref="DefaultAgentMaxTurns"/>. Set from the platform console only: the tenant's own

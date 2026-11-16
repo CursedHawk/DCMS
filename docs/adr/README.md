@@ -40,3 +40,4 @@ as their implementation phase lands.
 - [0032](0032-dcms-cli-and-desktop-agents.md) — The dcms command line in .NET: full workspace control from the desktop for people and their own AI agents, scoped on the server
 - [0033](0033-background-agents.md) — Background agents: site agents and the assistant outlive the page, one agent per site, the assistant delegates site changes
 - [0034](0034-compaction-and-knowledge.md) — Whole-conversation compaction (summary, append-only after, cache-friendly) and the AI knowledge store agents read on demand, archiving each compacted part
+- [0035](0035-workspace-ai-providers-and-usage.md) — Several AI providers per workspace (picked when a conversation starts) and a daily usage ledger charted per provider

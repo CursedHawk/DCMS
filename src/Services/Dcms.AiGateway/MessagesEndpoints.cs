@@ -32,7 +32,7 @@ public static class MessagesEndpoints
     {
         app.MapPost("/v1/messages", async (
             MessagesProxyRequest body, HttpContext ctx, AiProviderResolver resolver,
-            IHttpClientFactory httpClientFactory, DcmsMetrics metrics, AiQuota quota,
+            IHttpClientFactory httpClientFactory, DcmsMetrics metrics, AiQuota quota, AiUsageLedger usageLedger,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var logger = loggerFactory.CreateLogger("ai-gateway.messages");
@@ -62,7 +62,11 @@ public static class MessagesEndpoints
             ResolvedCredentials creds;
             try
             {
-                creds = await resolver.ResolveCredentialsAsync(body.TenantId, body.UserId, ct);
+                creds = await resolver.ResolveCredentialsAsync(body.TenantId, body.UserId, body.ProviderId, ct);
+            }
+            catch (AiProviderNotFoundException ex)
+            {
+                return Results.BadRequest(new { error = "unknown_provider", message = ex.Message });
             }
             catch (AiCredentialScopeException ex)
             {
@@ -74,7 +78,7 @@ public static class MessagesEndpoints
             // A hosted provider needs a key; a model running on the operator's own machine does
             // not, and demanding one was the reason a workspace pointed at Ollama was told to
             // set up an Anthropic account.
-            if (RequiresApiKey(creds.Provider) && string.IsNullOrEmpty(creds.ApiKey))
+            if (AiProviderResolver.RequiresApiKey(creds.Provider) && string.IsNullOrEmpty(creds.ApiKey))
             {
                 return Results.Json(
                     new
@@ -116,6 +120,7 @@ public static class MessagesEndpoints
             {
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 metrics.AiCall(body.TenantId, systemName, model, 0, 0, Stopwatch.GetElapsedTime(started));
+                await usageLedger.RecordAsync(body.TenantId, creds, model, 0, 0, 0, 0);
                 logger.LogError(ex, "Upstream {Provider} request failed for tenant {TenantId}",
                     systemName, body.TenantId);
                 return Results.Problem("AI request failed.", statusCode: StatusCodes.Status502BadGateway);
@@ -175,6 +180,8 @@ public static class MessagesEndpoints
                 await quota.RecordAsync(body.TenantId,
                     AiQuota.Weigh(promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens),
                     CancellationToken.None);
+                await usageLedger.RecordAsync(body.TenantId, creds, model,
+                    promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens);
                 activity?.SetTag("gen_ai.usage.input_tokens", promptTokens);
                 activity?.SetTag("gen_ai.usage.output_tokens", completionTokens);
                 activity?.SetTag("gen_ai.usage.cache_creation_input_tokens", cacheWriteTokens);
@@ -245,14 +252,6 @@ public static class MessagesEndpoints
         return request;
     }
 
-    /// <summary>
-    /// Whether a credential is required at all. Ollama and LM Studio run on the operator's own
-    /// machine and authenticate nothing; insisting on a key for them is how "use your own local
-    /// model" turned into "set up an Anthropic account".
-    /// </summary>
-    private static bool RequiresApiKey(AiProvider provider) =>
-        provider is not (AiProvider.Ollama or AiProvider.LmStudio);
-
     private static string DefaultFor(AiProvider provider) => provider switch
     {
         AiProvider.Anthropic => DefaultBaseUrl,
@@ -272,5 +271,6 @@ public static class MessagesEndpoints
     };
 
     /// <param name="Request">The raw Anthropic Messages API request body (messages, tools, system, max_tokens, stream, thinking, …). <c>model</c> is optional; the resolver fills it.</param>
-    public sealed record MessagesProxyRequest(Guid TenantId, Guid? UserId, JsonObject Request);
+    /// <param name="ProviderId">The workspace provider picked when the agent was started; null is the default.</param>
+    public sealed record MessagesProxyRequest(Guid TenantId, Guid? UserId, JsonObject Request, Guid? ProviderId = null);
 }
