@@ -10,7 +10,7 @@ import { formatOf } from './richText';
 
 /**
  * ProseMirror and its extensions are a few hundred kilobytes, and only a content type with a
- * rich field ever needs them. Lazy here rather than at the route, so opening a gig — which has
+ * rich field ever needs them. Lazy here rather than at the route, so opening an event — which has
  * no rich field — costs nothing.
  */
 const RichTextEditor = lazy(() =>
@@ -133,7 +133,7 @@ export function ContentFieldInput({
             />
           );
         }
-        // A JSON field referencing roster members is the gig line-up. The roster
+        // A JSON field referencing roster members is the event line-up. The roster
         // is a separate instance, named by this one's config; without it the
         // picker still takes performers by name.
         if (field.reference?.targetPluginId === 'roster') {

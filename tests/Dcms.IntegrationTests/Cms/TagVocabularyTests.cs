@@ -27,7 +27,7 @@ public class TagVocabularyTests(ContentFlowFixture fixture)
             new { slug, name = slug, ownerUserId = owner, ownerEmail = $"{owner:N}@dcms.test" }), ct))
             .StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var gigs = await InstanceAsync(admin, owner, slug, "events", "gigs", "{}", ct);
+        var events = await InstanceAsync(admin, owner, slug, "events", "events", "{}", ct);
         // A tenant's own fields: "skills" is declared a tag field, "notes" is not.
         var crew = await InstanceAsync(admin, owner, slug, "roster", "crew", JsonSerializer.Serialize(new
         {
@@ -38,7 +38,7 @@ public class TagVocabularyTests(ContentFlowFixture fixture)
             },
         }), ct);
 
-        await CreateAsync(admin, owner, slug, gigs, "gig", "opening", new
+        await CreateAsync(admin, owner, slug, events, "event", "opening", new
         {
             title = "Opening",
             date = "2026-11-01T20:00:00Z",
@@ -47,7 +47,7 @@ public class TagVocabularyTests(ContentFlowFixture fixture)
             // Short enough to have slipped under the old length cap as a JSON "tag".
             performers = new object[] { new { performerName = "Kofe", visible = true } },
         }, ct);
-        await CreateAsync(admin, owner, slug, gigs, "gig", "closing", new
+        await CreateAsync(admin, owner, slug, events, "event", "closing", new
         {
             title = "Closing",
             date = "2026-11-02T20:00:00Z",

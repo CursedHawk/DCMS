@@ -15,7 +15,7 @@ namespace Dcms.AdminApi.Cms;
 ///
 /// <para><b>Why a second endpoint rather than parameters on the first.</b>
 /// <c>GET /api/admin/content</c> exists to hand an editor the items of another content type
-/// <i>with their authored fields</i> — that is how a gig lists roster members by name. This route
+/// <i>with their authored fields</i> — that is how an event lists roster members by name. This route
 /// has a different job (titles, filters, a count) and its own shape.</para>
 ///
 /// <para>That route was unpaginated on the theory that "a roster is small". The 2026-09-26 load

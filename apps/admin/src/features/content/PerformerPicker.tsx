@@ -15,7 +15,7 @@ import { usePluginInstances } from '../plugins/api';
 import { useContentItemsOfType } from './api';
 
 /**
- * One entry of a gig's line-up. `performerName` is always written, so a line-up
+ * One entry of an event's line-up. `performerName` is always written, so a line-up
  * reads on its own; `memberSlug` is set only for performers picked from the
  * linked Roster instance, and is what makes the two sides point at each other.
  */
@@ -61,7 +61,7 @@ function renumber(list: Performer[]): Performer[] {
 }
 
 /**
- * Edits a gig's line-up. Performers are picked from the linked Roster instance;
+ * Edits an event's line-up. Performers are picked from the linked Roster instance;
  * guests who are not on it — and every performer when no roster is linked at all
  * — are added by name.
  */

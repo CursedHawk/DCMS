@@ -30,7 +30,7 @@ public static class ContentEndpoints
     public static IEndpointRouteBuilder MapContentEndpoints(this IEndpointRouteBuilder app)
     {
         // includeDraft lets an editor pick items of another content type by their
-        // authored fields (e.g. a gig's line-up listing crew members by name),
+        // authored fields (e.g. an event's line-up listing crew members by name),
         // without a round trip per item.
         //
         // Paged, newest first, on the same (UpdatedAt, Id) keyset and cursor as the console's

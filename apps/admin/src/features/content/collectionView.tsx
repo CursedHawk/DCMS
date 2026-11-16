@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import type { ViewField, ViewFieldKind } from '@dcms/ui';
 import { customFieldsOf, parseInstanceConfig, type ContentTypeDef, type FieldType, type PluginInstance } from '../plugins/api';
 
-/** Turn a machine name ("blogPost", "gig_line-up") into a readable label. */
+/** Turn a machine name ("blogPost", "event_line-up") into a readable label. */
 export function humanize(name: string): string {
   const spaced = name
     .replace(/[_-]+/g, ' ')

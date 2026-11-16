@@ -10,7 +10,7 @@ namespace Dcms.Shared.Data.Cms;
 ///
 /// <para><b>Why this exists.</b> The console listed a collection by fetching every item in it
 /// <i>with its full draft JSON</i> — the only way to show a real title rather than a slug — and
-/// then filtered in the browser. That is fine for the twelve gigs a venue has and is megabytes
+/// then filtered in the browser. That is fine for the twelve events a venue has and is megabytes
 /// for a blog: the payload grows with what authors have written, not with how many rows there
 /// are, so it degrades quietly and in proportion to how much the tenant has used the product.
 /// Projecting the title here costs one <c>-&gt;&gt;</c> per row and lets the page be a page.</para>

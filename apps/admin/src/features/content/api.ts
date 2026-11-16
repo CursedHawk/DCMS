@@ -84,7 +84,7 @@ export async function fetchContentWithDraft(instanceId: string, contentType: str
 
 /**
  * Items of one content type in an instance, with their draft data — used by
- * editors that reference other content (e.g. picking crew members for a gig).
+ * editors that reference other content (e.g. picking crew members for an event).
  */
 export function useContentItemsOfType(instanceId: string | undefined, contentType: string | undefined) {
   return useQuery({

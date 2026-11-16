@@ -8,7 +8,7 @@ namespace Dcms.IntegrationTests.Cms;
 /// The collection list, which used to be "fetch every item in this collection with its full
 /// draft and filter in the browser".
 ///
-/// <para>That is fine for the twelve gigs a venue has and is megabytes for a blog — the payload
+/// <para>That is fine for the twelve events a venue has and is megabytes for a blog — the payload
 /// grows with what authors have written rather than with the row count, so it degrades quietly
 /// and in proportion to how much the tenant has used the product. These tests pin the three
 /// things the server now has to do instead, each of which is invisible when wrong: the title

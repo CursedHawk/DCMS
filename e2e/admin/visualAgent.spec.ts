@@ -76,13 +76,13 @@ test('the agent builds a section with components, and it lands on the canvas and
 
 /*
  * P6: the Events vertical slice, built by the agent from an almost empty site — a design kit,
- * an Event card component (stacks on mobile), a hero, a collection of Events-plugin gigs drawn
+ * an Event card component (stacks on mobile), a hero, a collection of Events-plugin events drawn
  * with the card, a footer in the app shell, and a detail page each card links to. These are the
  * calls a model makes for "build an events home page"; what is asserted is the site they leave.
  */
-const GIGS = [
-  { id: 'g1', slug: 'summer-jam', contentType: 'gig', data: { title: 'Summer Jam', date: '2026-07-01', venue: 'Lucerna', photos: ['/photos/summer.jpg'], description: '<p>Open air.</p>' } },
-  { id: 'g2', slug: 'winter-session', contentType: 'gig', data: { title: 'Winter Session', date: '2026-12-12', venue: 'Roxy', photos: [], description: '<p>Indoors.</p>' } },
+const EVENTS = [
+  { id: 'g1', slug: 'summer-jam', contentType: 'event', data: { title: 'Summer Jam', date: '2026-07-01', venue: 'Lucerna', photos: ['/photos/summer.jpg'], description: '<p>Open air.</p>' } },
+  { id: 'g2', slug: 'winter-session', contentType: 'event', data: { title: 'Winter Session', date: '2026-12-12', venue: 'Roxy', photos: [], description: '<p>Indoors.</p>' } },
 ];
 
 const EVENT_CARD = {
@@ -113,7 +113,7 @@ const expose = (id: string, node: string, prop: string, name: string) =>
   tool(id, 'expose_setting', { component: 'component:event-card@1', node, prop, name });
 
 test('the agent builds the events slice: kit, card component, collection, shell footer and detail page', async ({ page, api }) => {
-  // An Events instance, with the plugin's real gig fields (photos is a list of image ids).
+  // An Events instance, with the plugin's real event fields (photos is a list of image ids).
   api
     .on('GET', '/api/admin/plugins/instances', [
       ...PLUGIN_INSTANCES,
@@ -127,7 +127,7 @@ test('the agent builds the events slice: kit, card component, collection, shell 
         name: 'Events',
         contentTypes: [
           {
-            name: 'gig',
+            name: 'event',
             searchable: true,
             slugField: 'title',
             customFields: null,
@@ -142,8 +142,8 @@ test('the agent builds the events slice: kit, card component, collection, shell 
         ],
       },
     ])
-    .on('GET', '/api/admin/sites/:id/preview/api/events/gig', { items: GIGS, totalCount: 2, page: 1, pageSize: 6 })
-    .on('GET', '/api/admin/sites/:id/preview/api/events/gig/:slug', ({ params }) => GIGS.find((g) => g.slug === params.slug));
+    .on('GET', '/api/admin/sites/:id/preview/api/events/event', { items: EVENTS, totalCount: 2, page: 1, pageSize: 6 })
+    .on('GET', '/api/admin/sites/:id/preview/api/events/event/:slug', ({ params }) => EVENTS.find((g) => g.slug === params.slug));
   await scriptAgent(page, [
     tool('k', 'set_design_kit', { kit: 'bold' }),
     tool('c', 'create_component', { label: 'Event card', root: EVENT_CARD }),
@@ -164,11 +164,11 @@ test('the agent builds the events slice: kit, card component, collection, shell 
       doc: 'page:home',
       node: {
         type: 'dcms.collection',
-        props: { source: { instance: 'events', contentType: 'gig' }, limit: 6 },
+        props: { source: { instance: 'events', contentType: 'event' }, limit: 6 },
         slots: { item: [{ type: 'tenant.event-card', bind: { photo: 'photos', date: 'date', title: 'title', venue: 'venue' } }] },
       },
     }),
-    tool('p', 'create_page', { title: 'Event', path: '/events/:slug', detail_of: { instance: 'events', contentType: 'gig' } }),
+    tool('p', 'create_page', { title: 'Event', path: '/events/:slug', detail_of: { instance: 'events', contentType: 'event' } }),
     tool('d', 'insert_node', {
       doc: 'page:event',
       node: {
@@ -196,13 +196,13 @@ test('the agent builds the events slice: kit, card component, collection, shell 
   await page.getByRole('tab', { name: 'Problems' }).click();
   await expect(page.getByText('No problems found.')).toBeVisible();
 
-  // The canvas draws the card from the first gig; on mobile the card stacks.
+  // The canvas draws the card from the first event; on mobile the card stacks.
   await expect(frame.getByText('Summer Jam')).toBeVisible({ timeout: 15000 });
   await page.getByTitle('Mobile', { exact: true }).click();
   await expect(frame.locator('[data-dcms-type="tenant.event-card"] .dcms-stack').first()).toHaveCSS('flex-direction', 'column');
   await page.getByTitle('Desktop', { exact: true }).click();
 
-  // The site, as a visitor gets it: every gig, the shell's footer, and a card's link to its page.
+  // The site, as a visitor gets it: every event, the shell's footer, and a card's link to its page.
   await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
   const preview = page.frameLocator('iframe[title="Preview"]');
   await expect(preview.getByRole('heading', { level: 3 })).toHaveText(['Summer Jam', 'Winter Session']);

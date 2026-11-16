@@ -117,7 +117,7 @@ export function ContentEditor({
   };
 
   // The instance config both declares this type's tenant-defined fields and,
-  // for a gig, names the Roster instance its line-up is picked from.
+  // for an event, names the Roster instance its line-up is picked from.
   const instances = usePluginInstances();
   const instance = instances.data?.find((i) => i.id === instanceId);
   const instanceConfig = parseInstanceConfig(instance?.config);

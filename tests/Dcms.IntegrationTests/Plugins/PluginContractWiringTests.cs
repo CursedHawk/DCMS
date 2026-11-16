@@ -41,10 +41,10 @@ public sealed class PluginContractWiringTests(ContentFlowFixture fixture)
         var (tenant, owner) = await TenantAsync(ct);
         await CreateInstanceAsync(tenant, owner, "roster", "crew", "{}", ct);
 
-        var res = await CreateInstanceAsync(tenant, owner, "events", "gigs", """{"rosterSlug":"crew"}""", ct);
+        var res = await CreateInstanceAsync(tenant, owner, "events", "events", """{"rosterSlug":"crew"}""", ct);
         res.Should().Be(HttpStatusCode.Created);
 
-        var bad = await CreateInstanceAsync(tenant, owner, "events", "gigs2", """{"rosterSlug":42}""", ct);
+        var bad = await CreateInstanceAsync(tenant, owner, "events", "events2", """{"rosterSlug":42}""", ct);
         bad.Should().Be(HttpStatusCode.BadRequest, "the binding marker does not switch off schema validation");
     }
 

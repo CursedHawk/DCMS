@@ -22,7 +22,7 @@ describe('prerendering', () => {
       schemaVersion: 1,
       id: 'event',
       title: 'Event',
-      data: { source: { instance: 'events', contentType: 'gig' }, param: 'slug' },
+      data: { source: { instance: 'events', contentType: 'event' }, param: 'slug' },
       root: { id: 'r2', type: 'dcms.page' },
     },
   });

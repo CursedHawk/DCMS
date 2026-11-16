@@ -262,12 +262,12 @@ Other branches can publish to their own domains: [publishing-branches.md](publis
 
 ## Acceptance (P6)
 
-The Events slice — kit, an Event card component bound to the Events plugin's `gig`
+The Events slice — kit, an Event card component bound to the Events plugin's `event`
 (stacks on mobile, links to its page), a hero, a collection, a shell footer and an
 `/events/:slug` detail page — is built by agent tool calls in
 `e2e/admin/visualAgent.spec.ts` and checked on the canvas and in preview. The same
 documents built with the real `visual` template and Vite, served the site-host way, gave
-the same result: every gig listed, the card a row on desktop and a column at 375px, card
+the same result: every event listed, the card a row on desktop and a column at 375px, card
 links and direct deep links to the detail page, a 404 for an unknown slug, no console
 errors.
 

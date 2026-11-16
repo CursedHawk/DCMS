@@ -7,8 +7,8 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 namespace Dcms.Plugins.Events;
 
 /// <summary>
-/// Live events: a "gig" is a dated performance at a venue, with a photo gallery
-/// and a line-up. Upcoming/past is derived from the gig date by the consumer, so
+/// Live events: an "event" is a dated performance at a venue, with a photo gallery
+/// and a line-up. Upcoming/past is derived from the event date by the consumer, so
 /// the same instance serves both listings.
 ///
 /// Performer profiles live in the Roster plugin, not here. A line-up entry always
@@ -23,11 +23,11 @@ public sealed class EventsPlugin : IPlugin
           "type": "object",
           "properties": {
             "title": { "type": "string", "title": "Collection title" },
-            "gigsPerPage": { "type": "integer", "title": "Gigs per page", "minimum": 1, "maximum": 100, "default": 20 },
+            "eventsPerPage": { "type": "integer", "title": "Events per page", "minimum": 1, "maximum": 100, "default": 20 },
             "timeZone": {
               "type": "string",
               "title": "Time zone",
-              "description": "IANA time zone the gig dates are authored in, e.g. Europe/Prague.",
+              "description": "IANA time zone the event dates are authored in, e.g. Europe/Prague.",
               "default": "UTC"
             },
             "rosterSlug": {
@@ -44,12 +44,12 @@ public sealed class EventsPlugin : IPlugin
     public PluginManifest Manifest { get; } = PluginManifest.Create(
         id: "events",
         name: "Events",
-        description: "Live events (gigs) with line-ups and photo galleries.",
+        description: "Live events with line-ups and photo galleries.",
         allowMultipleInstances: true,
         configJsonSchema: ConfigSchema,
         // A site needs rosterSlug to turn a line-up entry into a profile link, and
         // the rest is presentation. None of it is a credential.
-        publicConfigKeys: ["title", "gigsPerPage", "timeZone", "rosterSlug"],
+        publicConfigKeys: ["title", "eventsPerPage", "timeZone", "rosterSlug"],
         permissions:
         [
             new PermissionDefinition("read", "View events"),
@@ -58,7 +58,7 @@ public sealed class EventsPlugin : IPlugin
         contentTypes:
         [
             new ContentTypeDefinition(
-                Name: "gig",
+                Name: "event",
                 Fields:
                 [
                     new ContentFieldDefinition("title", ContentFieldType.Text, Required: true, "Event title"),
@@ -82,11 +82,11 @@ public sealed class EventsPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title",
-                Published: typeof(GigPublished),
-                Unpublished: typeof(GigUnpublished)),
+                Published: typeof(EventPublished),
+                Unpublished: typeof(EventUnpublished)),
         ],
-        provides: [ContractProvision.Of<IGigs, GigsSource>()],
-        // Optional: without a roster, gigs still list their line-up by name.
+        provides: [ContractProvision.Of<IEvents, EventsSource>()],
+        // Optional: without a roster, events still list their line-up by name.
         // rosterSlug is the binding: it names which Roster instance, when there are several.
         consumes:
         [
@@ -101,10 +101,10 @@ public sealed class EventsPlugin : IPlugin
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)
     {
-        endpoints.MapContentList("gig", options => options.DefaultPageSize = 50);
-        endpoints.MapContentGetBySlug("gig");
+        endpoints.MapContentList("event", options => options.DefaultPageSize = 50);
+        endpoints.MapContentGetBySlug("event");
     }
 
     public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "gig", Manifest);
+        => ContentApiFragment.ForListAndGet(instance, "event", Manifest);
 }
