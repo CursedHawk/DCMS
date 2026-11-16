@@ -62,10 +62,13 @@ public class SiteGateMiddlewareTests
         return gates;
     }
 
-    [Fact]
-    public async Task A_gated_sites_sitemap_is_told_which_pages_need_signing_in() =>
-        // Only the gated prefix: /portal/news is public and stays listed (#343).
-        (await SendAsync(Loaded(), "corp.example", "/sitemap.xml", tenantSite: true,
+    [Theory]
+    [InlineData("/sitemap.xml")]
+    [InlineData("/Sitemap.xml/")]
+    public async Task A_gated_sites_sitemap_is_told_which_pages_need_signing_in(string path) =>
+        // Only the gated prefix: /portal/news is public and stays listed (#343). However the
+        // path is spelled, since site-host's routing is more forgiving than an exact compare.
+        (await SendAsync(Loaded(), "corp.example", path, tenantSite: true,
             seen: c => c.Request.Headers[Dcms.Shared.Data.Sites.SitemapPages.GatedPrefixesHeader].ToString().Should().Be("%2Fportal")))
             .Should().Be(200);
 
