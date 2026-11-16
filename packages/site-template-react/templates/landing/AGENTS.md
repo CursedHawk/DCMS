@@ -23,10 +23,7 @@ Read this before changing anything. It is short on purpose.
   the server's validation message on failure. Submissions appear in DCMS under Forms. With no form
   configured it shows `site.email`; add a Forms plugin instance in DCMS to switch it on.
 - **More pages**: this template has no router. For a multi-page site, add `react-router` 7.13.0
-  (already in the preview palette) and move sections into pages, routed in `src/routes.tsx` with
-  `createBrowserRouter([...])` — that array is what the site's sitemap.xml lists (without it,
-  only `/`). A detail route names its content with `handle: { sitemap: { instance, contentType } }`;
-  `handle: { sitemap: false }` leaves a page out.
+  (already in the preview palette) and move sections into pages.
 
 ## Never edit these — DCMS rewrites them
 

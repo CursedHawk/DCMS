@@ -43,7 +43,6 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
     // builder (a stuck build is also reaped server-side).
     private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(8);
-    private static readonly TimeSpan PagesTimeout = TimeSpan.FromMinutes(2);
 
     private readonly SandboxOptions _sandbox = SandboxOptions.FromEnvironment();
 
@@ -335,65 +334,6 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
                 return false;
             }
         }
-    }
-
-    /// <summary>
-    /// Mode B: the pages its React routes declare, for its sitemap (#343). After <see cref="BuildAsync"/>,
-    /// in the same work dir and sandbox (no network): <c>node</c> runs the platform's
-    /// <c>sitemap-routes.mjs</c>, which loads <c>src/routes.tsx</c> with the site's own Vite. Null
-    /// when they could not be read — the sitemap then lists <c>/</c>; never a failed build.
-    /// </summary>
-    public async Task<IReadOnlyList<SitemapPage>?> ListPagesAsync(string workDir, StringBuilder log, CancellationToken ct)
-    {
-        try
-        {
-            // A file of the site's own by that name must not stand in for what the script reads.
-            File.Delete(Path.Combine(workDir, Runtime.SitemapRuntime.OutputFile));
-            await WriteSitemapScriptAsync(workDir, ct);
-            await RunPhaseAsync(BuildPhase.Build, "node", Runtime.SitemapRuntime.ScriptFile, workDir,
-                "list the pages", PagesTimeout, log, ct);
-            return await ReadSitemapPagesAsync(workDir, ct);
-        }
-        catch (Exception e) when (e is InvalidOperationException or IOException or JsonException or UnauthorizedAccessException)
-        {
-            log.AppendLine($"› Sitemap: the pages could not be listed ({e.Message}); only / is listed.");
-            return null;
-        }
-    }
-
-    /// <summary>The largest page list read back: 50,000 pages with room to spare.</summary>
-    internal const long MaxSitemapPagesBytes = 16 * 1024 * 1024;
-
-    /// <summary>
-    /// Puts the script into the work dir. The site's own build ran there and may have left a link
-    /// at that name to a file of this service's: whatever stands there is removed (a link itself,
-    /// never its target) and the file made anew, never written through.
-    /// </summary>
-    public static async Task WriteSitemapScriptAsync(string workDir, CancellationToken ct)
-    {
-        var path = Path.Combine(workDir, Runtime.SitemapRuntime.ScriptFile);
-        File.Delete(path);
-        await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
-        await file.WriteAsync(Runtime.SitemapRuntime.Bytes, ct);
-    }
-
-    /// <summary>
-    /// The script's output, read back by this service, outside the sandbox. The site's code ran in
-    /// the work dir, so only a plain file is read: not a link (to a file of this service's), and of a
-    /// sane size — a FIFO or socket reports none, and opening one would wait forever. The sandbox
-    /// has exited by now, so nothing changes it between the check and the read. Null otherwise.
-    /// </summary>
-    public static async Task<IReadOnlyList<SitemapPage>?> ReadSitemapPagesAsync(string workDir, CancellationToken ct)
-    {
-        var info = new FileInfo(Path.Combine(workDir, Runtime.SitemapRuntime.OutputFile));
-        if (!info.Exists || info.LinkTarget is not null || info.Length is < 2 or > MaxSitemapPagesBytes)
-        {
-            return null;
-        }
-        await using var file = new FileStream(info.FullName, FileMode.Open, FileAccess.Read);
-        var buffer = new byte[info.Length];
-        await file.ReadExactlyAsync(buffer, ct);
-        return SitemapPageList.FromRoutesJson(Encoding.UTF8.GetString(buffer));
     }
 
     /// <summary>

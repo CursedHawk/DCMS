@@ -13,14 +13,17 @@ using Microsoft.Extensions.Options;
 namespace Dcms.AdminApi.Sites;
 
 /// <summary>
-/// What search engines may see of a site (#648): the pages its sitemap lists, and its people's
-/// say over them — hidden pages, extra URLs, and whether the site is indexed at all. site-host
+/// What search engines may see of a site (#648): its people's say — the pages its sitemap lists,
+/// paths hidden from search engines, and whether the site is indexed at all. Only a Mode D site
+/// also lists its own pages (from its documents); every other sitemap is exactly what is entered. site-host
 /// applies a change at once (<see cref="SiteChangeNotice"/>); it travels with the site in deployments.
 /// </summary>
 public static class SiteSearchEndpoints
 {
     /// <param name="EnvironmentKey">The site's key across environments: whether deployments manage it is asked by it.</param>
-    public sealed record SearchView(SiteSearchSettings Settings, IReadOnlyList<SitemapPage>? Pages, string? SitemapUrl, string EnvironmentKey);
+    /// <param name="AutomaticPages">Mode D: its build lists its pages, shown in <paramref name="Pages"/>.</param>
+    public sealed record SearchView(
+        SiteSearchSettings Settings, bool AutomaticPages, IReadOnlyList<SitemapPage>? Pages, string? SitemapUrl, string EnvironmentKey);
 
     public static IEndpointRouteBuilder MapSiteSearchEndpoints(this IEndpointRouteBuilder app)
     {
@@ -40,10 +43,13 @@ public static class SiteSearchEndpoints
                 .Where(d => d.SiteId == id && d.Branch == null && d.VerifiedAt != null)
                 .OrderByDescending(d => d.IsPrimary).ThenBy(d => d.CreatedAt)
                 .Select(d => d.Hostname).FirstOrDefaultAsync(ct);
+            var automatic = site.RenderMode == SiteRenderMode.ReactBuilder;
+            var settings = SiteSearchSettings.Parse(site.SearchSettingsJson);
             return Results.Ok(new SearchView(
-                SiteSearchSettings.Parse(site.SearchSettingsJson),
-                prefix is null ? null : await PagesAsync(storage, storageOptions.Value.SitesBucket, prefix, ct),
-                host is null ? null : $"https://{host}/sitemap.xml",
+                settings,
+                automatic,
+                automatic && prefix is not null ? await PagesAsync(storage, storageOptions.Value.SitesBucket, prefix, ct) : null,
+                host is not null && (automatic || settings.Include.Count > 0) ? $"https://{host}/sitemap.xml" : null,
                 site.KeyAcrossEnvironments));
         }).RequirePermission(PlatformPermissions.SiteEdit);
 

@@ -52,6 +52,11 @@ public static class SitemapEndpoints
             {
                 return own;
             }
+            // Not Mode D, and nothing entered in the console (#648): nothing to list.
+            if (!route.HasSitemap)
+            {
+                return Results.NotFound();
+            }
 
             var baseUrl = $"{http.Request.Scheme}://{http.Request.Host}";
             var gated = http.Request.Headers[SitemapPages.GatedPrefixesHeader].ToString();
@@ -63,7 +68,11 @@ public static class SitemapEndpoints
                 xml = await memory.GetOrCreateAsync(("sitemap.xml", route.ArtifactPrefix, baseUrl, gated, route.Search.ToJson()), async entry =>
                 {
                     entry.AbsoluteExpirationRelativeToNow = Lifetime;
-                    var pages = await PagesAsync(route.ArtifactPrefix, cache, storage, bucket, ct);
+                    // Only Mode D lists its own pages; an older build of any other site may still hold a
+                    // page list, and it is not read.
+                    IReadOnlyList<SitemapPage> pages = route.RenderMode == SiteRenderMode.ReactBuilder
+                        ? await PagesAsync(route.ArtifactPrefix, cache, storage, bucket, ct)
+                        : [];
                     var client = clients.CreateClient(ContentApiClient);
                     return await SitemapXml.WriteAsync(baseUrl, pages, SitemapXml.Prefixes(gated),
                         page => ItemsAsync(client, route, host, page, logger, ct), route.Search, ct);
@@ -94,7 +103,9 @@ public static class SitemapEndpoints
                 return Results.Text("User-agent: *\nDisallow: /\n", "text/plain; charset=utf-8");
             }
             return await OwnAsync(http, "robots.txt", route, cache, storage, options.Value.SitesBucket, ct)
-                ?? Results.Text($"User-agent: *\nAllow: /\n\nSitemap: {http.Request.Scheme}://{http.Request.Host}/sitemap.xml\n", "text/plain; charset=utf-8");
+                ?? Results.Text(route.HasSitemap
+                    ? $"User-agent: *\nAllow: /\n\nSitemap: {http.Request.Scheme}://{http.Request.Host}/sitemap.xml\n"
+                    : "User-agent: *\nAllow: /\n", "text/plain; charset=utf-8");
         });
 
         return app;

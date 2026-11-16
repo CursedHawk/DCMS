@@ -18,7 +18,9 @@ export interface SitemapPageInfo {
 
 export interface SearchView {
   settings: SearchSettings;
-  /** The last published build's pages; null before the first publish. */
+  /** Mode D lists its own pages (from its documents); every other site's sitemap is `include` alone. */
+  automaticPages: boolean;
+  /** Mode D: the last published build's pages; null before the first publish, and for other sites. */
   pages: SitemapPageInfo[] | null;
   sitemapUrl: string | null;
   environmentKey: string;

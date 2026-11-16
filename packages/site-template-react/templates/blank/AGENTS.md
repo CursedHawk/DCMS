@@ -19,9 +19,6 @@ Read this before changing anything. It is short on purpose.
   with `c` from `collections` — or the typed accessor listed in API.md.
 - **Several pages**: add `react-router` 7.13.0 (already in the preview palette); put routes in
   `src/routes.tsx` and pages in `src/pages/`, so the project reads like the other DCMS templates.
-  Export a `createBrowserRouter([...])` from it: that array is what the site's sitemap.xml lists
-  (without it, only `/`). A detail route names its content with
-  `handle: { sitemap: { instance, contentType } }`; `handle: { sitemap: false }` leaves a page out.
 - **Split the page up**: components in `src/components/`, one per file.
 
 ## Never edit these — DCMS rewrites them

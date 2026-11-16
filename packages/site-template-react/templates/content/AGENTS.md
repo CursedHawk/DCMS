@@ -22,11 +22,6 @@ Read this before changing anything. It is short on purpose.
   Static paths win over the `:instance/:contentType` routes, so order does not matter.
 - **A dedicated page for one collection**: copy `CollectionPage.tsx`, use the typed accessor from
   API.md, and render its real fields rather than the generic helpers.
-- **Sitemap**: `sitemap.xml` lists the routes in `src/routes.tsx`, read when the site is published
-  — so keep every page in that `createBrowserRouter` array. The `:instance/:contentType` routes
-  list every collection and its items. A detail route of your own (`blog/:slug`) is listed per
-  published item once it names its content: `handle: { sitemap: { instance: 'blog', contentType: 'post' } }`.
-  `handle: { sitemap: false }` keeps a page (and those under it) out — sign-in or private pages.
 - **Links**: use `<Link to>` / `<NavLink to>` from `react-router`, never `<a href>` for internal
   pages — a full reload drops app state.
 - **Preview navigation**: the preview runs routes in memory starting at `/`, so the address bar

@@ -20,6 +20,12 @@ public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, st
     /// <summary>What search engines may see of the site (#648), applied by site-host on every request.</summary>
     public SiteSearchSettings Search { get; init; } = SiteSearchSettings.Default;
 
+    /// <summary>Only a Mode D site lists its pages itself; every other sitemap is what its people enter.</summary>
+    public SiteRenderMode RenderMode { get; init; }
+
+    /// <summary>Whether this site has a sitemap: Mode D always, any other once its people list a page.</summary>
+    public bool HasSitemap => RenderMode == SiteRenderMode.ReactBuilder || Search.Include.Count > 0;
+
     /// <summary>Whether search engines may index anything here: not a branch's domain, not a hidden site.</summary>
     public bool Indexable => !NoIndex && Search.Indexable;
 }
@@ -172,6 +178,7 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             EnvironmentId = domain.EnvironmentId,
             EnvironmentName = environmentName,
             Search = SiteSearchSettings.Parse(site.SearchSettingsJson),
+            RenderMode = site.RenderMode,
         };
     }
 

@@ -162,7 +162,7 @@ export const CONSOLE_TOOLS: AssistantTool[] = [
   {
     name: 'get_site_search',
     description:
-      "What search engines may see of a site: whether it is indexed at all, the paths hidden from them (exclude), extra URLs its sitemap lists (include), and the pages its last published build put in the sitemap.",
+      "What search engines may see of a site: whether it is indexed at all, the paths hidden from them (exclude) and the URLs its sitemap lists (include). Only a visual (ReactBuilder) site also lists its own pages (automaticPages, pages); every other site's sitemap is include alone, and with none it has no sitemap.",
     permission: Perm.SiteEdit,
     input_schema: closed({ siteId: id('site') }, ['siteId']),
     run: (input) => json(api.get(`/admin/sites/${enc(required(input, 'siteId'))}/search`)),
@@ -170,7 +170,7 @@ export const CONSOLE_TOOLS: AssistantTool[] = [
   {
     name: 'set_site_search',
     description:
-      'Replace what search engines may see of a site, live at once with no rebuild — read it with get_site_search first and send all of it back. indexable false hides the whole site (noindex everywhere, no sitemap). exclude: paths left out of the sitemap and answered noindex — "/about" one page, "/blog/:slug" every item of that route, "/private/*" a section. include: extra absolute paths for the sitemap.',
+      'Replace what search engines may see of a site, live at once with no rebuild — read it with get_site_search first and send all of it back. indexable false hides the whole site (noindex everywhere, no sitemap). exclude: paths left out of the sitemap and answered noindex — "/about" one page, "/blog/:slug" every item of that route, "/private/*" a section. include: the absolute paths its sitemap lists (for a visual site, besides its own pages).',
     permission: Perm.SitePublish,
     // Search engines drop what they are told to; getting it back takes their time, not ours.
     risk: 'dangerous',

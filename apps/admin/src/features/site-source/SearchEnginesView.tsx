@@ -9,9 +9,9 @@ import { useManaged } from '../environments/api';
 import { hiddenBy, pathProblem, setPageShown, type SearchSettings, type SearchView } from './searchRules';
 
 /**
- * What search engines may see of a site (#648), in every site editor's rail: the pages its
- * sitemap lists, each with a switch; paths hidden by rule; extra URLs; and whether the site is
- * indexed at all. Saved in one go, and live without a rebuild.
+ * What search engines may see of a site (#648), in every site editor's rail: the URLs its sitemap
+ * lists, paths hidden by rule, and whether the site is indexed at all. A Mode D site also lists its
+ * own pages, shown here each with a switch. Saved in one go, and live without a rebuild.
  */
 export function SearchEnginesView({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
@@ -73,6 +73,7 @@ export function SearchEnginesView({ siteId }: { siteId: string }) {
           </a>
         )}
 
+        {view.data.automaticPages && (
         <section aria-label={t('searchEngines.pages')} className={settings.indexable ? undefined : 'opacity-50'}>
           <h3 className="font-semibold">{t('searchEngines.pages')}</h3>
           <p className="mb-1 text-2xs text-muted-foreground">{t('searchEngines.pagesHint')}</p>
@@ -110,6 +111,7 @@ export function SearchEnginesView({ siteId }: { siteId: string }) {
             </ul>
           )}
         </section>
+        )}
 
         <PathList
           title={t('searchEngines.hidden')}
@@ -120,8 +122,8 @@ export function SearchEnginesView({ siteId }: { siteId: string }) {
           onChange={(exclude) => change({ ...settings, exclude })}
         />
         <PathList
-          title={t('searchEngines.extra')}
-          hint={t('searchEngines.extraHint')}
+          title={t(view.data.automaticPages ? 'searchEngines.extra' : 'searchEngines.sitemapUrls')}
+          hint={t(view.data.automaticPages ? 'searchEngines.extraHint' : 'searchEngines.sitemapUrlsHint')}
           paths={settings.include}
           patterns={false}
           disabled={locked || !settings.indexable}

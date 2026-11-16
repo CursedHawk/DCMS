@@ -3,6 +3,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Xml.Linq;
+using Dcms.Shared.Data;
+using Dcms.Shared.Data.Rls;
+using Microsoft.Extensions.Options;
+using Dcms.Shared.Storage;
+using Dcms.Shared.Data.Sites;
 using Microsoft.AspNetCore.TestHost;
 using SitemapEndpoints = SiteHostApp::Dcms.SiteHost.SitemapEndpoints;
 using Microsoft.EntityFrameworkCore;
@@ -213,14 +218,17 @@ public class SitePublishTests(SitePublishFixture fixture)
         onDev.Headers.GetValues("X-Robots-Tag").Should().ContainSingle().Which.Should().Contain("noindex");
     }
 
-    [DockerFact]
-    public async Task A_published_site_has_a_sitemap_of_its_pages_and_published_items_and_a_robots_txt_naming_it()
+    private sealed record MapSite(HttpClient Admin, string Slug, string Hostname, Guid TenantId, Guid SiteId,
+        Func<string, Task<HttpResponseMessage>> GetAsync, IAsyncDisposable Host);
+
+    /// <summary>A published one-page-plus Mode A site with an Events instance (two published events,
+    /// one draft), served by a site-host that lists items through the in-memory content-api.</summary>
+    private async Task<MapSite> PublishMapSiteAsync(CancellationToken ct)
     {
-        var ct = TestContext.Current.CancellationToken;
         var admin = fixture.Admin.CreateClient();
         var slug = "map-" + Guid.NewGuid().ToString("N")[..8];
         var hostname = $"{slug}.example.com";
-        await Id(admin, Admin(HttpMethod.Post, "/api/admin/tenants", slug,
+        var tenantId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/tenants", slug,
             new { slug, name = slug, ownerUserId = Owner, ownerEmail = "o@dcms.test" }, superAdmin: true), ct);
 
         var events = await Id(admin, Admin(HttpMethod.Post, "/api/admin/plugins/instances", slug,
@@ -245,14 +253,10 @@ public class SitePublishTests(SitePublishFixture fixture)
                 ["site.json"] = """
                     { "version": 2, "theme": { "colors": {}, "fonts": {} }, "nav": [], "pages": [
                       { "id": "home", "slug": "home", "path": "/", "title": "Home", "home": true, "seo": { "title": "Home" } },
-                      { "id": "about", "slug": "about", "path": "/about", "title": "About", "seo": { "title": "About" } },
-                      { "id": "draft", "slug": "draft", "path": "/draft", "title": "Draft", "seo": { "title": "Draft", "noIndex": true } },
-                      { "id": "event", "slug": "event", "path": "/events/:slug", "title": "Event", "seo": { "title": "Event" } } ] }
+                      { "id": "about", "slug": "about", "path": "/about", "title": "About", "seo": { "title": "About" } } ] }
                     """,
                 ["pages/home.html"] = "<h1>Mapped</h1>",
                 ["pages/about.html"] = "<p>About</p>",
-                ["pages/draft.html"] = "<p>Draft</p>",
-                ["pages/event.html"] = """<div data-dcms-component="Events.Event" data-dcms-bindings='[{"propPath":"item","instanceSlug":"events","query":{"contentType":"event"}}]'></div>""",
             },
         };
         var siteId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/sites", slug,
@@ -262,8 +266,8 @@ public class SitePublishTests(SitePublishFixture fixture)
         (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/domains/{domainId}/site", slug, new { siteId }), ct)).EnsureSuccessStatusCode();
         (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{siteId}/publish", slug, null), ct)).EnsureSuccessStatusCode();
 
-        // site-host lists items through content-api: here, the in-memory one.
-        await using var hostFactory = fixture.Host.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+        // site-host lists Mode D's items through content-api: here, the in-memory one.
+        var hostFactory = fixture.Host.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
             s.AddHttpClient(SitemapEndpoints.ContentApiClient).ConfigurePrimaryHttpMessageHandler(() => fixture.Content.Server.CreateHandler())));
         var host = hostFactory.CreateClient();
         async Task<HttpResponseMessage> GetAsync(string path)
@@ -273,51 +277,95 @@ public class SitePublishTests(SitePublishFixture fixture)
             return await host.SendAsync(req, ct);
         }
         await PollUntil(async () => (await GetAsync("/")).StatusCode == HttpStatusCode.OK, TimeSpan.FromSeconds(30));
+        return new MapSite(admin, slug, hostname, tenantId, siteId, GetAsync, hostFactory);
+    }
 
-        var sitemap = await GetAsync("/sitemap.xml");
-        sitemap.StatusCode.Should().Be(HttpStatusCode.OK, await sitemap.Content.ReadAsStringAsync(ct));
-        sitemap.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
-        XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
-        var locs = XDocument.Parse(await sitemap.Content.ReadAsStringAsync(ct)).Root!
-            .Elements(ns + "url").Select(u => u.Element(ns + "loc")!.Value).ToList();
-        locs.Should().BeEquivalentTo(
-            [$"http://{hostname}/", $"http://{hostname}/about", $"http://{hostname}/events/opening", $"http://{hostname}/events/closing"],
-            "noindex pages and unpublished items are left out");
+    private static readonly XNamespace SitemapNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
-        (await (await GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain($"Sitemap: http://{hostname}/sitemap.xml");
-        (await GetAsync("/_dcms/pages.json")).StatusCode.Should().Be(HttpStatusCode.NotFound, "it names gated pages too");
+    private static async Task<List<string>> LocsAsync(MapSite site, CancellationToken ct)
+    {
+        var res = await site.GetAsync("/sitemap.xml");
+        res.StatusCode.Should().Be(HttpStatusCode.OK, await res.Content.ReadAsStringAsync(ct));
+        return XDocument.Parse(await res.Content.ReadAsStringAsync(ct)).Root!
+            .Elements(SitemapNs + "url").Select(u => u.Element(SitemapNs + "loc")!.Value).ToList();
+    }
 
-        // Its people's say (#648): what the console shows, then hiding a page and an item, adding a URL.
-        var view = await (await admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{siteId}/search", slug, null), ct))
+    private static Task<HttpResponseMessage> PutSearchAsync(MapSite site, object settings, CancellationToken ct) =>
+        site.Admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{site.SiteId}/search", site.Slug, settings), ct);
+
+    [DockerFact]
+    public async Task A_sites_sitemap_is_the_pages_its_people_list_and_hidden_pages_answer_noindex()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var site = await PublishMapSiteAsync(ct);
+        await using var _ = site.Host;
+
+        // Nothing listed yet (#648): no sitemap, and robots.txt names none.
+        (await site.GetAsync("/sitemap.xml")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await (await site.GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().NotContain("Sitemap:");
+        var view = await (await site.Admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{site.SiteId}/search", site.Slug, null), ct))
             .Content.ReadFromJsonAsync<JsonElement>(ct);
-        view.GetProperty("settings").GetProperty("indexable").GetBoolean().Should().BeTrue();
-        view.GetProperty("pages").EnumerateArray().Select(p => p.GetProperty("path").GetString())
-            .Should().Equal("/", "/about", "/events/:slug");
-        view.GetProperty("sitemapUrl").GetString().Should().Be($"https://{hostname}/sitemap.xml");
+        view.GetProperty("automaticPages").GetBoolean().Should().BeFalse();
+        view.GetProperty("pages").ValueKind.Should().Be(JsonValueKind.Null);
+        view.GetProperty("sitemapUrl").ValueKind.Should().Be(JsonValueKind.Null);
 
-        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/search", slug,
-            new { indexable = true, exclude = new[] { "about" }, include = Array.Empty<string>() }), ct))
+        (await PutSearchAsync(site, new { indexable = true, exclude = new[] { "about" }, include = Array.Empty<string>() }, ct))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest, "a rule is an absolute path");
-        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/search", slug,
-            new { indexable = true, exclude = new[] { "/about", "/events/closing" }, include = new[] { "/landing" } }), ct))
+        (await PutSearchAsync(site, new { indexable = true, exclude = new[] { "/about" }, include = new[] { "/", "/about", "/landing" } }, ct))
             .EnsureSuccessStatusCode();
 
-        async Task<List<string>> LocsAsync() => XDocument.Parse(await (await GetAsync("/sitemap.xml")).Content.ReadAsStringAsync(ct)).Root!
-            .Elements(ns + "url").Select(u => u.Element(ns + "loc")!.Value).ToList();
         // No rebuild: site.settings.changed drops site-host's route, and the next request reads the rules.
-        await PollUntil(async () => (await GetAsync("/about")).Headers.TryGetValues("X-Robots-Tag", out var tag)
+        await PollUntil(async () => (await site.GetAsync("/about")).Headers.TryGetValues("X-Robots-Tag", out var tag)
             && tag.Single() == "noindex", TimeSpan.FromSeconds(15));
-        (await GetAsync("/")).Headers.Contains("X-Robots-Tag").Should().BeFalse();
-        (await LocsAsync()).Should().BeEquivalentTo(
-            [$"http://{hostname}/", $"http://{hostname}/events/opening", $"http://{hostname}/landing"]);
+        (await site.GetAsync("/")).Headers.Contains("X-Robots-Tag").Should().BeFalse();
+        (await LocsAsync(site, ct)).Should().Equal($"http://{site.Hostname}/", $"http://{site.Hostname}/landing");
+        (await (await site.GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain($"Sitemap: http://{site.Hostname}/sitemap.xml");
 
         // The whole site hidden: every page noindex, no sitemap, robots.txt shuts the door.
-        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/search", slug,
-            new { indexable = false, exclude = Array.Empty<string>(), include = Array.Empty<string>() }), ct))
+        (await PutSearchAsync(site, new { indexable = false, exclude = Array.Empty<string>(), include = new[] { "/" } }, ct))
             .EnsureSuccessStatusCode();
-        await PollUntil(async () => (await GetAsync("/sitemap.xml")).StatusCode == HttpStatusCode.NotFound, TimeSpan.FromSeconds(15));
-        (await GetAsync("/")).Headers.GetValues("X-Robots-Tag").Single().Should().Be("noindex, nofollow");
-        (await (await GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain("Disallow: /");
+        await PollUntil(async () => (await site.GetAsync("/sitemap.xml")).StatusCode == HttpStatusCode.NotFound, TimeSpan.FromSeconds(15));
+        (await site.GetAsync("/")).Headers.GetValues("X-Robots-Tag").Single().Should().Be("noindex, nofollow");
+        (await (await site.GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain("Disallow: /");
+    }
+
+    [DockerFact]
+    public async Task A_visual_sites_sitemap_lists_its_own_pages_and_published_items_with_its_peoples_say_on_top()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var site = await PublishMapSiteAsync(ct);
+        await using var _ = site.Host;
+
+        // What a Mode D build leaves (#343): a ReactBuilder site whose build holds its page list. Its
+        // real build is a Vite build this fixture cannot run.
+        using (var scope = fixture.Admin.Services.CreateScope())
+        using (RlsScope.Environment(site.TenantId, site.TenantId))
+        {
+            var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+            var row = await sites.Sites.IgnoreTenantFilter().SingleAsync(x => x.Id == site.SiteId, ct);
+            row.RenderMode = SiteRenderMode.ReactBuilder;
+            var prefix = await sites.Builds.IgnoreTenantFilter().Where(b => b.Id == row.ActiveBuildId).Select(b => b.ArtifactPrefix).SingleAsync(ct);
+            await sites.SaveChangesAsync(ct);
+            var bytes = SitemapPages.Serialize([new SitemapPage("/"), new SitemapPage("/about"), new SitemapPage("/events/:slug", "events", "event")]);
+            var storage = scope.ServiceProvider.GetRequiredService<IObjectStorage>();
+            var bucket = scope.ServiceProvider.GetRequiredService<IOptions<StorageOptions>>().Value.SitesBucket;
+            await storage.PutAsync(bucket, $"{prefix}/{SitemapPages.Key}", new MemoryStream(bytes), bytes.Length, "application/json", ct);
+        }
+        // Saving the settings is what tells site-host the site changed.
+        (await PutSearchAsync(site, new { indexable = true, exclude = new[] { "/events/closing" }, include = new[] { "/landing" } }, ct))
+            .EnsureSuccessStatusCode();
+
+        await PollUntil(async () => (await site.GetAsync("/sitemap.xml")).StatusCode == HttpStatusCode.OK, TimeSpan.FromSeconds(15));
+        (await LocsAsync(site, ct)).Should().BeEquivalentTo(
+            [$"http://{site.Hostname}/", $"http://{site.Hostname}/about", $"http://{site.Hostname}/events/opening", $"http://{site.Hostname}/landing"],
+            "its pages and published items, less what its people hide, plus what they add");
+        (await site.GetAsync("/_dcms/pages.json")).StatusCode.Should().Be(HttpStatusCode.NotFound, "it names gated pages too");
+
+        var view = await (await site.Admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{site.SiteId}/search", site.Slug, null), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        view.GetProperty("automaticPages").GetBoolean().Should().BeTrue();
+        view.GetProperty("pages").EnumerateArray().Select(p => p.GetProperty("path").GetString()).Should().Equal("/", "/about", "/events/:slug");
+        view.GetProperty("sitemapUrl").GetString().Should().Be($"https://{site.Hostname}/sitemap.xml");
     }
 
     private static HttpRequestMessage Admin(HttpMethod method, string url, string slug, object? body, bool superAdmin = false)

@@ -2968,6 +2968,8 @@
       "start": "Cesta musí začínat /.",
       "chars": "Cesta nesmí obsahovat mezery, ?, #, // ani ..",
       "pattern": ":název nebo koncové /* jen tam, kde to pravidlo dovoluje."
-    }
+    },
+    "sitemapUrls": "Adresy v sitemapě",
+    "sitemapUrlsHint": "Stránky, které sitemapa uvede, např. / a /about. Bez nich web sitemapu nemá."
   }
 }

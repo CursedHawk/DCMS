@@ -339,10 +339,9 @@ public sealed class SitePublishConsumer(
         var hydrate = HydrateRuntime.Bytes;
         await using var hydrateStream = new MemoryStream(hydrate);
         await storage.PutAsync(Bucket, $"{artifactPrefix}/_dcms/hydrate.js", hydrateStream, hydrate.Length, "text/javascript", ct);
-        await StorePagesAsync(artifactPrefix, SitemapPageList.ForStaticSite(files), ct);
     }
 
-    /// <summary>The build's page list, which site-host makes its sitemap.xml from (#343).</summary>
+    /// <summary>A Mode D build's page list, which site-host makes its sitemap.xml from (#343).</summary>
     private async Task StorePagesAsync(string artifactPrefix, IEnumerable<SitemapPage> pages, CancellationToken ct)
     {
         var bytes = SitemapPages.Serialize(pages);
@@ -371,7 +370,6 @@ public sealed class SitePublishConsumer(
 
         using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
         var stored = 0;
-        var paths = new List<string>();
         foreach (var entry in archive.Entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -387,10 +385,8 @@ public sealed class SitePublishConsumer(
             buffer.Position = 0;
             await storage.PutAsync(Bucket, $"{artifactPrefix}/{path}", buffer, buffer.Length,
                 StaticSiteFiles.ContentTypeFor(path), ct);
-            paths.Add(path);
             await StoredAsync(job, ++stored, archive.Entries.Count, ct);
         }
-        await StorePagesAsync(artifactPrefix, SitemapPageList.ForStaticFiles(paths), ct);
     }
 
     // Mode B: materialize the site's project and run its own package-manager
@@ -421,10 +417,6 @@ public sealed class SitePublishConsumer(
         {
             // Install and build have no count of their own; the bar turns until the artifacts do.
             var artifacts = await reactBuilder.BuildAsync(definitionJson, workDir, log, ct);
-            // Mode D's pages are its documents; Mode B's are in its React routes, read by running them.
-            IReadOnlyList<SitemapPage> pages = mode == SiteRenderMode.ReactApp
-                ? await reactBuilder.ListPagesAsync(workDir, log, ct) is { Count: > 0 } listed ? listed : [new SitemapPage("/")]
-                : SitemapPageList.ForViteApp(SiteFileMap.Parse(definitionJson));
             var stored = 0;
             foreach (var artifact in artifacts)
             {
@@ -432,7 +424,12 @@ public sealed class SitePublishConsumer(
                 await storage.PutAsync(Bucket, $"{artifactPrefix}/{artifact.RelativePath}", stream, stream.Length, artifact.ContentType, ct);
                 await StoredAsync(job, ++stored, artifacts.Count, ct);
             }
-            await StorePagesAsync(artifactPrefix, pages, ct);
+            // Only Mode D lists its pages itself, from its documents; every other site's sitemap
+            // is what its people enter in the console (#648).
+            if (mode == SiteRenderMode.ReactBuilder)
+            {
+                await StorePagesAsync(artifactPrefix, SitemapPageList.ForViteApp(SiteFileMap.Parse(definitionJson)), ct);
+            }
             log.AppendLine($"✓ Build succeeded — {artifacts.Count} file(s) in dist/.");
         }
         finally

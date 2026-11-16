@@ -242,8 +242,13 @@ test.describe('at 360px, the rest', () => {
       .on('GET', '/api/admin/sites/:id/builds', [])
       // Its Search engines section (#648), with paths long enough to have to truncate.
       .on('GET', '/api/admin/sites/:id/search', {
-        settings: { indexable: true, exclude: ['/investor-relations/quarterly-reports-archive-2019-2026/*'], include: [] },
-        pages: [{ path: '/' }, { path: '/investor-relations/quarterly-reports-archive-2019-2026/annual-general-meeting.html' }],
+        settings: {
+          indexable: true,
+          exclude: ['/investor-relations/quarterly-reports-archive-2019-2026/*'],
+          include: ['/investor-relations/quarterly-reports-archive-2019-2026/annual-general-meeting.html'],
+        },
+        automaticPages: false,
+        pages: null,
         sitemapUrl: 'https://quarterly-investor-relations.example/sitemap.xml',
         environmentKey: '22222222-2222-2222-2222-222222222222',
       });

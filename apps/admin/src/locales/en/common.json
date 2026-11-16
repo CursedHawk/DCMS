@@ -2901,6 +2901,8 @@
       "start": "Start the path with /.",
       "chars": "No spaces, ?, #, // or .. in a path.",
       "pattern": "Use :name or a final /* only where a rule allows it."
-    }
+    },
+    "sitemapUrls": "Sitemap URLs",
+    "sitemapUrlsHint": "The pages the sitemap lists, such as / and /about. With none, the site has no sitemap."
   }
 }

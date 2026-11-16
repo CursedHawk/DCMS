@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Runtime\hydrate.js" />
-    <EmbeddedResource Include="Runtime\sitemap-routes.mjs" />
   </ItemGroup>
 
   <ItemGroup>
