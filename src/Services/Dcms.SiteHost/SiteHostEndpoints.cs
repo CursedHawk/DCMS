@@ -28,9 +28,14 @@ public static class SiteHostEndpoints
                 return Results.NotFound();
             }
             // A branch's domain is a working copy of the site, not the site (#277).
-            if (route.NoIndex)
+            if (!route.Indexable)
             {
                 http.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+            }
+            // A page its people keep out of search engines (#648): what an engine finds by a link stays out too.
+            else if (route.Search.Excludes("/" + path))
+            {
+                http.Response.Headers["X-Robots-Tag"] = "noindex";
             }
             return await ServeAsync(http, path, route.ArtifactPrefix, cache, storage, storageOptions.Value.SitesBucket, ct);
         });

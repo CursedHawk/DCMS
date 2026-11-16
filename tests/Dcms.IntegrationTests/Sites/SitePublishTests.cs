@@ -286,6 +286,38 @@ public class SitePublishTests(SitePublishFixture fixture)
 
         (await (await GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain($"Sitemap: http://{hostname}/sitemap.xml");
         (await GetAsync("/_dcms/pages.json")).StatusCode.Should().Be(HttpStatusCode.NotFound, "it names gated pages too");
+
+        // Its people's say (#648): what the console shows, then hiding a page and an item, adding a URL.
+        var view = await (await admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{siteId}/search", slug, null), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        view.GetProperty("settings").GetProperty("indexable").GetBoolean().Should().BeTrue();
+        view.GetProperty("pages").EnumerateArray().Select(p => p.GetProperty("path").GetString())
+            .Should().Equal("/", "/about", "/events/:slug");
+        view.GetProperty("sitemapUrl").GetString().Should().Be($"https://{hostname}/sitemap.xml");
+
+        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/search", slug,
+            new { indexable = true, exclude = new[] { "about" }, include = Array.Empty<string>() }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "a rule is an absolute path");
+        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/search", slug,
+            new { indexable = true, exclude = new[] { "/about", "/events/closing" }, include = new[] { "/landing" } }), ct))
+            .EnsureSuccessStatusCode();
+
+        async Task<List<string>> LocsAsync() => XDocument.Parse(await (await GetAsync("/sitemap.xml")).Content.ReadAsStringAsync(ct)).Root!
+            .Elements(ns + "url").Select(u => u.Element(ns + "loc")!.Value).ToList();
+        // No rebuild: site.settings.changed drops site-host's route, and the next request reads the rules.
+        await PollUntil(async () => (await GetAsync("/about")).Headers.TryGetValues("X-Robots-Tag", out var tag)
+            && tag.Single() == "noindex", TimeSpan.FromSeconds(15));
+        (await GetAsync("/")).Headers.Contains("X-Robots-Tag").Should().BeFalse();
+        (await LocsAsync()).Should().BeEquivalentTo(
+            [$"http://{hostname}/", $"http://{hostname}/events/opening", $"http://{hostname}/landing"]);
+
+        // The whole site hidden: every page noindex, no sitemap, robots.txt shuts the door.
+        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/search", slug,
+            new { indexable = false, exclude = Array.Empty<string>(), include = Array.Empty<string>() }), ct))
+            .EnsureSuccessStatusCode();
+        await PollUntil(async () => (await GetAsync("/sitemap.xml")).StatusCode == HttpStatusCode.NotFound, TimeSpan.FromSeconds(15));
+        (await GetAsync("/")).Headers.GetValues("X-Robots-Tag").Single().Should().Be("noindex, nofollow");
+        (await (await GetAsync("/robots.txt")).Content.ReadAsStringAsync(ct)).Should().Contain("Disallow: /");
     }
 
     private static HttpRequestMessage Admin(HttpMethod method, string url, string slug, object? body, bool superAdmin = false)

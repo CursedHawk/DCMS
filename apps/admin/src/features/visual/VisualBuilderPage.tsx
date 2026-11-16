@@ -28,6 +28,7 @@ import {
   Puzzle,
   Redo2,
   RefreshCw,
+  Globe,
   Rocket,
   Smartphone,
   Braces,
@@ -50,6 +51,7 @@ import { LayersPanel } from '../builder/panels/LayersPanel';
 import { useGeneratedApi } from '../ide/generated/useGeneratedApi';
 import {
   DeploymentsView,
+  SearchEnginesView,
   MergeDialog,
   RELEASE_BRANCH,
   Resizer,
@@ -98,7 +100,7 @@ const VIEWS: { id: VisualView; icon: typeof Code2; labelKey: string }[] = [
   { id: 'preview', icon: Eye, labelKey: 'visual.preview' },
 ];
 
-type SidebarView = 'components' | 'mine' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'problems' | 'agent';
+type SidebarView = 'components' | 'mine' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'searchEngines' | 'problems' | 'agent';
 
 /**
  * The Mode D builder (ADR 0020): a page is a tree of React components, edited on a GrapesJS
@@ -513,6 +515,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             <TourTarget id="visual.rail.theme"><Rail active={sidebar === 'theme'} label={t('visual.theme.title')} onClick={() => setSidebar('theme')}><Palette className="h-5 w-5" /></Rail></TourTarget>
             <Rail active={sidebar === 'scm'} label={t('ide.git.title')} onClick={() => setSidebar('scm')} badge={changes.data?.length ?? 0}><GitBranch className="h-5 w-5" /></Rail>
             <TourTarget id="visual.rail.deploy"><Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail></TourTarget>
+            <Rail active={sidebar === 'searchEngines'} label={t('searchEngines.title')} onClick={() => setSidebar('searchEngines')}><Globe className="h-5 w-5" /></Rail>
             <TourTarget id="visual.rail.problems"><Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail></TourTarget>
             <TourTarget id="visual.rail.agent"><Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><AgentRailIcon siteId={siteId} /></Rail></TourTarget>
             <Rail active={apiOpen} label={t('visual.api.title')} onClick={() => setApiOpen(true)}><Braces className="h-5 w-5" /></Rail>
@@ -538,6 +541,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
               />
             )}
             {sidebar === 'deploy' && <DeploymentsView siteId={siteId} />}
+            {sidebar === 'searchEngines' && <SearchEnginesView siteId={siteId} />}
             {sidebar === 'problems' && <ProblemsPanel problems={problems} editor={editor} />}
             {/* Kept mounted once opened, like the palette, so the conversation (and a run in
                 progress) survives switching views; it ends with the page. */}

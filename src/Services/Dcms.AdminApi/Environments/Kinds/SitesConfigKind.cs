@@ -1,3 +1,5 @@
+using Dcms.Shared.Messaging;
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Dcms.AdminApi.Sites;
 using Dcms.AdminApi.Sites.Git;
@@ -21,7 +23,9 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// </summary>
 // rls: EnvironmentMigrator calls every kind inside RlsScope.Environment, the environment it works
 // on; IgnoreTenantFilter drops only the tenant filter, so queries stay in that environment.
-public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy, SiteGitService git, SiteDeleter deleter)
+public sealed class SitesConfigKind(
+    SitesDbContext db, TenancyDbContext tenancy, SiteGitService git, SiteDeleter deleter,
+    IEventPublisher events, ILogger<SitesConfigKind> logger)
     : IEnvironmentConfigKind
 {
     public string Kind => "sites";
@@ -33,7 +37,11 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
     /// <summary>The release commit is merged by git, never chosen between by the reviewer.</summary>
     public IReadOnlyCollection<string> SelfMergedProperties => ["Release"];
 
-    private sealed record Value(string Name, string RenderMode, string? Release);
+    /// <param name="Search">What search engines may see (#648); left out when the site has the defaults,
+    /// so a site nobody touched exports exactly what it did before.</param>
+    private sealed record Value(
+        string Name, string RenderMode, string? Release,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SiteSearchSettings? Search = null);
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
     {
@@ -47,7 +55,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
                 ? await git.HeadShaAsync(repo, SiteGitService.ReleaseBranch, ct)
                 : null;
             items.Add(new EnvironmentConfigItem(site.KeyAcrossEnvironments, JsonSerializer.SerializeToElement(
-                new Value(site.Name, site.RenderMode.ToString(), release))) { Label = site.Name });
+                new Value(site.Name, site.RenderMode.ToString(), release, NonDefault(site.SearchSettingsJson)))) { Label = site.Name });
         }
         return items;
     }
@@ -73,7 +81,14 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             db.Sites.Add(site);
         }
         (site.Name, site.RenderMode, site.UpdatedAt) = (wanted.Name, mode, DateTimeOffset.UtcNow);
+        var search = wanted.Search?.ToJson();
+        var searchChanged = !created && search != site.SearchSettingsJson;
+        site.SearchSettingsJson = search;
         await db.SaveChangesAsync(ct);
+        if (searchChanged)
+        {
+            await SiteChangeNotice.PublishAsync(events, site, logger, ct);
+        }
 
         if (wanted.Release is not { } sha || !git.Enabled) return;
         if (site.GitRepoFullName is null)
@@ -144,4 +159,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             .Select(s => s.GitRepoFullName!)
             .ToListAsync(ct);
     }
+
+    private static SiteSearchSettings? NonDefault(string? json) =>
+        SiteSearchSettings.Parse(json) is { IsDefault: false } settings ? settings : null;
 }

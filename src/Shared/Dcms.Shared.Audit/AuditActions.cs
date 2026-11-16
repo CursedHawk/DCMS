@@ -134,6 +134,8 @@ public static class AuditActions
     public const string SitePublished = "site.published";
     public const string SiteBuildFailed = "site.build.failed";
     public const string SiteBuildActivated = "site.build.activated";
+    /// <summary>What search engines may see of a site (#648): hidden pages, extra URLs, indexing at all.</summary>
+    public const string SiteSearchChanged = "site.search.changed";
     public const string SiteBuildCreated = "site.build.created";
     public const string SitePublishBranchAdded = "site.publish_branch.added";
     public const string SitePublishBranchRemoved = "site.publish_branch.removed";

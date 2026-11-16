@@ -164,6 +164,9 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("SearchSettingsJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<int?>("StaticBundleFileCount")
                         .HasColumnType("integer");
 

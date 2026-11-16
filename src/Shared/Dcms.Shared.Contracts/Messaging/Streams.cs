@@ -170,6 +170,7 @@ public static class Subjects
     // SITES_EVENTS
     public const string SitePublished = "site.published";
     public const string SiteBuildFailed = "site.build.failed";
+    public const string SiteSettingsChanged = "site.settings.changed";
 
     // ANALYTICS
     public const string AnalyticsEvents = "analytics.events";

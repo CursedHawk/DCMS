@@ -176,7 +176,7 @@ ensure_stream MEDIA_EVENTS "media.processed,media.failed"            limits
 # 340-millisecond bundle extract. `site.publish.>` already covered every one of those, which
 # is why the split needed no stream change; keep it a wildcard.
 ensure_stream SITES        "site.publish.>"                          work
-ensure_stream SITES_EVENTS "site.published,site.build.failed"        limits
+ensure_stream SITES_EVENTS "site.published,site.build.failed,site.settings.changed" limits
 ensure_stream ANALYTICS    "analytics.>"                             limits
 # CHAT (chat.>) is no longer provisioned: chat messages are the LiveChat plugin's own events
 # on PLUGIN_EVENTS. A stream left on an existing server holds nothing new and ages out.

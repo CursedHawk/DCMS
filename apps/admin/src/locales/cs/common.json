@@ -2945,5 +2945,29 @@
       "member": "Přidal člen",
       "compaction": "Archiv konverzace"
     }
+  },
+  "searchEngines": {
+    "title": "Vyhledávače",
+    "indexable": "Povolit vyhledávačům indexovat tento web",
+    "hiddenSite": "Skryto před vyhledávači: každá stránka hlásí noindex, robots.txt roboty odmítá a sitemapa není.",
+    "viewSitemap": "Zobrazit sitemap.xml",
+    "pages": "Stránky v sitemapě",
+    "pagesHint": "Z posledního publikovaného sestavení. Vypnutím stránku skryjete před vyhledávači.",
+    "noBuild": "Stránky uvidíte po publikování webu.",
+    "eachItem": "Každá publikovaná položka · {{source}}",
+    "hiddenBy": "Skryto pravidlem {{rule}}",
+    "hidden": "Skryto před vyhledávači",
+    "hiddenHint": "/about je jedna stránka, /blog/:slug každý článek, /private/* celá sekce.",
+    "extra": "Další adresy",
+    "extraHint": "Stránky, které sitemapa uvede navíc k těm, které najde sama, např. /landing.",
+    "add": "Přidat",
+    "remove": "Odebrat {{path}}",
+    "save": "Uložit",
+    "saved": "Uloženo. Vyhledávače změnu uvidí během několika minut.",
+    "problem": {
+      "start": "Cesta musí začínat /.",
+      "chars": "Cesta nesmí obsahovat mezery, ?, #, // ani ..",
+      "pattern": ":název nebo koncové /* jen tam, kde to pravidlo dovoluje."
+    }
   }
 }

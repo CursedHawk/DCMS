@@ -239,7 +239,14 @@ test.describe('at 360px, the rest', () => {
         id: '22222222-2222-2222-2222-222222222222', name: 'QuarterlyInvestorRelationsLandingPageArchive2026',
         renderMode: 'StaticFiles', staticBundle: null,
       })
-      .on('GET', '/api/admin/sites/:id/builds', []);
+      .on('GET', '/api/admin/sites/:id/builds', [])
+      // Its Search engines section (#648), with paths long enough to have to truncate.
+      .on('GET', '/api/admin/sites/:id/search', {
+        settings: { indexable: true, exclude: ['/investor-relations/quarterly-reports-archive-2019-2026/*'], include: [] },
+        pages: [{ path: '/' }, { path: '/investor-relations/quarterly-reports-archive-2019-2026/annual-general-meeting.html' }],
+        sitemapUrl: 'https://quarterly-investor-relations.example/sitemap.xml',
+        environmentKey: '22222222-2222-2222-2222-222222222222',
+      });
     await page.goto('/sites/22222222-2222-2222-2222-222222222222');
     // Focus mode: no app sidebar, but always a way back.
     await expect(page.getByRole('link', { name: 'Back to Sites' })).toBeVisible();

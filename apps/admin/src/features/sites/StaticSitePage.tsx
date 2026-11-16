@@ -17,6 +17,7 @@ import {
   SectionHeader,
 } from '@dcms/ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
+import { SearchEnginesView } from '../site-source/SearchEnginesView';
 import { EditorHeader } from './EditorHeader';
 import { api } from '../../lib/api';
 import { formatSize } from '../media/api';
@@ -216,6 +217,11 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         </Card>
 
         {/* Build history / rollback */}
+        {/* What search engines may see (#648): the same panel the editors keep in their rail. */}
+        <div className="mt-8 max-w-md rounded-md border">
+          <SearchEnginesView siteId={siteId} />
+        </div>
+
         <SectionHeader className="mt-8" title={t('sites.deployments')} />
         {builds.isLoading ? (
           <CenteredSpinner />

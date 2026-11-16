@@ -490,6 +490,7 @@ app.MapGoogleDriveImport();
 app.MapSiteEndpoints();
 app.MapRepoEndpoints();
 app.MapPublishBranchEndpoints();
+app.MapSiteSearchEndpoints();
 app.MapTableViewEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();

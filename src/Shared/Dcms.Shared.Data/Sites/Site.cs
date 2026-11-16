@@ -87,6 +87,12 @@ public sealed class Site : EnvironmentEntity
     public string? GitDefaultBranch { get; set; }
     public DateTimeOffset? GitProvisionedAt { get; set; }
 
+    /// <summary>
+    /// What search engines may see (#648), as <see cref="SiteSearchSettings"/>; null for the
+    /// defaults. Read through <see cref="SiteSearchSettings.Parse"/>.
+    /// </summary>
+    public string? SearchSettingsJson { get; set; }
+
     public List<SiteBuild> Builds { get; set; } = [];
 }
 

@@ -13,8 +13,8 @@ using Dcms.Shared.Data;
 namespace Dcms.Shared.Sites;
 
 /// <summary>
-/// On site.published / tenant.domain.verified, drops the in-memory route cache
-/// for affected domains so the new active build is picked up promptly. Resilient
+/// On site.published and site.settings.changed (#648: search settings, a rollback), drops the
+/// in-memory route cache for the site's domains so what it serves changes promptly. Resilient
 /// to NATS being unavailable.
 ///
 /// <para><b>Every replica must see every message</b>, which is why this uses an ephemeral
@@ -50,10 +50,14 @@ public sealed class SiteCacheInvalidator(
                 // do not exist yet. What matters is everything from now on.
                 var consumer = await jetStream.CreateOrderedConsumerAsync(
                     Streams.SitesEvents,
-                    new NatsJSOrderedConsumerOpts { DeliverPolicy = ConsumerConfigDeliverPolicy.New },
+                    new NatsJSOrderedConsumerOpts
+                    {
+                        DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+                        FilterSubjects = [Subjects.SitePublished, Subjects.SiteSettingsChanged],
+                    },
                     stoppingToken);
 
-                await foreach (var msg in consumer.ConsumeAsync<SitePublished>(cancellationToken: stoppingToken))
+                await foreach (var msg in consumer.ConsumeAsync<SiteRef>(cancellationToken: stoppingToken))
                 {
                     // Without a domain in the event, clear by re-resolving lazily:
                     // the simplest correct action is to let entries expire, but we
@@ -77,7 +81,10 @@ public sealed class SiteCacheInvalidator(
         }
     }
 
-    private async Task InvalidateForSiteAsync(SitePublished? evt, CancellationToken ct)
+    /// <summary>What both events carry that names the site: read either through it.</summary>
+    private sealed record SiteRef(Guid TenantId, Guid SiteId, Guid? EnvironmentId);
+
+    private async Task InvalidateForSiteAsync(SiteRef? evt, CancellationToken ct)
     {
         if (evt is null)
         {

@@ -16,6 +16,12 @@ public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, st
 
     /// <summary>Its name, for the <c>X-Dcms-Environment</c> the delivery plane sets from it.</summary>
     public string EnvironmentName { get; init; } = TenantEnvironment.Production;
+
+    /// <summary>What search engines may see of the site (#648), applied by site-host on every request.</summary>
+    public SiteSearchSettings Search { get; init; } = SiteSearchSettings.Default;
+
+    /// <summary>Whether search engines may index anything here: not a branch's domain, not a hidden site.</summary>
+    public bool Indexable => !NoIndex && Search.Indexable;
 }
 
 /// <summary>
@@ -165,6 +171,7 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
         {
             EnvironmentId = domain.EnvironmentId,
             EnvironmentName = environmentName,
+            Search = SiteSearchSettings.Parse(site.SearchSettingsJson),
         };
     }
 

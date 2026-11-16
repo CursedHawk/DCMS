@@ -20,6 +20,7 @@ export * from './ide';
 export * from './openDocs';
 export * from './paths';
 export * from './search';
+export * from './searchRules';
 export * from './useDiffStats';
 export * from './useDraftSession';
 export * from './useRelativeTime';
@@ -29,6 +30,7 @@ export * from './workspace';
 
 export { BinaryFileView } from './BinaryFileView';
 export { DeploymentsView } from './DeploymentsView';
+export { SearchEnginesView } from './SearchEnginesView';
 export { DiffEditor } from './DiffEditor';
 export { EditorTabs } from './EditorTabs';
 export { FileTree } from './FileTree';

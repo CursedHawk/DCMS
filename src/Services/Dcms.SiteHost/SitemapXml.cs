@@ -15,31 +15,51 @@ public static class SitemapXml
     /// <param name="baseUrl">Scheme and host the sitemap was asked on, without a trailing slash.</param>
     /// <param name="gated">Path prefixes a visitor must sign in for; pages under them are left out.</param>
     /// <param name="items">A detail page's published items, slug and when.</param>
+    /// <param name="search">The site's own say (#648): pages it hides, and pages it adds.</param>
     public static async Task<byte[]> WriteAsync(
         string baseUrl, IReadOnlyList<SitemapPage> pages, IReadOnlyList<string> gated,
-        Func<SitemapPage, IAsyncEnumerable<(string Slug, DateTimeOffset? PublishedAt)>> items, CancellationToken ct)
+        Func<SitemapPage, IAsyncEnumerable<(string Slug, DateTimeOffset? PublishedAt)>> items,
+        SiteSearchSettings search, CancellationToken ct)
     {
         using var buffer = new MemoryStream();
         await using (var xml = XmlWriter.Create(buffer, new XmlWriterSettings { Async = true, Encoding = new UTF8Encoding(false) }))
         {
             await xml.WriteStartDocumentAsync();
             await xml.WriteStartElementAsync(null, "urlset", Namespace);
-            var written = 0;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            async Task UrlAsync(string path, DateTimeOffset? lastModified)
+            {
+                if (seen.Count >= MaxUrls || Covered(path, gated) || search.Excludes(path) || !seen.Add(path)) return;
+                var escaped = string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
+                await xml.WriteStartElementAsync(null, "url", Namespace);
+                await xml.WriteElementStringAsync(null, "loc", Namespace, baseUrl + (escaped.Length == 0 ? "/" : escaped));
+                if (lastModified is { } at)
+                {
+                    await xml.WriteElementStringAsync(null, "lastmod", Namespace, at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"));
+                }
+                await xml.WriteEndElementAsync();
+            }
+
             foreach (var page in pages)
             {
-                if (written >= MaxUrls) break;
+                if (seen.Count >= MaxUrls) break;
                 if (!page.IsDetail)
                 {
-                    if (await UrlAsync(xml, baseUrl, page.Path, null, gated)) written++;
+                    await UrlAsync(page.Path, null);
                     continue;
                 }
-                if (page.Instance is null || page.ContentType is null || Covered(page.Path, gated)) continue;
+                // A rule over the whole route (/blog/:slug, /blog/*) spares listing its items at all.
+                if (page.Instance is null || page.ContentType is null || Covered(page.Path, gated) || search.Excludes(page.Path)) continue;
                 var folder = page.Path[..page.Path.LastIndexOf('/')];
                 await foreach (var (slug, publishedAt) in items(page).WithCancellation(ct))
                 {
-                    if (written >= MaxUrls) break;
-                    if (await UrlAsync(xml, baseUrl, $"{folder}/{slug}", publishedAt, gated)) written++;
+                    if (seen.Count >= MaxUrls) break;
+                    await UrlAsync($"{folder}/{slug}", publishedAt);
                 }
+            }
+            foreach (var path in search.Include)
+            {
+                await UrlAsync(path, null);
             }
             await xml.WriteEndElementAsync();
             await xml.WriteEndDocumentAsync();
@@ -65,18 +85,4 @@ public static class SitemapXml
             return p.Length == 0 || path.Equals(p, StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase);
         });
-
-    private static async Task<bool> UrlAsync(XmlWriter xml, string baseUrl, string path, DateTimeOffset? lastModified, IReadOnlyList<string> gated)
-    {
-        if (Covered(path, gated)) return false;
-        var escaped = string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
-        await xml.WriteStartElementAsync(null, "url", Namespace);
-        await xml.WriteElementStringAsync(null, "loc", Namespace, baseUrl + (escaped.Length == 0 ? "/" : escaped));
-        if (lastModified is { } at)
-        {
-            await xml.WriteElementStringAsync(null, "lastmod", Namespace, at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"));
-        }
-        await xml.WriteEndElementAsync();
-        return true;
-    }
 }

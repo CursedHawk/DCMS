@@ -14,6 +14,32 @@ Every hosted site answers `/sitemap.xml` and `/robots.txt` without any setup (#3
 - **A new page list needs a new build.** A build from before a site's pages were read lists only
   `/`; Redeploy it.
 
+## Managing what search engines see (#648)
+
+Every site editor has a **Search engines** tab in its left rail (the IDE, the HTML builder, the
+visual builder; on a Mode C site it is a section of its page). It lists the pages the last
+published build put in the sitemap, each with a switch, and saves one set of settings per site:
+
+- **Allow search engines to index this site.** Off: every page answers `X-Robots-Tag: noindex,
+  nofollow`, `robots.txt` disallows everything and `/sitemap.xml` is 404 — as on a branch domain.
+- **Hidden from search engines** — rules for pages left out of the sitemap *and* answered
+  `X-Robots-Tag: noindex`, so a page found through a link stays out too:
+  `/about` (one page), `/blog/:slug` (every item of that route — its items are not even listed),
+  `/private/*` (that path and everything under it). Compared without case. A page's switch adds or
+  removes its own rule; a page hidden by a broader rule says which.
+- **Extra URLs** — absolute paths the sitemap lists besides those it finds (a page the build cannot
+  see, such as a JSX `<Routes>` page of a Mode B app).
+
+Stored on the site (`sites.sites.SearchSettingsJson`, `SiteSearchSettings`), checked on save
+(`PUT /api/admin/sites/{id}/search`, `site:publish`, audited `site.search.changed`), and applied by
+site-host on every request — **no rebuild**. Saving publishes `site.settings.changed`, which drops
+every cached route of the site; what remains is the HTTP cache (60 s for pages, 300 s for the
+sitemap). A rollback (activating an earlier build) publishes it too.
+
+The settings travel with the site in deployments (the `sites` kind); where production leaves sites
+to deployments, change them in the environment that deploys there. The console assistant has
+`get_site_search` / `set_site_search` (the latter asks first: engines drop what they are told to).
+
 ## Where each kind of site's pages come from
 
 | Mode | Pages |

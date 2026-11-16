@@ -42,7 +42,8 @@ public static class SitemapEndpoints
         {
             var logger = logs.CreateLogger("Dcms.SiteHost.Sitemap");
             var route = await resolver.ResolveAsync(http.Request.Host.Value ?? string.Empty, ct);
-            if (route is null || route.NoIndex)
+            // A branch's domain, or a site its people hide from search engines (#648): no sitemap.
+            if (route is null || !route.Indexable)
             {
                 return Results.NotFound();
             }
@@ -59,13 +60,13 @@ public static class SitemapEndpoints
             try
             {
                 // A failure throws, so nothing is cached: a half-listed sitemap is not kept for ten minutes.
-                xml = await memory.GetOrCreateAsync(("sitemap.xml", route.ArtifactPrefix, baseUrl, gated), async entry =>
+                xml = await memory.GetOrCreateAsync(("sitemap.xml", route.ArtifactPrefix, baseUrl, gated, route.Search.ToJson()), async entry =>
                 {
                     entry.AbsoluteExpirationRelativeToNow = Lifetime;
                     var pages = await PagesAsync(route.ArtifactPrefix, cache, storage, bucket, ct);
                     var client = clients.CreateClient(ContentApiClient);
                     return await SitemapXml.WriteAsync(baseUrl, pages, SitemapXml.Prefixes(gated),
-                        page => ItemsAsync(client, route, host, page, logger, ct), ct);
+                        page => ItemsAsync(client, route, host, page, logger, ct), route.Search, ct);
                 });
             }
             catch (Exception e) when (e is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
@@ -74,7 +75,7 @@ public static class SitemapEndpoints
                 http.Response.Headers.RetryAfter = "60";
                 return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
-            http.Response.Headers.CacheControl = "public, max-age=600";
+            http.Response.Headers.CacheControl = "public, max-age=300";
             return Results.Bytes(xml!, "application/xml; charset=utf-8");
         });
 
@@ -88,7 +89,7 @@ public static class SitemapEndpoints
                 return Results.NotFound();
             }
             http.Response.Headers.CacheControl = "public, max-age=3600";
-            if (route.NoIndex)
+            if (!route.Indexable)
             {
                 return Results.Text("User-agent: *\nDisallow: /\n", "text/plain; charset=utf-8");
             }

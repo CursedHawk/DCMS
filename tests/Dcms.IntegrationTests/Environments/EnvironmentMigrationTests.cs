@@ -602,6 +602,17 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var second = await CutAsync(client, ws, "Rename", ct);
         await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await ProdSites()).Should().Equal(("Marketing 2026", prodSites[0].Id));
+
+        // What search engines may see (#648) is the site's too, and travels with it.
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/sites/{devSite}/search", ws.Owner, ws.Dev,
+            new { indexable = false, exclude = new[] { "/drafts/*" }, include = new[] { "/landing" } }), ct)).EnsureSuccessStatusCode();
+        var third = await CutAsync(client, ws, "Search settings", ct);
+        await Engine(m => m.ApplyAsync(ws.ProdEnv, ws.DevEnv, third, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        var prodSearch = (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/sites/{prodSites[0].Id}/search", ws.Owner, ws.Prod), ct), ct))
+            .GetProperty("settings");
+        prodSearch.GetProperty("indexable").GetBoolean().Should().BeFalse();
+        prodSearch.GetProperty("exclude").EnumerateArray().Select(x => x.GetString()).Should().Equal("/drafts/*");
+        prodSearch.GetProperty("include").EnumerateArray().Select(x => x.GetString()).Should().Equal("/landing");
     }
 
     [DockerFact]

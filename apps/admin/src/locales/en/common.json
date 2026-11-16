@@ -2878,5 +2878,29 @@
       "member": "Added by a member",
       "compaction": "Conversation archive"
     }
+  },
+  "searchEngines": {
+    "title": "Search engines",
+    "indexable": "Allow search engines to index this site",
+    "hiddenSite": "Hidden from search engines: every page says noindex, robots.txt turns crawlers away and there is no sitemap.",
+    "viewSitemap": "View sitemap.xml",
+    "pages": "Pages in the sitemap",
+    "pagesHint": "From the last published build. Switch a page off to hide it from search engines.",
+    "noBuild": "Publish the site to see its pages.",
+    "eachItem": "Each published item · {{source}}",
+    "hiddenBy": "Hidden by {{rule}}",
+    "hidden": "Hidden from search engines",
+    "hiddenHint": "/about is one page, /blog/:slug every post, /private/* a whole section.",
+    "extra": "Extra URLs",
+    "extraHint": "Pages the sitemap lists besides those it finds itself, such as /landing.",
+    "add": "Add",
+    "remove": "Remove {{path}}",
+    "save": "Save",
+    "saved": "Saved. Search engines see the change within a few minutes.",
+    "problem": {
+      "start": "Start the path with /.",
+      "chars": "No spaces, ?, #, // or .. in a path.",
+      "pattern": "Use :name or a final /* only where a rule allows it."
+    }
   }
 }

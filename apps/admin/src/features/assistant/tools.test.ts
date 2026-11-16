@@ -75,7 +75,7 @@ describe('the tool catalogue', () => {
     }
   });
 
-  it('treats publishing, deleting, repointing, deploying and secrets as the dangerous ones', () => {
+  it('treats publishing, deleting, repointing, deploying, secrets and search-engine visibility as the dangerous ones', () => {
     const dangerous = ASSISTANT_TOOLS.filter((t) => t.risk === 'dangerous').map((t) => t.name);
     expect(dangerous.sort()).toEqual([
       'activate_site_build',
@@ -95,6 +95,7 @@ describe('the tool catalogue', () => {
       'set_connection_secret',
       'set_environment_locks',
       'set_primary_domain',
+      'set_site_search',
       'unpublish_content',
     ]);
   });

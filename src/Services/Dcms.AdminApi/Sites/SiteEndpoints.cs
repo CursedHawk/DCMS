@@ -237,7 +237,7 @@ public static class SiteEndpoints
         // Roll back / forward: re-activate a previously succeeded build. Its artifacts
         // still live under their own prefix, so this is a pointer switch.
         app.MapPost("/api/admin/sites/{id:guid}/builds/{buildId:guid}/activate", async (
-            Guid id, Guid buildId, SitesDbContext db, CancellationToken ct) =>
+            Guid id, Guid buildId, SitesDbContext db, IEventPublisher events, ILoggerFactory logs, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
@@ -269,6 +269,8 @@ public static class SiteEndpoints
             }
             site.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
+            // A rollback is no build: without this, site-host served the old build out its route cache.
+            await SiteChangeNotice.PublishAsync(events, site, logs.CreateLogger("Dcms.AdminApi.Sites"), ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildActivated, "site")
             .ManagedByDeployments("sites");

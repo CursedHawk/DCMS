@@ -39,6 +39,20 @@ public sealed record SitePublished(
     public int Version => 1;
 }
 
+/// <summary>
+/// What a site serves changed without a build (#648): its search settings, or which build is
+/// active (a rollback). Every process that caches the site's route drops it.
+/// </summary>
+public sealed record SiteSettingsChanged(
+    Guid EventId,
+    DateTimeOffset OccurredAt,
+    Guid TenantId,
+    Guid SiteId,
+    Guid? EnvironmentId = null) : ITenantEvent
+{
+    public int Version => 1;
+}
+
 public sealed record SiteBuildFailed(
     Guid EventId,
     DateTimeOffset OccurredAt,

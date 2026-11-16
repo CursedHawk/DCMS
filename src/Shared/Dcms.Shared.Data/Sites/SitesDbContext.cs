@@ -37,6 +37,7 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.Property(s => s.Name).HasMaxLength(256);
             e.Property(s => s.RenderMode).HasConversion<string>().HasMaxLength(32);
             e.Property(s => s.DraftDefinitionJson).HasColumnType("jsonb");
+            e.Property(s => s.SearchSettingsJson).HasColumnType("jsonb");
             e.Property(s => s.StaticBundleKey).HasMaxLength(512);
             e.Property(s => s.StaticBundleName).HasMaxLength(512);
             e.Property(s => s.GitRepoFullName).HasMaxLength(512);

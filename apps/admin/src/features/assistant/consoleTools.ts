@@ -1,7 +1,7 @@
 import { Perm } from '../../lib/permissions';
 import { api } from '../../lib/api';
 import type { AssistantTool } from './tools';
-import { obj, required, str } from './toolArgs';
+import { ids, obj, required, str } from './toolArgs';
 
 /**
  * The rest of the console as assistant tools (epic #624): sites, domains, environments, API
@@ -158,6 +158,45 @@ export const CONSOLE_TOOLS: AssistantTool[] = [
     describe: () => 'Switched the live build',
     run: (input) =>
       json(api.post(`/admin/sites/${enc(required(input, 'siteId'))}/builds/${enc(required(input, 'buildId'))}/activate`)),
+  },
+  {
+    name: 'get_site_search',
+    description:
+      "What search engines may see of a site: whether it is indexed at all, the paths hidden from them (exclude), extra URLs its sitemap lists (include), and the pages its last published build put in the sitemap.",
+    permission: Perm.SiteEdit,
+    input_schema: closed({ siteId: id('site') }, ['siteId']),
+    run: (input) => json(api.get(`/admin/sites/${enc(required(input, 'siteId'))}/search`)),
+  },
+  {
+    name: 'set_site_search',
+    description:
+      'Replace what search engines may see of a site, live at once with no rebuild — read it with get_site_search first and send all of it back. indexable false hides the whole site (noindex everywhere, no sitemap). exclude: paths left out of the sitemap and answered noindex — "/about" one page, "/blog/:slug" every item of that route, "/private/*" a section. include: extra absolute paths for the sitemap.',
+    permission: Perm.SitePublish,
+    // Search engines drop what they are told to; getting it back takes their time, not ours.
+    risk: 'dangerous',
+    invalidates: ['site-search'],
+    input_schema: closed(
+      {
+        siteId: id('site'),
+        indexable: { type: 'boolean' },
+        exclude: { type: 'array', items: { type: 'string' } },
+        include: { type: 'array', items: { type: 'string' } },
+      },
+      ['siteId', 'indexable', 'exclude', 'include'],
+    ),
+    summarize: (input) =>
+      input.indexable === false
+        ? `Hide site ${str(input, 'siteId') ?? '?'} from search engines entirely`
+        : `Hide ${ids(input, 'exclude').length} path(s) and add ${ids(input, 'include').length} URL(s) for search engines on site ${str(input, 'siteId') ?? '?'}`,
+    describe: () => 'Changed what search engines see',
+    run: (input) =>
+      json(
+        api.put(`/admin/sites/${enc(required(input, 'siteId'))}/search`, {
+          indexable: input.indexable !== false,
+          exclude: ids(input, 'exclude'),
+          include: ids(input, 'include'),
+        }),
+      ),
   },
   {
     name: 'delete_site',

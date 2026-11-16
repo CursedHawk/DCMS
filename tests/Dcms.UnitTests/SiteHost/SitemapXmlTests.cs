@@ -16,10 +16,14 @@ public class SitemapXmlTests
         await Task.CompletedTask;
     }
 
-    private static async Task<List<(string Loc, string? LastMod)>> UrlsAsync(IReadOnlyList<SitemapPage> pages, params string[] gated)
+    private static Task<List<(string Loc, string? LastMod)>> UrlsAsync(IReadOnlyList<SitemapPage> pages, params string[] gated) =>
+        UrlsAsync(pages, SiteSearchSettings.Default, gated);
+
+    private static async Task<List<(string Loc, string? LastMod)>> UrlsAsync(
+        IReadOnlyList<SitemapPage> pages, SiteSearchSettings search, params string[] gated)
     {
         var xml = await SitemapXml.WriteAsync("https://corp.example", pages, gated,
-            page => page.ContentType == "event" ? Events() : AsyncEnumerable.Empty<(string, DateTimeOffset?)>(), CancellationToken.None);
+            page => page.ContentType == "event" ? Events() : AsyncEnumerable.Empty<(string, DateTimeOffset?)>(), search, CancellationToken.None);
         var doc = XDocument.Load(new MemoryStream(xml));
         doc.Root!.Name.Should().Be(Ns + "urlset");
         return doc.Root.Elements(Ns + "url")
@@ -51,4 +55,36 @@ public class SitemapXmlTests
     [Fact]
     public void The_edges_header_is_read_back_into_prefixes() =>
         SitemapXml.Prefixes("%2Fportal, %2Fa%2Cb").Should().Equal("/portal", "/a,b");
+
+    [Fact]
+    public async Task The_sites_own_rules_hide_pages_and_add_others()
+    {
+        var pages = new SitemapPage[] { new("/"), new("/about"), new("/drafts/one"), new("/events/:slug", "events", "event") };
+
+        var urls = await UrlsAsync(pages, new SiteSearchSettings
+        {
+            Exclude = ["/drafts/*", "/events/summer-jam"],
+            Include = ["/landing", "/about", "/portal/secret"],
+        }, "/portal");
+
+        urls.Select(u => u.Loc).Should().Equal(
+            "https://corp.example/", "https://corp.example/about", "https://corp.example/events/winter%20session",
+            "https://corp.example/landing");
+    }
+
+    [Fact]
+    public async Task A_rule_over_a_whole_detail_route_lists_none_of_its_items()
+    {
+        var listed = false;
+        async IAsyncEnumerable<(string, DateTimeOffset?)> Watched()
+        {
+            listed = true;
+            await foreach (var item in Events()) yield return item;
+        }
+        var xml = await SitemapXml.WriteAsync("https://corp.example", [new("/"), new("/events/:slug", "events", "event")], [],
+            _ => Watched(), new SiteSearchSettings { Exclude = ["/events/:slug"] }, CancellationToken.None);
+
+        XDocument.Load(new MemoryStream(xml)).Root!.Elements(Ns + "url").Should().ContainSingle();
+        listed.Should().BeFalse("content-api is not asked for items no URL will list");
+    }
 }
