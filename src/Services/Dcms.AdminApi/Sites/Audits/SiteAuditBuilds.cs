@@ -28,7 +28,7 @@ public static class SiteAuditBuilds
     /// <summary>The address PageSpeed Insights is given: under the platform's managed zone, so its wildcard certificate covers it.</summary>
     public static string UrlFor(string token, IConfiguration config)
     {
-        var zone = (config["Domains:ManagedZone"] ?? Tenancy.DomainEndpoints.DefaultManagedZone).Trim().Trim('.').ToLowerInvariant();
+        var zone = SiteBuild.ManagedZone(config["Domains:ManagedZone"]);
         return $"https://{SiteBuild.AuditHostPrefix}{token}.{zone}/";
     }
 

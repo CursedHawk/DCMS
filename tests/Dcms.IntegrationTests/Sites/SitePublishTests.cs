@@ -434,6 +434,23 @@ public class SitePublishTests(SitePublishFixture fixture)
         var builds = await (await site.Admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/sites/{site.SiteId}/builds", site.Slug, null), ct))
             .Content.ReadAsStringAsync(ct);
         builds.Should().NotContain(auditBuild.Id.ToString(), "an audit build is no deployment");
+        (await site.Admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{site.SiteId}/builds/{auditBuild.Id}/activate", site.Slug, null), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound, "an audit build is never made live, not even by a rollback");
+
+        // A site with sign-in rules: its temporary address would skip them, so no unpublished audit.
+        using (var scope = fixture.Admin.Services.CreateScope())
+        using (RlsScope.Environment(site.TenantId, site.TenantId))
+        {
+            var userAuth = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.UserAuth.UserAuthDbContext>();
+            userAuth.Gates.Add(new Dcms.Shared.Data.UserAuth.SiteGate
+            {
+                Id = Guid.NewGuid(), TenantId = site.TenantId, EnvironmentId = site.TenantId, SiteId = site.SiteId, PathPrefix = "/portal",
+            });
+            await userAuth.SaveChangesAsync(ct);
+        }
+        var gated = await site.Admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{site.SiteId}/audits", site.Slug, new { target = "draft" }), ct);
+        gated.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await gated.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("code").GetString().Should().Be("audit_gated");
 
         // Its hour over, the address answers nothing.
         using (var scope = fixture.Admin.Services.CreateScope())

@@ -28,7 +28,8 @@ public static class SiteAuditEndpoints
     {
         app.MapPost("/api/admin/sites/{id:guid}/audits", async (
             Guid id, AuditRequest body, SitesDbContext db, TenancyDbContext tenancy, CmsDbContext cms, IEventPublisher events,
-            SiteGitService git, IJobQueue jobs, PageSpeedClient psi, IConfiguration config, CurrentUser user, CancellationToken ct) =>
+            SiteGitService git, IJobQueue jobs, PageSpeedClient psi, IConfiguration config, CurrentUser user,
+            Dcms.Shared.Data.UserAuth.UserAuthDbContext userAuth, CancellationToken ct) =>
         {
             if (!psi.Configured)
             {
@@ -73,6 +74,16 @@ public static class SiteAuditEndpoints
             }
             else
             {
+                // The edge applies a site's sign-in rules by hostname, and an audit build's address has
+                // none: a site with any would be served past them for the hour. Its live site can be audited.
+                if (await userAuth.Gates.AnyAsync(g => g.SiteId == id && g.Access != Dcms.Shared.Data.UserAuth.GateAccess.Public, ct))
+                {
+                    return Results.Conflict(new
+                    {
+                        error = "This site has sign-in rules, which a temporary audit address would bypass, so its unpublished version cannot be audited. Audit the live site instead.",
+                        code = "audit_gated",
+                    });
+                }
                 var (build, error) = await SiteAuditBuilds.QueueAsync(site, body.Branch, user.UserId, db, cms, events, git, jobs, ct);
                 if (build is null)
                 {

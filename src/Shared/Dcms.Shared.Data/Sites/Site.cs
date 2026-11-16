@@ -139,4 +139,11 @@ public sealed class SiteBuild : EnvironmentEntity
 
     /// <summary>The first label of an audit build's address: <c>audit-{token}.{managed zone}</c>.</summary>
     public const string AuditHostPrefix = "audit-";
+
+    /// <summary>The platform's managed zone (<c>Domains:ManagedZone</c>) when none is configured.</summary>
+    public const string DefaultManagedZone = "dcms.highgeek.eu";
+
+    /// <summary>The managed zone, as configured: the only zone an audit build is served under.</summary>
+    public static string ManagedZone(string? configured) =>
+        (string.IsNullOrWhiteSpace(configured) ? DefaultManagedZone : configured).Trim().Trim('.').ToLowerInvariant();
 }

@@ -18,7 +18,7 @@ public static class DomainEndpoints
     public const string TxtPrefix = "_dcms-verify";
 
     /// <summary>Zone the platform owns; provisioned subdomains live under it.</summary>
-    public const string DefaultManagedZone = "dcms.highgeek.eu";
+    public const string DefaultManagedZone = Dcms.Shared.Data.Sites.SiteBuild.DefaultManagedZone;
 
     public static IEndpointRouteBuilder MapDomainEndpoints(this IEndpointRouteBuilder app)
     {

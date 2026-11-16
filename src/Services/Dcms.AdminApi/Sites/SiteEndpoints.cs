@@ -244,7 +244,8 @@ public static class SiteEndpoints
             {
                 return Results.NotFound();
             }
-            var build = await db.Builds.FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == id, ct);
+            // An audit build (#649) is never made live, not even by a rollback.
+            var build = await db.Builds.FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == id && b.AuditToken == null, ct);
             if (build is null)
             {
                 return Results.NotFound();

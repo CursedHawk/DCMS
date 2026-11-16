@@ -42,6 +42,8 @@ public class AuditSummaryTests
     [InlineData("audit-short.dcms.highgeek.eu", null)]
     [InlineData("www.audit-0123456789abcdef0123456789abcdef.example", null)]
     [InlineData("example.com", null)]
-    public void Only_an_audit_builds_own_address_names_a_token(string host, string? token) =>
-        DomainResolver.AuditToken(host).Should().Be(token);
+    [InlineData("audit-0123456789abcdef0123456789abcdef.evil.example", null)]
+    [InlineData("audit-0123456789abcdef0123456789abcdef.x.dcms.highgeek.eu", null)]
+    public void Only_an_audit_builds_own_address_under_the_managed_zone_names_a_token(string host, string? token) =>
+        DomainResolver.AuditToken(host, "dcms.highgeek.eu").Should().Be(token);
 }

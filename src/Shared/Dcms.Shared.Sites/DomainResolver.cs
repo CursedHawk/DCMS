@@ -50,7 +50,8 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             return cached;
         }
 
-        var route = AuditToken(hostname) is { } token ? await LoadAuditAsync(token, ct) : await LoadAsync(hostname, ct);
+        var zone = SiteBuild.ManagedZone(services.GetService<Microsoft.Extensions.Configuration.IConfiguration>()?["Domains:ManagedZone"]);
+        var route = AuditToken(hostname, zone) is { } token ? await LoadAuditAsync(token, ct) : await LoadAsync(hostname, ct);
         var until = DateTimeOffset.UtcNow + Ttl;
         cache.Set(Key(hostname), route, route?.ExpiresAt is { } expires && expires < until ? expires : until);
         return route;
@@ -196,10 +197,15 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
 
     public const string AuditHostPrefix = SiteBuild.AuditHostPrefix;
 
-    /// <summary>The token an audit build's address carries: 32 lowercase hex characters; null for any other host.</summary>
-    public static string? AuditToken(string hostname)
+    /// <summary>
+    /// The token an audit build's address carries — <c>audit-{32 lowercase hex}.{zone}</c>, under the
+    /// platform's own managed zone and nowhere else; null for any other host.
+    /// </summary>
+    public static string? AuditToken(string hostname, string zone)
     {
-        var label = hostname.Split('.')[0];
+        var dot = hostname.IndexOf('.');
+        if (dot < 0 || !string.Equals(hostname[(dot + 1)..], zone, StringComparison.Ordinal)) return null;
+        var label = hostname[..dot];
         if (!label.StartsWith(AuditHostPrefix, StringComparison.Ordinal)) return null;
         var token = label[AuditHostPrefix.Length..];
         return token.Length == 32 && token.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') ? token : null;
