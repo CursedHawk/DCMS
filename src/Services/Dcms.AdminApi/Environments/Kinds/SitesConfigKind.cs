@@ -82,7 +82,7 @@ public sealed class SitesConfigKind(SitesDbContext db, TenancyDbContext tenancy,
             var info = await git.EnsureRepoAsync(slug, site.Id, new Dictionary<string, string>(), null, null, ct);
             (site.GitRepoFullName, site.GitDefaultBranch, site.GitProvisionedAt) = (info.RepoFullName, info.DefaultBranch, DateTimeOffset.UtcNow);
             await db.SaveChangesAsync(ct);
-            if (await EnvironmentPolicies.IsManagedAsync(tenancy, tenantId, Kind, key, ct))
+            if (await EnvironmentPolicies.IsManagedAsync(tenancy, tenantId, site.EnvironmentId, Kind, key, ct))
             {
                 await git.LockReleaseAsync(site.GitRepoFullName, locked: true, ct);
             }

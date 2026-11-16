@@ -90,6 +90,14 @@ public sealed class EnvironmentDeploymentTests(ContentFlowFixture fixture)
         change.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft", app.Owner, app.Tenant, body: new { }), ct))
             .StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+
+        // Production's policy is production's alone: development still changes the application.
+        var devHash = (await As(HttpMethod.Get, "/api/admin/plugins/crm/_model", devSlug)).GetProperty("hash").GetString();
+        await As(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", devSlug, new
+        {
+            expectedHash = devHash,
+            operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "companies", "value": { "displayName": "Firm" } } ]"""),
+        });
     }
 
     /// <summary>

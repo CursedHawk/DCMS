@@ -77,16 +77,6 @@ public static class EnvironmentPolicies
                ?? EnvironmentOwnership.Mixed;
     }
 
-    /// <summary>Whether <paramref name="kind"/>'s item <paramref name="key"/> is left to deployments in this tenant.</summary>
-    public static async Task<bool> IsManagedAsync(TenancyDbContext db, Guid tenantId, string kind, string key, CancellationToken ct)
-    {
-        // rls: names the tenant; the caller is in its scope.
-        var policies = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
-            Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.EnvironmentPolicies)
-                .Where(p => p.TenantId == tenantId && p.Kind == kind), ct);
-        return Ownership(policies, kind, key) == EnvironmentOwnership.Managed;
-    }
-
     /// <summary>
     /// Whether <paramref name="kind"/>'s item <paramref name="key"/> is left to deployments in
     /// environment <paramref name="environmentId"/> — the question a write in that environment

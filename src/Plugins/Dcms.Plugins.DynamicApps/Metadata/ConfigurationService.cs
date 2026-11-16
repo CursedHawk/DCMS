@@ -788,7 +788,7 @@ public sealed class ConfigurationService(
         if (slug is null) return;
         using var rls = RlsScope.Tenant(context.TenantId);
         var tenancy = services.GetRequiredService<Dcms.Shared.Data.Tenancy.TenancyDbContext>();
-        if (await Dcms.Shared.Data.Tenancy.EnvironmentPolicies.IsManagedAsync(tenancy, context.TenantId, "dynamic-apps", slug, ct))
+        if (await Dcms.Shared.Data.Tenancy.EnvironmentPolicies.IsManagedAsync(tenancy, context.TenantId, context.EnvironmentId, "dynamic-apps", slug, ct))
         {
             throw new ContractConflictException(
                 "This application is managed by deployments: change it in the environment that deploys here, and deploy it.");
