@@ -53,7 +53,7 @@ public static class SitePreviewEndpoints
          * a preview may see — so site:edit on this site is the gate for all of that.
          */
         app.MapGet("/api/admin/sites/{siteId:guid}/preview/realm", async (
-            Guid siteId, SitesDbContext sites, TenancyDbContext tenancy, ITenantContext tenant, CancellationToken ct) =>
+            Guid siteId, SitesDbContext sites, TenancyDbContext tenancy, CmsDbContext cms, ITenantContext tenant, CancellationToken ct) =>
         {
             // The tenant query filter: a site in another tenant is not found.
             if (tenant.TenantId is not { } tenantId || !await sites.Sites.AsNoTracking().AnyAsync(s => s.Id == siteId, ct))
@@ -67,7 +67,17 @@ public static class SitePreviewEndpoints
                 .Select(d => d.Hostname)
                 .FirstOrDefaultAsync(ct);
             // The realm the preview signs in through: another environment's, when this one takes its users from it (ADR 0026).
-            return Results.Ok(new { tenantId = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct), host });
+            var realmId = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct);
+            // Whether it has site sign-in at all: User Authentication on in the realm's environment.
+            // Not the edge's gate rows: those exist only for a site with a domain, and an
+            // environment's sites often have none (development, staging).
+            bool signIn;
+            using (Dcms.Shared.Data.Rls.RlsScope.Environment(tenantId, realmId))
+            {
+                signIn = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
+                    .AnyAsync(p => p.TenantId == tenantId && p.EnvironmentId == realmId && p.PluginId == "user-auth" && p.Enabled, ct);
+            }
+            return Results.Ok(new { tenantId = realmId, host, signIn });
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
 

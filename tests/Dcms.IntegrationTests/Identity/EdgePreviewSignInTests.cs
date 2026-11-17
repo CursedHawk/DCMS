@@ -55,6 +55,8 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
     private static readonly Guid Site = Guid.NewGuid();
     /// <summary>A site of the tenant's "development" environment: admin-api finds it only when the request names that environment.</summary>
     private static readonly Guid DevelopmentSite = Guid.NewGuid();
+    /// <summary>Development's own realm: User Authentication on, but no site of it has a domain, so the edge has no gate row for it.</summary>
+    private static readonly Guid DevelopmentRealm = Guid.NewGuid();
 
     private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
@@ -217,7 +219,11 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
         (await browser.SendRawAsync(new Uri(Admin, $"/.edge/preview/{Tenant}/{DevelopmentSite}/me"), ct)).StatusCode
             .Should().Be(HttpStatusCode.NotFound, "production has no such site");
         (await JsonAsync(browser, $"/.edge/preview/{Tenant}/development/{DevelopmentSite}/me", ct)).GetProperty("available").GetBoolean()
-            .Should().BeTrue("the edge asks admin-api in the environment the console named");
+            .Should().BeTrue("the edge asks admin-api in the environment the console named, and its realm has User Authentication though no site of it has a domain");
+        (await JsonAsync(browser, $"/.edge/preview/{Tenant}/staging/{DevelopmentSite}/me", ct)).GetProperty("available").GetBoolean()
+            .Should().BeFalse("that environment has no User Authentication");
+        var refused = await browser.GetAsync(new Uri(Admin, $"/.edge/preview/{Tenant}/staging/{DevelopmentSite}/signin"), ct);
+        refused.Body.Should().Contain("No sign-in on this site");
         (await browser.SendRawAsync(new Uri(Admin, $"/.edge/preview/{Tenant}/Dev%0Ax/{DevelopmentSite}/me"), ct)).StatusCode
             .Should().Be(HttpStatusCode.NotFound, "a malformed name never becomes a header");
     }
@@ -400,9 +406,17 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
             }
             var path = request.RequestUri!.AbsolutePath;
             var environment = request.Headers.TryGetValues("X-Dcms-Environment", out var named) ? named.Single() : null;
-            if (request.Method == HttpMethod.Get && path == $"/api/admin/sites/{(environment == "development" ? DevelopmentSite : Site)}/preview/realm")
+            if (request.Method == HttpMethod.Get && environment == "development" && path == $"/api/admin/sites/{DevelopmentSite}/preview/realm")
             {
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { tenantId = TenantId, host = SiteHost }) };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { tenantId = DevelopmentRealm, host = (string?)null, signIn = true }) };
+            }
+            if (request.Method == HttpMethod.Get && environment == "staging" && path == $"/api/admin/sites/{DevelopmentSite}/preview/realm")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { tenantId = Guid.NewGuid(), host = (string?)null, signIn = false }) };
+            }
+            if (request.Method == HttpMethod.Get && environment is null && path == $"/api/admin/sites/{Site}/preview/realm")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { tenantId = TenantId, host = SiteHost, signIn = true }) };
             }
             var viewAs = Regex.Match(path, "^/api/admin/plugins/users/users/([0-9a-f-]{36})/preview-token$");
             if (request.Method == HttpMethod.Post && viewAs.Success)

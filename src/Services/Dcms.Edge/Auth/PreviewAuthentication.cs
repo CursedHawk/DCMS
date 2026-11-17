@@ -432,7 +432,7 @@ public sealed record PreviewTarget(Guid TenantId, string? Host, bool SignInAvail
 /// Asks admin-api, as the member, about a preview's site. Cached for a minute per console session
 /// and site: the preview's route guard asks on every navigation.
 /// </summary>
-public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffTokenProvider tokens, SiteGates gates, IOptions<EdgeOptions> edge)
+public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffTokenProvider tokens, IOptions<EdgeOptions> edge)
 {
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(1);
 
@@ -455,7 +455,8 @@ public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffToken
             var body = await response.Content.ReadFromJsonAsync<JsonElement>(context.RequestAborted);
             var tenantId = body.GetProperty("tenantId").GetGuid();
             var host = body.TryGetProperty("host", out var h) && h.ValueKind == JsonValueKind.String ? h.GetString() : null;
-            target = new PreviewTarget(tenantId, host, gates.HasTenant(tenantId));
+            var signIn = body.TryGetProperty("signIn", out var si) && si.ValueKind == JsonValueKind.True;
+            target = new PreviewTarget(tenantId, host, signIn);
         }
         // Only a yes is kept: a refusal may be a session that has just been granted the site.
         if (target is not null)

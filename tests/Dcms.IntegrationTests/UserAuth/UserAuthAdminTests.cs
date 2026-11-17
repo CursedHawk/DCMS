@@ -152,6 +152,7 @@ public sealed class UserAuthAdminTests(ContentFlowFixture fixture)
             AppHarness.Req(HttpMethod.Get, $"/api/admin/sites/{site}/preview/realm", app.Owner, app.Tenant), ct), HttpStatusCode.OK, ct);
         realm.GetProperty("tenantId").GetGuid().Should().Be(tenantId);
         realm.GetProperty("host").GetString().Should().Be(host, "the primary domain's rules are the preview's");
+        realm.GetProperty("signIn").GetBoolean().Should().BeTrue("User Authentication is on in the site's environment");
         var viewer = await app.AddMemberAsync([], ct);
         (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/sites/{site}/preview/realm", viewer, app.Tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
