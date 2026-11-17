@@ -396,7 +396,7 @@ public class SitePublishTests(SitePublishFixture fixture)
         var live = await AuditAsync(new { target = "live" });
         live.GetProperty("mobile").GetProperty("scores").GetProperty("performance").GetInt32().Should().Be(62);
         live.GetProperty("desktop").GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("id").GetString())
-            .Should().Equal("render-blocking-resources", "uses-optimized-images", "image-alt", "meta-description");
+            .Should().Equal("render-blocking-resources", "uses-optimized-images", "image-alt", "errors-in-console", "meta-description");
         fixture.PageSpeed.Calls.Where(c => c.Url == $"https://{site.Hostname}/").Select(c => (c.Strategy, c.Key))
             .Should().BeEquivalentTo([("mobile", "test-key"), ("desktop", "test-key")]);
 

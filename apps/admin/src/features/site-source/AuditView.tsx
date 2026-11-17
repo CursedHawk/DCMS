@@ -262,6 +262,7 @@ function Issue({ issue }: { issue: AuditIssue }) {
             {issue.items.map((item, i) => (
               <li key={i} className="break-all font-mono">
                 {item.url ?? item.selector ?? item.label}
+                {(item.url || item.selector) && item.label && <span className="block font-sans">{item.label}</span>}
                 {item.snippet && <code className="block text-muted-foreground">{item.snippet}</code>}
               </li>
             ))}

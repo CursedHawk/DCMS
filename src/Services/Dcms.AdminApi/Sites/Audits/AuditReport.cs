@@ -119,11 +119,13 @@ public static class AuditSummary
     {
         var node = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("node", out var n) ? n : default;
         var source = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("source", out var s) ? s : default;
+        // A console error or a CSP finding says what it is in `description`, and where in `sourceLocation`.
+        var location = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("sourceLocation", out var l) ? l : default;
         return new AuditItem(
-            Clip(Text(item, "url") ?? Text(source, "url"), MaxText),
+            Clip(Text(item, "url") ?? Text(source, "url") ?? Text(location, "url"), MaxText),
             Clip(Text(node, "selector"), MaxText),
             Clip(Text(node, "snippet"), MaxText),
-            Clip(Text(node, "nodeLabel") ?? Text(item, "label"), MaxText),
+            Clip(Text(node, "nodeLabel") ?? Text(item, "label") ?? Text(item, "description"), MaxText),
             Number(item, "wastedBytes"), Number(item, "wastedMs"), Number(item, "totalBytes"));
     }
 

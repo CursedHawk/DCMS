@@ -29,11 +29,14 @@ public class AuditSummaryTests
         // Failing only, metrics aside, by category and then by what fixing them saves.
         report.Issues.Select(i => (i.Category, i.Id)).Should().Equal(
             ("performance", "render-blocking-resources"), ("performance", "uses-optimized-images"),
-            ("accessibility", "image-alt"), ("seo", "meta-description"));
+            ("accessibility", "image-alt"), ("best-practices", "errors-in-console"), ("seo", "meta-description"));
         var images = report.Issues.Single(i => i.Id == "uses-optimized-images");
         images.SavingsBytes.Should().Be(122880);
         images.Items.Should().ContainSingle().Which.Url.Should().Be("https://example.test/hero.jpg");
         report.Issues.Single(i => i.Id == "image-alt").Items.Single().Selector.Should().Be("main > img");
+        // A console error is its message and where it came from.
+        report.Issues.Single(i => i.Id == "errors-in-console").Items.Should().ContainSingle().Which.Should().Match<AdminApiApp::Dcms.AdminApi.Sites.Audits.AuditItem>(
+            x => x.Url == "https://api.example.test/items" && x.Label == "Failed to load resource: net::ERR_FAILED");
     }
 
     [Theory]

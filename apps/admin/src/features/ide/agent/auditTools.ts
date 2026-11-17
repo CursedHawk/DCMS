@@ -81,7 +81,7 @@ export function formatIssue(audit: AuditView, ref: string, strategy?: string): s
     const issue = report!.issues.find((i) => i.id === ref);
     if (!issue) continue;
     const items = issue.items.map((item) =>
-      `  - ${[item.url, item.selector, item.snippet, item.wastedBytes ? `${Math.round(item.wastedBytes / 1024)} KiB to save` : null, item.wastedMs ? `${Math.round(item.wastedMs)} ms to save` : null]
+      `  - ${[item.url, item.selector, item.label, item.snippet, item.wastedBytes ? `${Math.round(item.wastedBytes / 1024)} KiB to save` : null, item.wastedMs ? `${Math.round(item.wastedMs)} ms to save` : null]
         .filter(Boolean)
         .join(' · ')}`,
     );

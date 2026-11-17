@@ -55,7 +55,7 @@ public sealed class PageSpeedFake : HttpMessageHandler
               "accessibility": { "id": "accessibility", "title": "Accessibility", "score": 0.88, "auditRefs": [
                 { "id": "image-alt", "weight": 10 }, { "id": "color-contrast", "weight": 7 } ] },
               "best-practices": { "id": "best-practices", "title": "Best Practices", "score": 1, "auditRefs": [
-                { "id": "is-on-https", "weight": 5 } ] },
+                { "id": "is-on-https", "weight": 5 }, { "id": "errors-in-console", "weight": 1 } ] },
               "seo": { "id": "seo", "title": "SEO", "score": 0.9, "auditRefs": [
                 { "id": "meta-description", "weight": 1 }, { "id": "is-crawlable", "weight": 1 } ] }
             },
@@ -83,6 +83,11 @@ public sealed class PageSpeedFake : HttpMessageHandler
                   { "node": { "selector": "main > img", "snippet": "<img src=\"hero.jpg\">", "nodeLabel": "main > img" } } ] } },
               "color-contrast": { "id": "color-contrast", "title": "Background and foreground colors have a sufficient contrast ratio", "score": null, "scoreDisplayMode": "notApplicable" },
               "is-on-https": { "id": "is-on-https", "title": "Uses HTTPS", "score": 1, "scoreDisplayMode": "binary" },
+              "errors-in-console": { "id": "errors-in-console", "title": "Browser errors were logged to the console",
+                "description": "Errors logged to the console indicate unresolved problems.",
+                "score": 0, "scoreDisplayMode": "binary", "details": { "type": "table", "headings": [], "items": [
+                  { "source": "network", "description": "Failed to load resource: net::ERR_FAILED",
+                    "sourceLocation": { "type": "source-location", "url": "https://api.example.test/items", "line": 0, "column": 0 } } ] } },
               "meta-description": { "id": "meta-description", "title": "Document does not have a meta description",
                 "description": "Meta descriptions may be included in search results to concisely summarize page content.",
                 "score": 0, "scoreDisplayMode": "binary", "details": { "type": "table", "headings": [], "items": [] } },
