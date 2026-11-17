@@ -22,7 +22,9 @@ export function SettingsIndex() {
 
   useEffect(() => {
     if (!me) return;
-    const first = SETTINGS_SECTIONS.find((s) => !s.perm || can(me, s.perm));
+    // A section their permissions open beats one open to every member (AI usage, Knowledge, the API).
+    const first =
+      SETTINGS_SECTIONS.find((s) => s.perm && can(me, s.perm)) ?? SETTINGS_SECTIONS.find((s) => !s.perm);
     if (first) void navigate({ to: first.to as string, replace: true });
   }, [me, navigate]);
 
