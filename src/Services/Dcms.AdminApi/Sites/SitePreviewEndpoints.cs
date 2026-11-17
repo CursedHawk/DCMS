@@ -11,6 +11,7 @@ using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 
 using Dcms.Shared.Data;
+using Dcms.PluginSdk.Runtime;
 namespace Dcms.AdminApi.Sites;
 
 /// <summary>
@@ -27,6 +28,9 @@ namespace Dcms.AdminApi.Sites;
 /// </summary>
 public static class SitePreviewEndpoints
 {
+    /// <summary>The site users' access contract: a plugin providing it is what gives a realm site sign-in.</summary>
+    private const string SiteUsersContract = "users.access@1";
+
     private static readonly string[] ProxyMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 
     /// <summary>A site user's realm access token (ADR 0022); the same name the edge and content-api use.</summary>
@@ -53,7 +57,7 @@ public static class SitePreviewEndpoints
          * a preview may see — so site:edit on this site is the gate for all of that.
          */
         app.MapGet("/api/admin/sites/{siteId:guid}/preview/realm", async (
-            Guid siteId, SitesDbContext sites, TenancyDbContext tenancy, CmsDbContext cms, ITenantContext tenant, CancellationToken ct) =>
+            Guid siteId, SitesDbContext sites, TenancyDbContext tenancy, CmsDbContext cms, PluginRegistry registry, ITenantContext tenant, CancellationToken ct) =>
         {
             // The tenant query filter: a site in another tenant is not found.
             if (tenant.TenantId is not { } tenantId || !await sites.Sites.AsNoTracking().AnyAsync(s => s.Id == siteId, ct))
@@ -68,14 +72,16 @@ public static class SitePreviewEndpoints
                 .FirstOrDefaultAsync(ct);
             // The realm the preview signs in through: another environment's, when this one takes its users from it (ADR 0026).
             var realmId = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct);
-            // Whether it has site sign-in at all: User Authentication on in the realm's environment.
-            // Not the edge's gate rows: those exist only for a site with a domain, and an
-            // environment's sites often have none (development, staging).
+            // Whether it has site sign-in at all: an enabled instance of a plugin providing the site
+            // users' access contract (User Authentication), in the realm's environment. Not the
+            // edge's gate rows: those exist only for a site with a domain, and an environment's
+            // sites often have none (development, staging).
+            var providers = registry.FindContract(SiteUsersContract)?.ProviderPluginIds.ToList() ?? [];
             bool signIn;
             using (Dcms.Shared.Data.Rls.RlsScope.Environment(tenantId, realmId))
             {
                 signIn = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
-                    .AnyAsync(p => p.TenantId == tenantId && p.EnvironmentId == realmId && p.PluginId == "user-auth" && p.Enabled, ct);
+                    .AnyAsync(p => p.TenantId == tenantId && p.EnvironmentId == realmId && p.Enabled && providers.Contains(p.PluginId), ct);
             }
             return Results.Ok(new { tenantId = realmId, host, signIn });
         }).RequirePermission(PlatformPermissions.SiteEdit);
