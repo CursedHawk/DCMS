@@ -2,7 +2,7 @@ extern alias AdminApiApp;
 using System.Reflection;
 using System.Text.Json;
 
-using NotificationKinds = AdminApiApp::Dcms.AdminApi.Notifications.NotificationKinds;
+using NotificationKinds = global::Dcms.AdminApi.Notifications.NotificationKinds;
 
 namespace Dcms.IntegrationTests.Notifications;
 

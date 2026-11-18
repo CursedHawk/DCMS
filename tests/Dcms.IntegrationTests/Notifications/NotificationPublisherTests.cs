@@ -1,3 +1,4 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -9,9 +10,9 @@ using Dcms.Shared.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
-using NotificationRequest = AdminApiApp::Dcms.AdminApi.Notifications.NotificationRequest;
-using NotificationPublisher = AdminApiApp::Dcms.AdminApi.Notifications.NotificationPublisher;
-using ContentPublishedNotificationConsumer = AdminApiApp::Dcms.AdminApi.Notifications.ContentPublishedNotificationConsumer;
+using NotificationRequest = global::Dcms.AdminApi.Notifications.NotificationRequest;
+using NotificationPublisher = global::Dcms.AdminApi.Notifications.NotificationPublisher;
+using ContentPublishedNotificationConsumer = JobsWorkerApp::Dcms.AdminApi.Notifications.ContentPublishedNotificationConsumer;
 
 namespace Dcms.IntegrationTests.Notifications;
 

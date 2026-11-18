@@ -1,6 +1,7 @@
 extern alias AdminApiApp;
 
 using AdminApiApp::Dcms.AdminApi.Plugins;
+using Dcms.AdminApi.Plugins;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Security;
 

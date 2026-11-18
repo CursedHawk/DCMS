@@ -6,15 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Sites.Audits;
 
-public sealed record SiteAuditPayload(Guid AuditId);
-
 /// <summary>
 /// Runs one audit (#649) on the jobs-worker: waits for a draft's audit build, then asks PageSpeed
 /// Insights for mobile and desktop and keeps each summary on the <see cref="SiteAudit"/>.
 /// </summary>
 public sealed class SiteAuditJob(SitesDbContext db, PageSpeedClient psi) : IJobHandler<SiteAuditPayload>
 {
-    public const string Kind = "site.audit";
+    public const string Kind = SiteAuditJobContract.Kind;
 
     private static readonly TimeSpan BuildWait = TimeSpan.FromMinutes(15);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

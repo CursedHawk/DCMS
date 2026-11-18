@@ -1,5 +1,8 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 using AdminApiApp::Dcms.AdminApi.Tenancy;
+using Dcms.AdminApi.Tenancy;
+using JobsWorkerApp::Dcms.AdminApi.Tenancy;
 
 namespace Dcms.IntegrationTests.Sites;
 

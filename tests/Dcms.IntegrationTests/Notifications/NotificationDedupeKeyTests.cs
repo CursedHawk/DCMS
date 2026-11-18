@@ -30,7 +30,7 @@ public sealed partial class NotificationDedupeKeyTests
     {
         var offenders = new List<string>();
 
-        foreach (var file in Directory.EnumerateFiles(ConsumerRoot(), "*.cs", SearchOption.AllDirectories))
+        foreach (var file in ConsumerRoots().SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)))
         {
             var source = File.ReadAllText(file);
             foreach (Match match in EventIdDedupe().Matches(source))
@@ -50,7 +50,7 @@ public sealed partial class NotificationDedupeKeyTests
     }
 
     /// <summary>Walks up from the test binary to the repository, which has no fixed path in CI.</summary>
-    private static string ConsumerRoot()
+    private static IEnumerable<string> ConsumerRoots()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Dcms.sln")))
@@ -59,7 +59,14 @@ public sealed partial class NotificationDedupeKeyTests
         }
 
         Assert.SkipWhen(directory is null, "Repository root not found; the source tree is not available here.");
-        return Path.Combine(directory!.FullName, "src", "Services", "Dcms.AdminApi", "Notifications");
+        // The consumers run in jobs-worker; the publishers and anything both reach are the admin
+        // plane's shared library; admin-api's own endpoints raise notifications too (ADR 0036).
+        return new[]
+        {
+            Path.Combine(directory!.FullName, "src", "Services", "Dcms.JobsWorker", "Notifications"),
+            Path.Combine(directory.FullName, "src", "Shared", "Dcms.Shared.AdminPlane", "Notifications"),
+            Path.Combine(directory.FullName, "src", "Services", "Dcms.AdminApi", "Notifications"),
+        }.Where(Directory.Exists).ToList();
     }
 
     /// <summary>

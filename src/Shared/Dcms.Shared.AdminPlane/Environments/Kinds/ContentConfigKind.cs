@@ -72,7 +72,7 @@ public sealed class ContentConfigKind(CmsDbContext db, IPluginCatalog catalog) :
         var pluginId = await db.PluginInstances.IgnoreTenantFilter().AsNoTracking()
             .Where(p => p.TenantId == tenantId && p.Id == item.PluginInstanceId).Select(p => p.PluginId).FirstAsync(ct);
         var data = resolved is null ? null
-            : Cms.ContentEndpoints.SanitizeRichText(JsonSerializer.SerializeToElement(resolved), catalog, pluginId, item.ContentType);
+            : Cms.ContentRules.SanitizeRichText(JsonSerializer.SerializeToElement(resolved), catalog, pluginId, item.ContentType);
         var next = (await db.ContentVersions.IgnoreTenantFilter()
             .Where(v => v.TenantId == tenantId && v.ItemId == item.Id).MaxAsync(v => (int?)v.VersionNo, ct) ?? 0) + 1;
         var version = new ContentVersion
@@ -157,7 +157,7 @@ public sealed class ContentConfigKind(CmsDbContext db, IPluginCatalog catalog) :
         var instance = await db.PluginInstances.IgnoreTenantFilter()
                            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == app, ct)
                        ?? throw new EnvironmentConfigException($"there is no app '{app}' here for '{key}'; deploy the app first");
-        if (!Cms.ContentEndpoints.PluginDeclaresType(catalog, instance.PluginId, type))
+        if (!Cms.ContentRules.PluginDeclaresType(catalog, instance.PluginId, type))
         {
             throw new EnvironmentConfigException($"app '{app}' here has no content type '{type}'");
         }

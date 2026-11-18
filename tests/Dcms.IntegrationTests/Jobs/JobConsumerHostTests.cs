@@ -1,4 +1,4 @@
-extern alias AdminApiApp;
+extern alias JobsWorkerApp;
 using Dcms.IntegrationTests.Tenancy;
 using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Jobs;
@@ -14,12 +14,11 @@ namespace Dcms.IntegrationTests.Jobs;
 [Collection(AdminApiCollection.Name)]
 public sealed class JobConsumerHostTests(AdminApiFixture fixture) : IAsyncDisposable
 {
-    private WebApplicationFactory<AdminApiApp::Program>? _worker;
+    private WebApplicationFactory<JobsWorkerApp::Program>? _worker;
 
-    private WebApplicationFactory<AdminApiApp::Program> Worker => _worker ??= fixture.Factory.WithWebHostBuilder(b =>
+    private WebApplicationFactory<JobsWorkerApp::Program> Worker => _worker ??= fixture.Worker.WithWebHostBuilder(b =>
     {
-        // The jobs-worker role: this host drains the tenant lane the shared fixture leaves off.
-        b.UseSetting("Dcms:Role", "worker");
+        // jobs-worker, draining the tenant lane the shared fixture leaves off.
         b.UseSetting("Jobs:Lanes:tenant:Enabled", "true");
         b.ConfigureServices(services =>
         {

@@ -1,9 +1,11 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AdminApiApp::Dcms.AdminApi.Ai;
+using JobsWorkerApp::Dcms.AdminApi.Ai;
 using Dcms.IntegrationTests.Tenancy;
 
 namespace Dcms.IntegrationTests.Ai;

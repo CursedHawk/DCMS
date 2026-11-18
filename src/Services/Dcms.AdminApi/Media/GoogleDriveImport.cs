@@ -16,34 +16,6 @@ using Microsoft.Extensions.Options;
 namespace Dcms.AdminApi.Media;
 
 /// <summary>
-/// The platform's Google Cloud app, as the Drive picker in the console needs it. None of it is
-/// secret — the picker runs in the browser — but it is per-environment, so it lives in Vault
-/// (<c>secret/dcms/admin-api</c>, <c>GoogleDrive__*</c>) like every other value that differs
-/// between dev and prod. Optional: unset, the console simply does not offer Drive.
-/// </summary>
-public sealed class GoogleDriveOptions
-{
-    public const string SectionName = "GoogleDrive";
-
-    /// <summary>OAuth client id. May be the identity SSO client, with the console origin added
-    /// to its authorized JavaScript origins.</summary>
-    public string? ClientId { get; set; }
-
-    /// <summary>Browser API key, restricted to the Picker API and the console's referrers.</summary>
-    public string? ApiKey { get; set; }
-
-    /// <summary>The Cloud project number. A drive.file grant made in the picker belongs to this
-    /// project, which is what lets admin-api download the picked file with the same token.</summary>
-    public string? AppId { get; set; }
-
-    /// <summary>Overridden only by tests, which point it at a stub on loopback.</summary>
-    public string ApiBase { get; set; } = "https://www.googleapis.com/drive/v3/";
-
-    public bool IsConfigured =>
-        !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(AppId);
-}
-
-/// <summary>
 /// Import from Google Drive: the console's picker hands over a short-lived <c>drive.file</c>
 /// token and the id of a file the admin just picked; this downloads it and puts it through
 /// <see cref="MediaIngestService"/>. That is the whole design — the same seam as an upload, so a
@@ -55,22 +27,6 @@ public sealed class GoogleDriveOptions
 /// </summary>
 public static partial class GoogleDriveImport
 {
-    internal const string GoogleAppsPrefix = "application/vnd.google-apps.";
-
-    /// <summary>
-    /// Google-native files have no bytes of their own, so Drive exports them. PDF is a type
-    /// the library already stores; a Drawing goes to PNG so it gets the webp ladder like any
-    /// image. Null for anything else Google-native (folders, forms, sites…), which cannot be
-    /// imported.
-    /// </summary>
-    public static (string MimeType, string Extension)? ExportFor(string mimeType) => mimeType switch
-    {
-        "application/vnd.google-apps.document"
-            or "application/vnd.google-apps.spreadsheet"
-            or "application/vnd.google-apps.presentation" => ("application/pdf", ".pdf"),
-        "application/vnd.google-apps.drawing" => ("image/png", ".png"),
-        _ => null,
-    };
 
     // Drive ids are URL-safe base64-ish. Checked because the id is pasted into a request path.
     [GeneratedRegex("^[A-Za-z0-9_-]{1,200}$")]
@@ -111,7 +67,7 @@ public static partial class GoogleDriveImport
             }
 
             var tenantId = tenant.TenantId!.Value;
-            var token = protection.CreateProtector(DriveFileJob.TokenPurpose).Protect(body.AccessToken);
+            var token = protection.CreateProtector(DriveFileJobContract.TokenPurpose).Protect(body.AccessToken);
             var group = await jobs.EnqueueAsync(new JobSpec(
                 "media.drive-import", tenantId, null, "jobs.kinds.driveImport.title", new { count = files.Count },
                 RequiredPermission: PlatformPermissions.MediaWrite, Lane: JobLanes.Group, LinkPath: "/media"), ct);
@@ -121,7 +77,7 @@ public static partial class GoogleDriveImport
                 // ever displayed, to the same workspace that picked it.
                 var name = string.IsNullOrWhiteSpace(file.Name) ? file.Id! : file.Name[..Math.Min(file.Name.Length, 200)];
                 await jobs.EnqueueAsync(new JobSpec(
-                    DriveFileJob.Kind, tenantId, new DriveFilePayload(file.Id!, name, body.FolderId, token, me.UserId),
+                    DriveFileJobContract.Kind, tenantId, new DriveFilePayload(file.Id!, name, body.FolderId, token, me.UserId),
                     "jobs.kinds.driveFile.title", new { name },
                     RequiredPermission: PlatformPermissions.MediaWrite, ParentId: group.Id, LinkPath: "/media"), ct);
             }
@@ -129,13 +85,6 @@ public static partial class GoogleDriveImport
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaImported, "media_asset");
 
         return app;
-    }
-
-    internal static Task<HttpResponseMessage> SendAsync(HttpClient http, Uri uri, string token, CancellationToken ct)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
     /// <summary>
@@ -150,9 +99,4 @@ public static partial class GoogleDriveImport
 
     private sealed record PickedFile(string? Id, string? Name);
 
-    internal sealed record DriveFile(string? Name, string? MimeType, string? Size)
-    {
-        /// <summary>Drive sends size as a string, and omits it for Google-native files.</summary>
-        public long SizeBytes => long.TryParse(Size, out var n) ? n : 0;
-    }
 }

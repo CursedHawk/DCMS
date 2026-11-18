@@ -207,7 +207,7 @@ public static class ContentEndpoints
             {
                 return Results.BadRequest(new { error = "Unknown plugin instance." });
             }
-            if (!PluginDeclaresType(catalog, instance.PluginId, body.ContentType))
+            if (!ContentRules.PluginDeclaresType(catalog, instance.PluginId, body.ContentType))
             {
                 return Results.BadRequest(new { error = $"Plugin does not define content type '{body.ContentType}'." });
             }
@@ -228,7 +228,7 @@ public static class ContentEndpoints
             };
             // SEC-13: rich-text fields are author-supplied HTML injected into the published
             // site with innerHTML; sanitize on write against the allow-list.
-            var data = SanitizeRichText(body.Data, catalog, instance.PluginId, body.ContentType);
+            var data = ContentRules.SanitizeRichText(body.Data, catalog, instance.PluginId, body.ContentType);
             var version = NewVersion(item, 1, data, me.UserId);
             item.CurrentDraftVersionId = version.Id;
             item.Versions.Add(version);
@@ -497,9 +497,6 @@ public static class ContentEndpoints
         item.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    internal static bool PluginDeclaresType(IPluginCatalog catalog, string pluginId, string contentType)
-        => catalog.Find(pluginId)?.ContentTypes.Any(t => t.Name == contentType) ?? false;
-
     /// <summary>
     /// Sanitizes the <see cref="ContentFieldType.RichText"/> fields of a content data payload
     /// (SEC-13), resolving the item's plugin id from its instance first. Everything else in the
@@ -514,45 +511,7 @@ public static class ContentEndpoints
             .Where(p => p.Id == pluginInstanceId)
             .Select(p => p.PluginId)
             .FirstOrDefaultAsync(ct);
-        return pluginId is null ? data : SanitizeRichText(data, catalog, pluginId, contentType);
-    }
-
-    /// <summary>
-    /// Rewrites each declared rich-text string field of <paramref name="data"/> through
-    /// <see cref="HtmlContentSanitizer"/>. Returns the original element when the content type is
-    /// unknown, declares no rich-text field, or nothing needed changing — so an unchanged save
-    /// still round-trips byte-for-byte.
-    /// </summary>
-    internal static JsonElement? SanitizeRichText(
-        JsonElement? data, IPluginCatalog catalog, string pluginId, string contentType)
-    {
-        if (data is not { ValueKind: JsonValueKind.Object } obj) return data;
-        var def = catalog.Find(pluginId)?.ContentTypes.FirstOrDefault(t => t.Name == contentType);
-        if (def is null) return data;
-        var richFields = def.Fields
-            .Where(f => f.Type == ContentFieldType.RichText)
-            .Select(f => f.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        if (richFields.Count == 0) return data;
-
-        var node = JsonNode.Parse(obj.GetRawText())!.AsObject();
-        var changed = false;
-        foreach (var name in richFields)
-        {
-            if (node.TryGetPropertyValue(name, out var value)
-                && value is JsonValue jv
-                && jv.TryGetValue<string>(out var html)
-                && html is not null)
-            {
-                var clean = HtmlContentSanitizer.Sanitize(html);
-                if (!string.Equals(clean, html, StringComparison.Ordinal))
-                {
-                    node[name] = clean;
-                    changed = true;
-                }
-            }
-        }
-        return changed ? JsonSerializer.SerializeToElement(node) : data;
+        return pluginId is null ? data : ContentRules.SanitizeRichText(data, catalog, pluginId, contentType);
     }
 
     private sealed record CreateContentRequest(Guid PluginInstanceId, string ContentType, string Slug, JsonElement? Data);

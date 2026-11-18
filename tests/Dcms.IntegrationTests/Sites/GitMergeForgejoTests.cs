@@ -7,9 +7,9 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using ForgejoClient = AdminApiApp::Dcms.AdminApi.Sites.Git.ForgejoClient;
-using ForgejoOptions = AdminApiApp::Dcms.AdminApi.Sites.Git.ForgejoOptions;
-using SiteGitService = AdminApiApp::Dcms.AdminApi.Sites.Git.SiteGitService;
+using ForgejoClient = global::Dcms.AdminApi.Sites.Git.ForgejoClient;
+using ForgejoOptions = global::Dcms.AdminApi.Sites.Git.ForgejoOptions;
+using SiteGitService = global::Dcms.AdminApi.Sites.Git.SiteGitService;
 
 namespace Dcms.IntegrationTests.Sites;
 

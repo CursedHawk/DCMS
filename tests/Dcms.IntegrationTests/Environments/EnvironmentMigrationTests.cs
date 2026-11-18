@@ -1,9 +1,12 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AdminApiApp::Dcms.AdminApi.Environments;
+using JobsWorkerApp::Dcms.AdminApi.Environments;
+using Dcms.AdminApi.Environments;
 using Dcms.IntegrationTests.Tenancy;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Cms;

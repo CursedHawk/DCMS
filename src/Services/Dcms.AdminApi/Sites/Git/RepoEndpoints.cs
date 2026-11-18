@@ -157,7 +157,7 @@ public static class RepoEndpoints
                 var slug = await services.GetRequiredService<CmsDbContext>().PluginInstances.AsNoTracking()
                     .Where(p => p.Id == binding.InstanceId).Select(p => p.Slug).FirstOrDefaultAsync(token);
                 if (slug is not null
-                    && await EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, binding.PluginId, slug, token) is { } managed)
+                    && await EnvironmentManagedRefusal.RefuseIfManagedAsync(services, tenant, binding.PluginId, slug, token) is { } managed)
                 {
                     return managed;
                 }

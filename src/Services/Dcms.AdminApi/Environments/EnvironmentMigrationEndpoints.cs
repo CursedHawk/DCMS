@@ -87,9 +87,9 @@ public static class EnvironmentMigrationEndpoints
         {
             var (target, source) = await PairAsync(environments, tenant, body.From, ct);
             if (source is null) return RefusedSource;
-            var dedupe = await DedupeKeyAsync(EnvironmentApplyJob.Kind, migrator, target, body.UpTo, body.Resolutions, ct);
+            var dedupe = await DedupeKeyAsync(EnvironmentJobKinds.Apply, migrator, target, body.UpTo, body.Resolutions, ct);
             var job = await jobs.EnqueueAsync(new JobSpec(
-                EnvironmentApplyJob.Kind, target.TenantId,
+                EnvironmentJobKinds.Apply, target.TenantId,
                 new EnvironmentApplyPayload(body.From, body.UpTo, body.Resolutions ?? [], me.UserId, me.IsSuperAdmin),
                 "jobs.kinds.environmentApply.title",
                 RequiredPermission: PlatformPermissions.EnvironmentsPromote,
@@ -118,10 +118,10 @@ public static class EnvironmentMigrationEndpoints
             Guid migrationId, RollbackRequest body, ITenantContext tenant, CurrentUser me, IJobQueue jobs,
             EnvironmentStore environments, EnvironmentMigrator migrator, CancellationToken ct) =>
         {
-            var dedupe = await DedupeKeyAsync(EnvironmentRollbackJob.Kind, migrator, (await environments.CurrentAsync(tenant, ct))!,
+            var dedupe = await DedupeKeyAsync(EnvironmentJobKinds.Rollback, migrator, (await environments.CurrentAsync(tenant, ct))!,
                 migrationId, body.Resolutions, ct);
             var job = await jobs.EnqueueAsync(new JobSpec(
-                EnvironmentRollbackJob.Kind, tenant.TenantId!.Value,
+                EnvironmentJobKinds.Rollback, tenant.TenantId!.Value,
                 new EnvironmentRollbackPayload(migrationId, body.Resolutions ?? [], me.UserId, me.IsSuperAdmin),
                 "jobs.kinds.environmentRollback.title",
                 RequiredPermission: PlatformPermissions.EnvironmentsPromote,

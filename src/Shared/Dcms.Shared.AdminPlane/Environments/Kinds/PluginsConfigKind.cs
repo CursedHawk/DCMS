@@ -88,6 +88,6 @@ public sealed class PluginsConfigKind(
         var change = created ? PluginInstanceChangeKind.Created
             : wasEnabled == instance.Enabled ? PluginInstanceChangeKind.Updated
             : instance.Enabled ? PluginInstanceChangeKind.Enabled : PluginInstanceChangeKind.Disabled;
-        await PluginInstanceEndpoints.PublishChange(events, cache, metrics, instance, change, ct);
+        await PluginInstanceChanges.PublishChange(events, cache, metrics, instance, change, ct);
     }
 }

@@ -1,3 +1,4 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 extern alias SiteBuilderApp;
 extern alias SiteHostApp;
@@ -34,6 +35,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
 
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
+    public WebApplicationFactory<JobsWorkerApp::Program> Worker { get; private set; } = null!;
 
     /// <summary>What PageSpeed Insights was asked, by every audit in this collection.</summary>
     public PageSpeedFake PageSpeed { get; } = new();
@@ -74,7 +76,8 @@ public sealed class SitePublishFixture : IAsyncLifetime
             b.UseSetting("Storage:UseSsl", "false");
         }
 
-        Admin = new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(b =>
+        // admin-api and jobs-worker take the same settings, as compose gives them (ADR 0036).
+        void AdminPlane(IWebHostBuilder b)
         {
             Storage(b);
             b.UseSetting("Tenancy:Migrate", "true");
@@ -86,11 +89,15 @@ public sealed class SitePublishFixture : IAsyncLifetime
             {
                 s.AddAuthentication(TestAuthHandler.SchemeName)
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
-                s.AddHttpClient<AdminApiApp::Dcms.AdminApi.Sites.Audits.PageSpeedClient>()
+                s.AddHttpClient<global::Dcms.AdminApi.Sites.Audits.PageSpeedClient>()
                     .ConfigurePrimaryHttpMessageHandler(() => PageSpeed);
             });
-        });
+        }
+        Admin = new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(AdminPlane);
         using (Admin.CreateClient()) { } // migrate first
+        // The job lanes (site audits) and event consumers.
+        Worker = new WebApplicationFactory<JobsWorkerApp::Program>().WithWebHostBuilder(AdminPlane);
+        using (Worker.CreateClient()) { }
 
         _builder = new WebApplicationFactory<SiteBuilderApp::Program>().WithWebHostBuilder(Storage);
         using (_builder.CreateClient()) { }
@@ -119,6 +126,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        if (Worker is not null) await Worker.DisposeAsync();
         if (Admin is not null) await Admin.DisposeAsync();
         if (_builder is not null) await _builder.DisposeAsync();
         if (Host is not null) await Host.DisposeAsync();

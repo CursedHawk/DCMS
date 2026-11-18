@@ -35,7 +35,7 @@ public sealed class KeyRingWrappingWiringTests
     {
         foreach (var service in SharesTheKeyRing())
         {
-            var program = ReadRepoFile(ProgramPath(service));
+            var program = Composition(service);
             program.Should().Contain("AddDcmsVaultTransit",
                 $"{service} cannot decrypt a wrapped key without one");
             // Registering it only when the flag is on is what made turning the flag on a
@@ -70,7 +70,7 @@ public sealed class KeyRingWrappingWiringTests
         var root = Path.Combine(RepoRoot(), "src", "Services");
         var services = Directory.EnumerateDirectories(root)
             .Where(directory => File.Exists(Path.Combine(directory, "Program.cs"))
-                                && File.ReadAllText(Path.Combine(directory, "Program.cs"))
+                                && WithAdminPlane(File.ReadAllText(Path.Combine(directory, "Program.cs")))
                                     .Contains("AddDcmsDataProtection", StringComparison.Ordinal))
             .Select(directory => Kebab(Path.GetFileName(directory)!["Dcms.".Length..]))
             .ToList();
@@ -78,6 +78,17 @@ public sealed class KeyRingWrappingWiringTests
         services.Should().NotBeEmpty("the ring has users; an empty list would pass every assertion");
         return services;
     }
+
+    /// <summary>
+    /// What a service's Program.cs registers: its own lines, and for admin-api and jobs-worker the
+    /// admin plane's shared composition they both call (ADR 0036).
+    /// </summary>
+    private static string Composition(string service) => WithAdminPlane(ReadRepoFile(ProgramPath(service)));
+
+    private static string WithAdminPlane(string program) =>
+        program.Contains("AddDcmsAdminPlane", StringComparison.Ordinal)
+            ? program + ReadRepoFile(Path.Combine("src", "Shared", "Dcms.Shared.AdminPlane", "AdminPlaneHostingExtensions.cs"))
+            : program;
 
     private static string ProgramPath(string service)
         => Path.Combine("src", "Services", "Dcms." + string.Concat(

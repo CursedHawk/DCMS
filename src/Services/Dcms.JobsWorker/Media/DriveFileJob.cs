@@ -6,9 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Dcms.AdminApi.Media;
 
-/// <param name="ProtectedToken">The picker's access token, encrypted with <see cref="DriveFileJob.TokenPurpose"/>.</param>
-public sealed record DriveFilePayload(string FileId, string Name, Guid? FolderId, string ProtectedToken, Guid? UploadedBy);
-
 /// <summary>
 /// One file of a Google Drive import (ADR 0024), run by jobs-worker: fetch the metadata, download
 /// (or export, for Docs, Sheets, Slides and Drawings) with the bar following the bytes, then
@@ -24,10 +21,9 @@ public sealed class DriveFileJob(
     MediaIngestService ingest,
     IDataProtectionProvider protection) : IJobHandler<DriveFilePayload>
 {
-    public const string Kind = "media.drive-file";
+    public const string Kind = DriveFileJobContract.Kind;
 
-    /// <summary>The Data Protection purpose the token is sealed under: one key ring, both roles.</summary>
-    public const string TokenPurpose = "Dcms.Jobs.DriveImport.Token.v1";
+    public const string TokenPurpose = DriveFileJobContract.TokenPurpose;
 
     public async Task<object?> RunAsync(DriveFilePayload payload, IJobContext context)
     {
@@ -47,18 +43,18 @@ public sealed class DriveFileJob(
         var id = payload.FileId;
 
         await context.ReportAsync(0, null, "jobs.stages.downloading");
-        using var metaResponse = await GoogleDriveImport.SendAsync(http, new Uri(api,
+        using var metaResponse = await GoogleDriveFiles.SendAsync(http, new Uri(api,
             $"files/{id}?fields=name,mimeType,size&supportsAllDrives=true"), token, ct);
         Refused(metaResponse.StatusCode);
-        var meta = await metaResponse.Content.ReadFromJsonAsync<GoogleDriveImport.DriveFile>(ct)
+        var meta = await metaResponse.Content.ReadFromJsonAsync<GoogleDriveFiles.DriveFile>(ct)
                    ?? throw new JobFailedException("jobs.error.driveRefused", "Drive returned no metadata.");
         if (meta.MimeType is null)
         {
             throw new JobFailedException("jobs.error.driveRefused", "Drive returned no type.");
         }
 
-        var export = GoogleDriveImport.ExportFor(meta.MimeType);
-        if (export is null && meta.MimeType.StartsWith(GoogleDriveImport.GoogleAppsPrefix, StringComparison.Ordinal))
+        var export = GoogleDriveFiles.ExportFor(meta.MimeType);
+        if (export is null && meta.MimeType.StartsWith(GoogleDriveFiles.GoogleAppsPrefix, StringComparison.Ordinal))
         {
             throw new JobFailedException("jobs.error.driveUnsupported", meta.MimeType);
         }
@@ -73,7 +69,7 @@ public sealed class DriveFileJob(
         var source = export is { } e
             ? new Uri(api, $"files/{id}/export?mimeType={Uri.EscapeDataString(e.MimeType)}")
             : new Uri(api, $"files/{id}?alt=media&supportsAllDrives=true");
-        using var download = await GoogleDriveImport.SendAsync(http, source, token, ct);
+        using var download = await GoogleDriveFiles.SendAsync(http, source, token, ct);
         Refused(download.StatusCode);
 
         await using var file = await AdminPluginMedia.DownloadCappedAsync(download, ct,

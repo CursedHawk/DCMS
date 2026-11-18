@@ -1,3 +1,4 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 using Minio;
 using Minio.DataModel.Args;
@@ -39,6 +40,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     private const string MediaBucket = "dcms-media-test";
 
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
+    public WebApplicationFactory<JobsWorkerApp::Program> Worker { get; private set; } = null!;
     public WebApplicationFactory<Program> Content { get; private set; } = null!;
 
     /// <summary>In-process stand-in for the Meta Graph API. Inert unless a test drives it.</summary>
@@ -84,7 +86,8 @@ public sealed class ContentFlowFixture : IAsyncLifetime
 
         MetaStub = await MetaStubServer.StartAsync();
 
-        Admin = new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(b =>
+        // admin-api and jobs-worker take the same settings, as compose gives them (ADR 0036).
+        void AdminPlane(IWebHostBuilder b)
         {
             ApplySettings(b);
             b.UseSetting("Tenancy:Migrate", "true");
@@ -113,10 +116,14 @@ public sealed class ContentFlowFixture : IAsyncLifetime
                     .ConfigurePrimaryHttpMessageHandler(() => new ContentServerHandler(this))
                     .ConfigureHttpClient(client => client.BaseAddress = new Uri("http://content.test/"));
             });
-        });
+        }
+        Admin = new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(AdminPlane);
 
         // Force admin host start (migrations) before content reads.
         using (Admin.CreateClient()) { }
+        // The outboxes, event consumers and plugin workers the flows rely on.
+        Worker = new WebApplicationFactory<JobsWorkerApp::Program>().WithWebHostBuilder(AdminPlane);
+        using (Worker.CreateClient()) { }
 
         // ADR 0015 phase 4: content-api runs as it does in a deploy, on dcms_app (NOBYPASSRLS)
         // with the tenant GUC interceptor on. admin-api above stays the owner, as the migrate
@@ -211,6 +218,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     public async ValueTask DisposeAsync()
     {
         if (MetaStub is not null) await MetaStub.DisposeAsync();
+        if (Worker is not null) await Worker.DisposeAsync();
         if (Admin is not null) await Admin.DisposeAsync();
         if (Content is not null) await Content.DisposeAsync();
         await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _redis.DisposeAsync().AsTask(), _nats.DisposeAsync().AsTask(),

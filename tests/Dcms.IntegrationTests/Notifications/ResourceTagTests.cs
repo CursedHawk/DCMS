@@ -1,6 +1,9 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 
 using AdminApiApp::Dcms.AdminApi.Notifications;
+using Dcms.AdminApi.Notifications;
+using JobsWorkerApp::Dcms.AdminApi.Notifications;
 using System.Reflection;
 
 namespace Dcms.IntegrationTests.Notifications;

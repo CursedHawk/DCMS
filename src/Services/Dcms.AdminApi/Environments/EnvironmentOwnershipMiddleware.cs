@@ -65,44 +65,9 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             return;
         }
 
-        await Refusal(await RefusalBodyAsync(services, tenantId, environmentId, managed.Kind, http.RequestAborted)).ExecuteAsync(http);
+        await EnvironmentManagedRefusal.Refusal(await EnvironmentManagedRefusal.RefusalBodyAsync(services, tenantId, environmentId, managed.Kind, http.RequestAborted)).ExecuteAsync(http);
     }
 
-    /// <summary>
-    /// For a handler whose write is managed only sometimes (a commit, when it lands on a site's
-    /// release): the same 409 when this environment leaves <paramref name="key"/> to deployments,
-    /// else null.
-    /// </summary>
-    public static async Task<IResult?> RefuseIfManagedAsync(
-        IServiceProvider services, ITenantContext tenant, string kind, string key, CancellationToken ct)
-    {
-        if (!tenant.HasEnvironments || tenant.TenantId is not { } tenantId) return null;
-        var environmentId = tenant.EnvironmentId ?? tenantId;
-        // rls: request tenant and environment, as in InvokeAsync.
-        var policies = await services.GetRequiredService<TenancyDbContext>().EnvironmentPolicies.AsNoTracking()
-            .Where(p => p.TenantId == tenantId && p.EnvironmentId == environmentId && p.Kind == kind)
-            .ToListAsync(ct);
-        return EnvironmentMigrator.Ownership(policies, kind, key) == EnvironmentOwnership.Managed
-            ? Refusal(await RefusalBodyAsync(services, tenantId, environmentId, kind, ct))
-            : null;
-    }
-
-    private static IResult Refusal(object body) => Results.Json(body, statusCode: StatusCodes.Status409Conflict);
-
-    private static async Task<object> RefusalBodyAsync(IServiceProvider services, Guid tenantId, Guid environmentId, string kind, CancellationToken ct)
-    {
-        var environments = await services.GetRequiredService<EnvironmentStore>().ListAsync(tenantId, ct);
-        var sources = environments.FirstOrDefault(e => e.Id == environmentId)?.PromotesFrom ?? [];
-        var names = environments.Where(e => sources.Contains(e.Id)).Select(e => e.Name).ToList();
-        return new
-        {
-            error = names.Count > 0
-                ? $"This is managed by deployments from {string.Join(" or ", names)}. Change it there and deploy it here."
-                : "This is managed by deployments. Change it in the environment that deploys here.",
-            code = "environment_managed",
-            kind,
-        };
-    }
 
     /// <summary>
     /// The key a request body gives the item (a role's new name, a new app's slug), when it can;

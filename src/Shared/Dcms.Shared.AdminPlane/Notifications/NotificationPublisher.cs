@@ -244,3 +244,13 @@ public sealed class NotificationPublisher(
     private static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }
+
+/// <summary>
+/// Carries already-serialised JSON through <c>NotificationRequest.Params</c> without a
+/// deserialise/reserialise round trip that would reorder keys and reject anything the
+/// sender's shape does not model.
+/// </summary>
+public sealed class RawJson(string json)
+{
+    public string Json { get; } = string.IsNullOrWhiteSpace(json) ? "{}" : json;
+}

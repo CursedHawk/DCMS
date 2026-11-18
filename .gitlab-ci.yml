@@ -290,6 +290,10 @@ build-image:
       - SERVICE: admin-api
         LANE: b
         DOCKERFILE: src/Services/Dcms.AdminApi/Dockerfile
+      # The platform's background work (ADR 0036): admin-api's code split off, so its own image.
+      - SERVICE: jobs-worker
+        LANE: c
+        DOCKERFILE: src/Services/Dcms.JobsWorker/Dockerfile
       - SERVICE: content-api
         LANE: c
         DOCKERFILE: src/Services/Dcms.ContentApi/Dockerfile
@@ -371,7 +375,7 @@ promote-images:
   script:
     - |
       set -e
-      for SERVICE in identity admin-api content-api media-worker email-worker script-runner \
+      for SERVICE in identity admin-api jobs-worker content-api media-worker email-worker script-runner \
                      site-builder site-build-sandbox site-host ai-gateway platform-api \
                      edge admin-spa platform-spa landing-spa log-janitor; do
         IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"

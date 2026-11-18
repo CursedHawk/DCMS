@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The platform's background work (ADR 0036): job lanes, plugin workers, event consumers,
+       outboxes and sweeps. No routes but health: nothing reaches it, it reaches out. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.AdminPlane\Dcms.Shared.AdminPlane.csproj" />
+  </ItemGroup>
+
+</Project>

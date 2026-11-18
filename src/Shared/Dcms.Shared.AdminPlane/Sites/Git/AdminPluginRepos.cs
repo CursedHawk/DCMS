@@ -191,7 +191,7 @@ public sealed class AdminPluginRepos(
     /// <summary>Whether this environment leaves the instance's code to deployments: the plugin's own kind, by slug.</summary>
     private async Task<bool> ManagedAsync(RepoBinding binding, CancellationToken ct) =>
         await SlugAsync(binding, ct) is { } slug
-        && await Environments.EnvironmentOwnershipMiddleware.RefuseIfManagedAsync(services, tenant, caller.PluginId, slug, ct) is not null;
+        && await Environments.EnvironmentManagedRefusal.RefuseIfManagedAsync(services, tenant, caller.PluginId, slug, ct) is not null;
 
     private async Task<RepoBinding> BindingAsync(Guid? requested, CancellationToken ct)
     {

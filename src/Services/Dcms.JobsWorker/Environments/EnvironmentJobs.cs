@@ -6,13 +6,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Environments;
 
-public sealed record EnvironmentApplyPayload(Guid Source, Guid UpTo, Dictionary<string, string> Resolutions, Guid? AppliedBy, bool IsSuperAdmin = false);
-
-public sealed record EnvironmentRollbackPayload(Guid MigrationId, Dictionary<string, string> Resolutions, Guid? By = null, bool IsSuperAdmin = false);
-
-/// <param name="Data">The data scopes to copy as well (<see cref="IEnvironmentDataCopier.Scope"/>); configuration always comes.</param>
-public sealed record EnvironmentCopyPayload(Guid Source, List<string>? Data = null);
-
 /// <summary>
 /// Gives a new environment its source's configuration (ADR 0026: "copy configuration from"), and
 /// the data scopes ticked. All or nothing: a copy that stops partway is no environment to work in,
@@ -23,7 +16,7 @@ public sealed class EnvironmentCopyJob(
     Tenancy.TenantDeleter deleter, Dcms.Shared.Audit.AuditScope audit, ILogger<EnvironmentCopyJob> logger)
     : IJobHandler<EnvironmentCopyPayload>
 {
-    public const string Kind = "environments.copy";
+    public const string Kind = EnvironmentJobKinds.Copy;
 
     public async Task<object?> RunAsync(EnvironmentCopyPayload payload, IJobContext context)
     {
@@ -74,7 +67,7 @@ public sealed class EnvironmentApplyJob(
     Tenancy.TenantDeleter deleter, ILogger<EnvironmentApplyJob> logger)
     : IJobHandler<EnvironmentApplyPayload>
 {
-    public const string Kind = "environments.apply";
+    public const string Kind = EnvironmentJobKinds.Apply;
 
     public async Task<object?> RunAsync(EnvironmentApplyPayload payload, IJobContext context)
     {
@@ -124,7 +117,7 @@ public sealed class EnvironmentApplyJob(
 public sealed class EnvironmentRollbackJob(EnvironmentMigrator migrator, TenancyDbContext db, EnvironmentStore environments, IAuditRecorder audit)
     : IJobHandler<EnvironmentRollbackPayload>
 {
-    public const string Kind = "environments.rollback";
+    public const string Kind = EnvironmentJobKinds.Rollback;
 
     public async Task<object?> RunAsync(EnvironmentRollbackPayload payload, IJobContext context)
     {

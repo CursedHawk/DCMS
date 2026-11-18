@@ -87,22 +87,6 @@ public static class PluginInstanceEndpoints
         }
     }
 
-    /// <summary>
-    /// The single place a plugin instance change leaves this service, which is why the counter
-    /// lives here rather than at the three call sites: a fourth kind of change added later gets
-    /// counted by construction instead of by remembering.
-    /// </summary>
-    internal static async Task PublishChange(IEventPublisher events, ICacheService cache, DcmsMetrics metrics, PluginInstance instance, PluginInstanceChangeKind kind, CancellationToken ct)
-    {
-        // Plugin id, not instance id: the catalogue is a fixed, small set, whereas instances
-        // are created per tenant without bound.
-        metrics.PluginInstanceChanged(instance.PluginId, kind.ToString());
-        // Every process's cached instance list for the tenant is now stale (PluginInstanceCache).
-        await PluginInstanceCache.BumpAsync(cache, instance.TenantId, ct);
-        await events.PublishAsync(Subjects.PluginInstanceChanged,
-            new PluginInstanceChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, instance.TenantId, instance.Id, instance.PluginId, kind), ct);
-    }
-
     private static object ToManifestDto(PluginManifest m) => new
     {
         id = m.Id,

@@ -1,3 +1,4 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 using System.Text.RegularExpressions;
 
@@ -140,7 +141,7 @@ public class NotificationLinkPathTests
 
         // ContentLink builds its link in a helper rather than inline, so the regex above cannot
         // see it — and it is the one that was wrong. Named explicitly so it is still covered.
-        found.Add((AdminApiApp::Dcms.AdminApi.Notifications.ContentLink.For(
+        found.Add((JobsWorkerApp::Dcms.AdminApi.Notifications.ContentLink.For(
             Guid.NewGuid(), "blogPost", Guid.NewGuid()), "ContentNotificationConsumer.cs"));
 
         return found.Distinct().ToList();

@@ -114,7 +114,9 @@ builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
     client.BaseAddress = new Uri(baseUrl);
 });
 
-builder.AddDcmsPlugins(PluginPlane.Site, plugins => plugins.AddAll());
+// The site plane serves plugins' public routes and runs none of their background work: that is
+// jobs-worker's alone (ADR 0036), whatever a plugin's own plane check says.
+builder.AddDcmsPlugins(PluginPlane.Site, plugins => plugins.AddAll(), runsBackgroundWork: false);
 builder.Services.AddHostedService<ContentCacheInvalidator>();
 builder.Services.AddHostedService<SearchIndexer>();
 

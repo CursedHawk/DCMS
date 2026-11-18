@@ -43,7 +43,7 @@ public sealed class SitePublishedNotificationConsumer(
 
         // BUG-01: a push that landed while this build was running was coalesced away by the
         // webhook; queue a catch-up build of the current release head if it moved past this one.
-        await SiteEndpoints.ContinueIfReleaseMovedAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);
+        await SiteBuilds.ContinueIfReleaseMovedAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);
 
         return new NotificationRequest(
             TenantId: evt.TenantId,
@@ -86,7 +86,7 @@ public sealed class SiteBuildFailedNotificationConsumer(
 
         // BUG-01: even a failed build must not strand a newer commit that the webhook dropped
         // as "build in flight" — re-check the release head and queue the catch-up if it moved.
-        await SiteEndpoints.ContinueIfReleaseMovedAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);
+        await SiteBuilds.ContinueIfReleaseMovedAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);
 
         return new NotificationRequest(
             TenantId: evt.TenantId,

@@ -76,7 +76,7 @@ public static partial class PublishBranchEndpoints
             await db.SaveChangesAsync(ct);
             try { await git.EnsureWebhookAsync(site.GitRepoFullName, ct); } catch { /* best effort, as for release */ }
 
-            var buildId = await SiteEndpoints.EnqueueBranchBuildAsync(db, cms, events, git, site, live, user.UserId, branch, ct);
+            var buildId = await SiteBuilds.EnqueueBranchBuildAsync(db, cms, events, git, site, live, user.UserId, branch, ct);
             scope.Declared?.For("site", site.Id, site.Name).With("branch", branch).With("build_id", buildId);
             return Results.Created($"/api/admin/sites/{id}/publish-branches", new { branch, buildId });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishBranchAdded, "site");

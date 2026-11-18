@@ -1,4 +1,5 @@
 extern alias AdminApiApp;
+extern alias JobsWorkerApp;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
@@ -25,11 +26,17 @@ namespace Dcms.IntegrationTests.Media;
 [Collection(AdminApiCollection.Name)]
 public sealed class GoogleDriveImportTests(AdminApiFixture fixture) : IAsyncDisposable
 {
-    private WebApplicationFactory<AdminApiApp::Program>? _host;
+    private WebApplicationFactory<JobsWorkerApp::Program>? _worker;
 
-    /// <summary>One process that both accepts the import and runs it: the "all" role, lane on.</summary>
-    private WebApplicationFactory<AdminApiApp::Program> Host =>
-        _host ??= fixture.Factory.WithWebHostBuilder(b => b.UseSetting("Jobs:Lanes:tenant:Enabled", "true"));
+    /// <summary>admin-api accepts the import; a jobs-worker with the tenant lane on runs it.</summary>
+    private WebApplicationFactory<AdminApiApp::Program> Host
+    {
+        get
+        {
+            _worker ??= fixture.StartWorker(b => b.UseSetting("Jobs:Lanes:tenant:Enabled", "true"));
+            return fixture.Factory;
+        }
+    }
 
     [DockerFact]
     public async Task A_picked_image_goes_through_ingest_like_an_upload_and_its_conversion_joins_the_import()
@@ -163,9 +170,9 @@ public sealed class GoogleDriveImportTests(AdminApiFixture fixture) : IAsyncDisp
 
     public async ValueTask DisposeAsync()
     {
-        if (_host is not null)
+        if (_worker is not null)
         {
-            await _host.DisposeAsync();
+            await _worker.DisposeAsync();
         }
     }
 }

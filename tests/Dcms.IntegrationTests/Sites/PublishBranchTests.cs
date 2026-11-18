@@ -15,7 +15,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
-using ForgejoClient = AdminApiApp::Dcms.AdminApi.Sites.Git.ForgejoClient;
+using ForgejoClient = global::Dcms.AdminApi.Sites.Git.ForgejoClient;
 
 namespace Dcms.IntegrationTests.Sites;
 

@@ -248,7 +248,7 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
     private readonly RecordingHub _hub = new();
 
     /// <summary>What admin-api sent to the IDEs' live channel, instead of sending it.</summary>
-    private sealed class RecordingHub : IHubContext<AdminApiApp::Dcms.AdminApi.Sites.SiteHub>
+    private sealed class RecordingHub : IHubContext<global::Dcms.AdminApi.Sites.SiteHub>
     {
         public System.Collections.Concurrent.ConcurrentQueue<(string Group, string Method, object? Payload)> Sent { get; } = new();
 
@@ -277,7 +277,7 @@ public sealed class PluginRepoTests(AdminApiFixture fixture) : IAsyncLifetime
 
     private WebApplicationFactory<AdminApiApp::Program> Host() => fixture.Factory.WithWebHostBuilder(builder =>
     {
-        builder.ConfigureServices(services => services.AddSingleton<IHubContext<AdminApiApp::Dcms.AdminApi.Sites.SiteHub>>(_hub));
+        builder.ConfigureServices(services => services.AddSingleton<IHubContext<global::Dcms.AdminApi.Sites.SiteHub>>(_hub));
         builder.UseSetting("Forgejo:BaseUrl", _forgejo!.BaseUrl);
         builder.UseSetting("Forgejo:Token", _forgejo.Token);
         builder.UseSetting("Forgejo:WebhookSecret", Secret);

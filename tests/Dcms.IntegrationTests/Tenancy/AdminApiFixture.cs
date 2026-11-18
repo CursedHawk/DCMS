@@ -1,3 +1,4 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 using Dcms.IntegrationTests.Social;
 using Microsoft.AspNetCore.Authentication;
@@ -39,6 +40,24 @@ public sealed class AdminApiFixture : IAsyncLifetime
     private const string MediaBucket = "dcms-media-test";
 
     public WebApplicationFactory<AdminApiApp::Program> Factory { get; private set; } = null!;
+
+    /// <summary>
+    /// jobs-worker on the same containers (ADR 0036): admin-api runs no background work, so the
+    /// outboxes, event consumers, sweeps and plugin workers a test relies on run here.
+    /// </summary>
+    public WebApplicationFactory<JobsWorkerApp::Program> Worker { get; private set; } = null!;
+
+    /// <summary>
+    /// A jobs-worker of a test's own, started: what a test that used to run admin-api in the
+    /// "all" role with a job lane on now pairs with <see cref="Factory"/>, which takes its requests.
+    /// The caller disposes it.
+    /// </summary>
+    public WebApplicationFactory<JobsWorkerApp::Program> StartWorker(Action<Microsoft.AspNetCore.Hosting.IWebHostBuilder> configure)
+    {
+        var worker = Worker.WithWebHostBuilder(configure);
+        _ = worker.Services;
+        return worker;
+    }
 
     /// <summary>
     /// In-process stub of the Meta Graph API. Started before admin-api so its dynamic URL can
@@ -104,13 +123,17 @@ public sealed class AdminApiFixture : IAsyncLifetime
             }
             await AppRole.GrantAsync(_postgres.GetConnectionString());
             Factory = Create(AppRole.ConnectionString(_postgres.GetConnectionString()), migrate: false, enforce: true, minioEndpoint);
+            Worker = CreateWorker(AppRole.ConnectionString(_postgres.GetConnectionString()), enforce: true, minioEndpoint);
         }
         else
         {
             Factory = Create(_postgres.GetConnectionString(), migrate: true, enforce: false, minioEndpoint);
+            Worker = CreateWorker(_postgres.GetConnectionString(), enforce: false, minioEndpoint);
         }
 
         using var client = Factory.CreateClient();
+        // After admin-api, which migrates in the non-enforcing mode; the worker never does.
+        using var workerClient = Worker.CreateClient();
     }
 
     /// <summary>
@@ -125,6 +148,14 @@ public sealed class AdminApiFixture : IAsyncLifetime
 
     private WebApplicationFactory<AdminApiApp::Program> Create(string postgres, bool migrate, bool enforce, string minioEndpoint)
         => new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>
+            Configure(builder, postgres, migrate, enforce, minioEndpoint));
+
+    private WebApplicationFactory<JobsWorkerApp::Program> CreateWorker(string postgres, bool enforce, string minioEndpoint)
+        => new WebApplicationFactory<JobsWorkerApp::Program>().WithWebHostBuilder(builder =>
+            Configure(builder, postgres, migrate: false, enforce, minioEndpoint));
+
+    /// <summary>One configuration for both services, as compose gives them one environment.</summary>
+    internal void Configure(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder, string postgres, bool migrate, bool enforce, string minioEndpoint)
         {
             builder.UseSetting("Rls:Enforce", enforce ? "true" : "false");
             // The ledger tests claim jobs themselves; a lane consumer here would race them.
@@ -184,10 +215,14 @@ public sealed class AdminApiFixture : IAsyncLifetime
                 // token never reaches an API response still means something.
                 services.AddSingleton<Dcms.Shared.Vault.ITransitEncryptor, FakeTransitEncryptor>();
             });
-        });
+        }
 
     public async ValueTask DisposeAsync()
     {
+        if (Worker is not null)
+        {
+            await Worker.DisposeAsync();
+        }
         if (Factory is not null)
         {
             await Factory.DisposeAsync();

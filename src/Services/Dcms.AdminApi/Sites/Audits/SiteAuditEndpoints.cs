@@ -97,7 +97,7 @@ public static class SiteAuditEndpoints
             await db.SaveChangesAsync(ct);
 
             var job = await jobs.EnqueueAsync(new JobSpec(
-                SiteAuditJob.Kind, site.TenantId, new SiteAuditPayload(audit.Id), "jobs.kinds.siteAudit.title", new { site = site.Name },
+                SiteAuditJobContract.Kind, site.TenantId, new SiteAuditPayload(audit.Id), "jobs.kinds.siteAudit.title", new { site = site.Name },
                 RequiredPermission: PlatformPermissions.SiteEdit, DedupeKey: $"site-audit:{audit.Id}", MaxAttempts: 1, Cancelable: false,
                 Links: [new JobLink(JobLinkRels.Source, $"/sites/{site.Id}", site.Name)]) { EnvironmentId = site.EnvironmentId }, ct);
             audit.JobId = job.Id;

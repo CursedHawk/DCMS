@@ -494,30 +494,28 @@ services:
       # which is the right way for an unconfigured installation to fail.
       Alerting__WebhookSecret: "${ALERT_WEBHOOK_SECRET:-}"
       Alerting__Recipients: "${ALERT_RECIPIENTS:-}"
-      # Requests and the consoles' sockets only; the background work is jobs-worker's (below).
-      Dcms__Role: "api"
     networks:
       default: {}
       scripts: {}
 
-  # admin-api's own image in its worker role (ADR 0024): the tenant job lane, every plugin's
-  # event handlers, jobs and hosted services, and the job ledger's housekeeping. Same code, same
-  # configuration and the same Vault path (it reads secret/dcms/admin-api), so nothing here can
-  # drift from what admin-api is configured with -- it extends that service and changes the role.
-  # Scaled on its own: more of these is more background throughput without more API replicas.
+  # The platform's background work, its own service and image (ADR 0036): the job lanes, every
+  # plugin's event handlers, jobs and hosted services, the event consumers, the outboxes and the
+  # sweeps. admin-api serves requests and runs none of it. It extends admin-api for the shared
+  # environment, networks and plugins volume -- one configuration for the two services of the
+  # admin plane -- and builds its own image, which maps no route but health. Stateless: more
+  # replicas is more background throughput, without more API replicas.
   jobs-worker:
     extends:
       service: admin-api
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.JobsWorker/Dockerfile
     # All the background work, and only here: audit sealing, retention sweeps, outboxes, event
     # consumers, job lanes and plugin workers. 2026-11-18 the audit sealing ran admin-api out
     # of memory while it still ran in both containers; it streams now, but this is where any
     # such pass lands.
     mem_limit: "${JOBS_WORKER_MEM_LIMIT:-768m}"
     environment:
-      Dcms__Role: "worker"
-      # The image is admin-api's, whose Dockerfile names the profiler after it; traces and logs take
-      # the worker's own name from Dcms:Role, and so must its profiles.
-      PYROSCOPE_APPLICATION_NAME: "jobs-worker"
       # Its own share of the connection budget (see content-api): admin-api's 35 became 25
       # for requests and 10 for the work that left it. Never the owner, even in dev: only the
       # migrators may be (ComposeOwnerConnectionTests), and admin-api is the one that migrates.

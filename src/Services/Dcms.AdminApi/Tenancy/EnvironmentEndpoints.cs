@@ -157,7 +157,7 @@ public static class EnvironmentEndpoints
             if (body.Empty != true)
             {
                 await jobs.EnqueueAsync(new JobSpec(
-                    EnvironmentCopyJob.Kind, tenantId, new EnvironmentCopyPayload(source.Id, scopes),
+                    EnvironmentJobKinds.Copy, tenantId, new EnvironmentCopyPayload(source.Id, scopes),
                     "jobs.kinds.environmentCopy.title", new { environment = name },
                     RequiredPermission: PlatformPermissions.EnvironmentsManage, MaxAttempts: 1,
                     LinkPath: "/deployments") { EnvironmentId = created.Id }, ct);

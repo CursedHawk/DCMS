@@ -148,6 +148,10 @@ a console is open.
 
 ### jobs-worker: admin-api's image in a worker role
 
+> **Superseded by [ADR 0036](0036-jobs-worker-service.md) (2026-11-18):** jobs-worker is now its own
+> project and image, and admin-api runs no background work. The shared composition the paragraph
+> below feared duplicating lives in `Dcms.Shared.AdminPlane`.
+
 admin-api runs as `Dcms:Role`:
 - **`api`:** serves requests and holds the sockets.
 - **`worker`:** the jobs-worker container. It runs:

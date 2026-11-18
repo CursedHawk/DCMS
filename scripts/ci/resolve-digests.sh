@@ -39,7 +39,7 @@ identity:identity
 identity-migrate:identity
 admin-api:admin-api
 migrate:admin-api
-jobs-worker:admin-api
+jobs-worker:jobs-worker
 content-api:content-api
 media-worker:media-worker
 email-worker:email-worker

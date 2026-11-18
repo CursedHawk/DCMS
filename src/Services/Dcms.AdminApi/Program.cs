@@ -45,6 +45,7 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Hosting;
+using Dcms.Shared.AdminPlane;
 using Dcms.Shared.Jobs;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
@@ -59,35 +60,14 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
-// One build, two roles (ADR 0024). `api` serves requests and holds the consoles' sockets;
-// `worker` -- the jobs-worker container -- runs the tenant job lane, the plugins' background work
-// and the ledger's housekeeping. `all`, the default, is both: local development and tests.
-var role = builder.Configuration["Dcms:Role"] ?? "all";
-if (role is not ("api" or "worker" or "all"))
-{
-    throw new InvalidOperationException($"Dcms:Role must be api, worker or all, not '{role}'.");
-}
-var runsBackgroundWork = role != "api";
-var holdsSockets = role != "worker";
-// Background work registers through this, so the api role -- admin-api, serving requests -- runs
-// none of it and jobs-worker runs all of it (ADR 0036). Until now these ran in both containers,
-// kept from doing the work twice only by their locks; the audit sealing that ran admin-api out
-// of memory on 2026-11-18 was one of them.
-void Background<T>() where T : class, Microsoft.Extensions.Hosting.IHostedService
-{
-    if (runsBackgroundWork)
-    {
-        builder.Services.AddHostedService<T>();
-    }
-}
-
-// The worker names itself, so its traces, logs and audit records say which process did the work,
-// and reads its own Vault path under its own AppRole (ADR 0036; apply.sh mirrors the values).
-var serviceName = role == "worker" ? "jobs-worker" : "admin-api";
+// admin-api serves the console's requests and holds its sockets, and nothing else: every piece
+// of background work -- job lanes, plugin workers, event consumers, outboxes, sweeps -- is
+// jobs-worker's, a separate service and image (ADR 0036).
+const string serviceName = "admin-api";
 builder.AddDcmsServiceDefaults(serviceName);
-builder.Services.AddDcmsMessaging(builder.Configuration);
-builder.Services.AddDcmsCaching(builder.Configuration);
-builder.Services.AddDcmsEmailQueue();
+// What admin-api shares with jobs-worker: data, messaging, the SignalR backplane, plugins (without
+// their background work), and the domain services both reach for (ADR 0036).
+builder.AddDcmsAdminPlane(serviceName, runsBackgroundWork: false);
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 
 // The hubs' token used to arrive in the query string, because a WebSocket handshake cannot set
@@ -100,249 +80,34 @@ builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 // client-supplied Authorization header there and dcms-admin-spa no longer holds a scope that
 // would let a browser obtain a token for this API at all.
 
-// Notification fan-out across replicas. The channel prefix MUST differ from content-api's
-// "dcms-chat": both services share one Redis, and a shared prefix would cross-deliver
-// between the two hubs.
-var notificationSignalR = builder.Services.AddSignalR();
-var signalRRedis = builder.Configuration.GetConnectionString("Redis");
-if (!string.IsNullOrWhiteSpace(signalRRedis))
-{
-    notificationSignalR.AddStackExchangeRedis(signalRRedis + ",abortConnect=false",
-        options => options.Configuration.ChannelPrefix =
-            StackExchange.Redis.RedisChannel.Literal("dcms-notify"));
-}
-
-// Tenancy: shared TenancyDbContext + header-based tenant resolution.
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddDcmsObjectStorage(builder.Configuration);
-builder.Services.AddDcmsTenancyData(builder.Configuration);
-builder.Services.AddDcmsCmsData(builder.Configuration);
-builder.Services.AddDcmsMediaData(builder.Configuration);
-builder.Services.AddDcmsSitesData(builder.Configuration);
-builder.Services.AddDcmsAiData(builder.Configuration);
-builder.Services.AddDcmsSocialData(builder.Configuration);
-// Shared by the upload endpoint and the Meta feed sync -- see MediaIngestService.
-builder.Services.AddScoped<Dcms.AdminApi.Media.MediaIngestService>();
-builder.Services.AddDcmsSearchData(builder.Configuration);
-builder.Services.AddDcmsAnalyticsData(builder.Configuration);
-builder.Services.AddDcmsVisitorsData(builder.Configuration);
-builder.Services.AddDcmsChatData(builder.Configuration);
-builder.Services.AddDcmsFormsData(builder.Configuration);
-builder.Services.AddDcmsAppsData(builder.Configuration);
-builder.Services.AddDcmsFunctionsData(builder.Configuration);
-builder.Services.AddDcmsUserAuthData(builder.Configuration);
-builder.Services.AddDcmsNotificationsData(builder.Configuration);
-// The job ledger (ADR 0024): admin-api owns the schema and enqueues most jobs; the worker role
-// runs them, folds in reports from the workers that cannot write the ledger, and sweeps it.
-builder.Services.AddDcmsJobs(builder.Configuration, serviceName);
-if (runsBackgroundWork)
-{
-    builder.Services.AddJobLedgerHousekeeping();
-    builder.Services.AddJobConsumer(builder.Configuration, Dcms.Shared.Data.Jobs.JobLanes.Tenant, defaultConcurrency: 4);
-    // The platform's own work (no tenant) runs here too: its handlers need admin-api's code and
-    // database, which email-worker deliberately does not have. Its own lane, so a backlog of
-    // tenant imports never stands in front of a platform purge.
-    builder.Services.AddJobConsumer(builder.Configuration, Dcms.Shared.Data.Jobs.JobLanes.Platform, defaultConcurrency: 2);
-}
-if (holdsSockets)
-{
-    // Pushes to the browsers connected to this replica, so it belongs where the sockets are.
-    builder.Services.AddHostedService<JobLiveUpdates>();
-}
-builder.Services.AddDcmsAuditData(builder.Configuration);
-// ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
-builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
+// Pushes to the browsers connected to this replica, so it belongs where the sockets are.
+builder.Services.AddHostedService<JobLiveUpdates>();
 // admin-api owns no platform-console data and reads none of it. It registers the context
 // solely so the migrate job (this image, --migrate-only) creates the schema as the owner;
 // platform-api then reaches the rows through the least-privilege dcms_platform role.
 builder.Services.AddDcmsPlatformData(builder.Configuration);
-// Registered so the migration job can create the shared Data Protection key ring.
-// admin-api does not consume it -- it authenticates with bearer tokens and sets no
-// cookies -- but it owns the DDL for every schema in this database.
-builder.Services.AddDcmsDataProtection(builder.Configuration);
-// Same reason again: the edge's certificate, ACME-account and route tables are created by this
-// image running --migrate-only. admin-api reads none of them today; Phase 5 gives it the
-// certificate-status and custom-upload endpoints, which is when it starts to.
-builder.Services.AddDcmsEdgeData(builder.Configuration);
-builder.Services.AddDcmsVaultTransit();
 // One resolution of the tenant's content-API document for every generator (see ApiClientGen).
 builder.Services.AddScoped<Dcms.AdminApi.ApiClientGen.TenantApiResolver>();
-builder.Services.AddDcmsTenantResolutionByHeader();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<Dcms.AdminApi.Views.ViewContext>();
 // Who may act on platform-wide state: a SuperAdmin here, or the console's API acting for one.
 builder.Services.AddScoped<ConsoleCaller>();
-builder.Services.AddScoped<TenantProvisioning>();
-builder.Services.AddScoped<WorkspaceMembers>();
 builder.Services.AddHostedService<TenancyMigrator>();
 
-// Plugins, hosted in full (docs/adr/0016): their admin-plane routes in the api role, their event
-// handlers, jobs and hosted services in the worker role -- both this build, the only place
-// dcms.secrets@1 can decrypt. Also the catalog and config validation.
-builder.AddDcmsPlugins(Dcms.PluginSdk.Abstractions.PluginPlane.Admin, plugins => plugins
-    .AddAll()
-    // The admin plane's media contract can import files; the site plane's cannot.
-    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginMedia, Dcms.AdminApi.Media.AdminPluginMedia>()
-    // Git is here: a plugin's own repository, edited in the IDE (ADR 0029).
-    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginRepos, Dcms.AdminApi.Sites.Git.AdminPluginRepos>()
-    // The console's plugin instances as a contract, for the assistant (install, settings, enable).
-    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginInstances, Dcms.AdminApi.Plugins.AdminPluginInstances>(),
-    runsBackgroundWork);
-// Plugin imports fetch URLs that came from outside: public addresses only (PublicEgress).
-builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientName, client =>
-        client.Timeout = TimeSpan.FromMinutes(2))
-    .ConfigurePrimaryHttpMessageHandler(sp => Dcms.Shared.Hosting.PublicEgress.Handler(
-        allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Media:ImportAllowLocal", false)));
-if (runsBackgroundWork)
-{
-    // Plugins' event handlers, jobs and interval scheduler: the worker role's work.
-    builder.Services.AddDcmsPluginWorkers();
-}
-// Google Drive import (Media/GoogleDriveImport.cs). Optional: GoogleDrive__* in
-// secret/dcms/admin-api; unset, the console does not offer Drive.
-// PageSpeed Insights audits of sites (#649): Google's API, with a key from Vault (PageSpeed__ApiKey).
-builder.Services.Configure<Dcms.AdminApi.Sites.Audits.PageSpeedOptions>(
-    builder.Configuration.GetSection(Dcms.AdminApi.Sites.Audits.PageSpeedOptions.Section));
-builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Audits.PageSpeedClient>((sp, client) =>
-{
-    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Dcms.AdminApi.Sites.Audits.PageSpeedOptions>>().Value;
-    client.BaseAddress = new Uri(options.ApiBase.EndsWith('/') ? options.ApiBase : options.ApiBase + "/");
-    // A Lighthouse run on Google's side takes 10-60 s; a slow page more.
-    client.Timeout = TimeSpan.FromSeconds(150);
-});
-builder.Services.Configure<Dcms.AdminApi.Media.GoogleDriveOptions>(
-    builder.Configuration.GetSection(Dcms.AdminApi.Media.GoogleDriveOptions.SectionName));
-builder.Services.AddJobHandler<Dcms.AdminApi.Media.DriveFileJob, Dcms.AdminApi.Media.DriveFilePayload>(
-    Dcms.AdminApi.Media.DriveFileJob.Kind);
-
-// Environments (ADR 0026): the configuration kinds a workspace's environments move between them
-// as migrations, in the order a migration applies them; plugins add theirs on top.
-builder.Services.AddScoped<Dcms.AdminApi.Environments.EnvironmentMigrator>();
-builder.Services.AddScoped<Dcms.AdminApi.Plugins.PluginInstanceService>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.RolesConfigKind>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.PluginsConfigKind>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ApiConnectionsConfigKind>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.SitesConfigKind>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ContentConfigKind>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.LinksConfigKind>();
-builder.Services.AddScoped<Dcms.AdminApi.Environments.EnvironmentDuplicator>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.ContentDraftsCopier>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.PluginDataCopier>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.VisitorsCopier>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.FormSubmissionsCopier>();
-builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentDataCopier, Dcms.AdminApi.Environments.Copiers.ChatCopier>();
-builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentApplyJob, Dcms.AdminApi.Environments.EnvironmentApplyPayload>(
-    Dcms.AdminApi.Environments.EnvironmentApplyJob.Kind);
-builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentRollbackJob, Dcms.AdminApi.Environments.EnvironmentRollbackPayload>(
-    Dcms.AdminApi.Environments.EnvironmentRollbackJob.Kind);
-builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentCopyJob, Dcms.AdminApi.Environments.EnvironmentCopyPayload>(
-    Dcms.AdminApi.Environments.EnvironmentCopyJob.Kind);
-builder.Services.AddJobHandler<Dcms.AdminApi.Sites.Audits.SiteAuditJob, Dcms.AdminApi.Sites.Audits.SiteAuditPayload>(
-    Dcms.AdminApi.Sites.Audits.SiteAuditJob.Kind);
-
-// Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
+// Permission evaluation: the dynamic policy (the resolver behind it is the shared plane's).
 builder.Services.AddDcmsPermissionAuthorization();
-builder.Services.AddScoped<TenancyPermissionResolver>();
-builder.Services.AddScoped<IPermissionResolver>(sp => sp.GetRequiredService<TenancyPermissionResolver>());
 
 builder.Services.AddSingleton<DnsTxtLookup>();
-Background<MembershipChangedConsumer>();
-Background<OutboxDispatcher>();
-Background<ScheduledPublishWorker>();
-// analytics.events had no retention at all: every pageview from every tenant site accumulated
-// forever on a host with 40 GB free. The daily rollups next to it already hold the aggregate.
-Background<AnalyticsRetentionWorker>();
-
-// In-app notifications. Each consumer turns one already-published subject into a
-// notification, so the producing services are untouched. All are shared durables: the work
-// is a database write that exactly one replica must do, and the SignalR Redis backplane is
-// what carries the push to browsers connected to the others.
-builder.Services.AddScoped<NotificationPublisher>();
-// Singleton: it holds nothing but an IHubContext, and endpoints, consumers and workers all
-// reach for it — a scoped registration would be a scope per push for no reason.
-builder.Services.AddSingleton<ResourceChangePublisher>();
-Background<SitePublishedNotificationConsumer>();
-Background<SiteBuildFailedNotificationConsumer>();
-Background<MediaProcessedNotificationConsumer>();
-Background<MediaFailedNotificationConsumer>();
-Background<ContentPublishedNotificationConsumer>();
-Background<ContentUnpublishedNotificationConsumer>();
-Background<DomainVerifiedNotificationConsumer>();
-Background<PluginInstanceNotificationConsumer>();
-Background<NotificationIngestConsumer>();
-// Invitation expiry is the one source with no event behind it -- it is a passive column
-// that nothing has ever swept. See InvitationExpiryWorker.
-Background<InvitationExpiryWorker>();
-// External API connections (Mode D, backlog #124): fetched here, served as snapshots by
-// content-api. Public addresses only, and no redirects — a redirect would carry a header
-// credential to whatever host the provider names.
-builder.Services.AddHttpClient(Dcms.AdminApi.Connections.ApiConnectionFetcher.HttpClientName, client =>
-        client.Timeout = TimeSpan.FromSeconds(15))
-    .ConfigurePrimaryHttpMessageHandler(sp =>
-    {
-        var handler = Dcms.Shared.Hosting.PublicEgress.Handler(
-            allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Connections:AllowLocal", false));
-        handler.AllowAutoRedirect = false;
-        return handler;
-    });
-builder.Services.AddScoped<Dcms.AdminApi.Connections.ApiConnectionFetcher>();
-Background<Dcms.AdminApi.Connections.ApiConnectionWorker>();
-Background<NotificationRetentionWorker>();
-Background<Dcms.AdminApi.Ai.AiConversationRetentionWorker>();
-// The platform console's own bell. Separate publisher and separate tables, because these
-// notifications have no tenant and their audience is a global role admin-api cannot enumerate
-// -- see PlatformNotification. The worker reads the edge's attempt ledger rather than
-// consuming an event: that ledger is the rate-limit guard, so it cannot be skipped.
-builder.Services.AddScoped<PlatformNotificationPublisher>();
-Background<CertificateNotificationWorker>();
-Background<Dcms.AdminApi.Audit.AuditChainWriter>();
-// Brings in the records from the two services that cannot reach the audit schema, so
-// everything still reaches the chain by one path.
-Background<Dcms.AdminApi.Audit.AuditIngestConsumer>();
-// Seals finished months, keeps partitions ahead of the writer, drops what retention has
-// expired, and publishes the numbers that say whether any of it is working.
-Background<Dcms.AdminApi.Audit.AuditMaintenanceWorker>();
-// Reads audit.recorded — the fan-out subject the chain writer has always published and
-// nothing consumed — and projects each record onto the log pipeline, giving the audit log a
-// searchable presence next to the traces it shares a TraceId with.
-Background<Dcms.AdminApi.Audit.AuditLogProjector>();
-
-// Outbound client-credentials token provider for calling ai-gateway.
-builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
 
 // Grafana posts fired alerts to /api/internal/alerts, which puts them on the EMAIL work
 // queue. Configuring Grafana's own SMTP instead would put the relay credentials in a second
 // container; email-worker is deliberately the only thing that speaks to the relay.
 builder.Services.Configure<Dcms.AdminApi.Observability.AlertingOptions>(
     builder.Configuration.GetSection("Alerting"));
-builder.Services.AddServiceTokenProvider();
-// identity's realm admin API (ADR 0022): the User Authentication plugin's directory, and the
-// realm a deleted tenant leaves behind.
-builder.Services.AddRealmAdminClient(builder.Configuration, builder.Environment.IsDevelopment());
-builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
-{
-    var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";
-    client.BaseAddress = new Uri(baseUrl);
-});
-
-// Reverse-proxy target for the site preview (delivery API). Same content-api the
-// published site talks to; the preview proxy injects the tenant + sandbox headers.
-builder.Services.AddHttpClient("content-api", (sp, client) =>
-{
-    var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:ContentApi"] ?? "http://content-api:8080";
-    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
-});
-
 // Named rate-limit policies only (plugins add theirs -- the Meta OAuth callback). No global
 // limiter: admin-api has never had one, and quietly throttling the whole admin SPA would be a
 // surprising way to find that out.
 builder.Services.AddRateLimiter(limiter => limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests);
-
-// Forgejo git server: source of truth for Mode B site source. The machine token
-// arrives via Vault (secret/dcms/admin-api, Forgejo__Token); git operations are
-// no-ops until it's set (ForgejoOptions.Enabled).
-builder.Services.Configure<Dcms.AdminApi.Sites.Git.ForgejoOptions>(
-    builder.Configuration.GetSection(Dcms.AdminApi.Sites.Git.ForgejoOptions.SectionName));
 
 // Prod safety: the git push webhook (/api/internal/git/webhook) is anonymous and
 // gated only by an HMAC over Forgejo__WebhookSecret. An empty or well-known default
@@ -386,23 +151,6 @@ if (builder.Environment.IsProduction())
             "Set a strong, unique ALERT_WEBHOOK_SECRET (openssl rand -base64 32) or leave it unset to disable alert delivery.");
     }
 }
-builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, client) =>
-{
-    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions>>().Value;
-    client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
-    if (!string.IsNullOrWhiteSpace(opts.Token))
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("token", opts.Token);
-});
-builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.SiteGitService>();
-builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.RepoAccessReconciler>();
-builder.Services.AddScoped<Dcms.AdminApi.Sites.SiteDeleter>();
-// Live deployment/commit fan-out to everyone with a site open in the IDE. Singleton because
-// it holds nothing per-request -- IHubContext is itself a singleton -- and because the site
-// event consumers reach it from background scopes.
-builder.Services.AddSingleton<Dcms.AdminApi.Sites.SiteLiveUpdates>();
-builder.Services.AddScoped<TenantDeleter>();
-builder.Services.AddScoped<TenantUsageMeasurer>();
-Background<TenantUsageWorker>();
 
 var app = builder.Build();
 

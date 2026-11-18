@@ -323,11 +323,14 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=25"
       Rls__Enforce: "true"
 
-  # admin-api's production settings, as admin-api has them (ADR 0024).
+  # admin-api's production settings, as admin-api has them (ADR 0036): the same shared
+  # anchor, stated rather than inherited, so the key-ring wrapping and every other production
+  # switch is visibly on here too.
   jobs-worker:
     extends:
       service: admin-api
     environment:
+      <<: *prod-env
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=10"
 
   content-api:

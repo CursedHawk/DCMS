@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The admin plane's domain and composition, shared by its two services (ADR 0036):
+       admin-api, which serves the console's requests, and jobs-worker, which does the background
+       work. What either needs of the other lives here; endpoints stay in admin-api and hosted
+       services and job handlers in jobs-worker. Types keep their Dcms.AdminApi.* namespaces:
+       the SignalR hubs must (the Redis backplane names its channels after the hub type, so a
+       rename would split admin-api from jobs-worker); and the rest keep theirs to keep the move
+       a move. -->
+  <!-- The Web SDK for the same implicit usings admin-api's code was written against; a library. -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DnsClient" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <!-- GHSA-qhrr-8q5h-9q3h: see Directory.Packages.props. -->
+    <PackageReference Include="MessagePack" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.AdminApi" />
+    <InternalsVisibleTo Include="Dcms.JobsWorker" />
+    <InternalsVisibleTo Include="Dcms.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.All\Dcms.Plugins.All.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Caching\Dcms.Shared.Caching.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Jobs\Dcms.Shared.Jobs.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Storage\Dcms.Shared.Storage.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Vault\Dcms.Shared.Vault.csproj" />
+  </ItemGroup>
+
+</Project>

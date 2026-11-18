@@ -102,7 +102,7 @@ public static class SiteAuditBuilds
         var mode = site.RenderMode.ToString();
         await events.PublishAsync(Subjects.SitePublishSubjectFor(mode), new SitePublishRequested(
             Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id, mode,
-            await SiteEndpoints.AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct, messageId: $"build:{build.Id}");
+            await SiteBuilds.AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct, messageId: $"build:{build.Id}");
         return (build, null);
     }
 }

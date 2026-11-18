@@ -42,6 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.AdminPlane\Dcms.Shared.AdminPlane.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.All\Dcms.Plugins.All.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Caching\Dcms.Shared.Caching.csproj" />

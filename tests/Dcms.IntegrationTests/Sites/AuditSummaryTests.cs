@@ -1,7 +1,7 @@
 extern alias AdminApiApp;
 using System.Text.Json;
 using Dcms.Shared.Sites;
-using AuditSummary = AdminApiApp::Dcms.AdminApi.Sites.Audits.AuditSummary;
+using AuditSummary = global::Dcms.AdminApi.Sites.Audits.AuditSummary;
 
 namespace Dcms.IntegrationTests.Sites;
 
@@ -35,7 +35,7 @@ public class AuditSummaryTests
         images.Items.Should().ContainSingle().Which.Url.Should().Be("https://example.test/hero.jpg");
         report.Issues.Single(i => i.Id == "image-alt").Items.Single().Selector.Should().Be("main > img");
         // A console error is its message and where it came from.
-        report.Issues.Single(i => i.Id == "errors-in-console").Items.Should().ContainSingle().Which.Should().Match<AdminApiApp::Dcms.AdminApi.Sites.Audits.AuditItem>(
+        report.Issues.Single(i => i.Id == "errors-in-console").Items.Should().ContainSingle().Which.Should().Match<global::Dcms.AdminApi.Sites.Audits.AuditItem>(
             x => x.Url == "https://api.example.test/items" && x.Label == "Failed to load resource: net::ERR_FAILED");
     }
 

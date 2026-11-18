@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
 using SiteEndpoints = AdminApiApp::Dcms.AdminApi.Sites.SiteEndpoints;
-using ForgejoClient = AdminApiApp::Dcms.AdminApi.Sites.Git.ForgejoClient;
+using ForgejoClient = global::Dcms.AdminApi.Sites.Git.ForgejoClient;
 using Dcms.Shared.Data.Rls;
 
 namespace Dcms.IntegrationTests.Sites;
@@ -134,7 +134,7 @@ public sealed class ReleaseCatchUpTests(AdminApiFixture fixture)
         WebApplicationFactory<AdminApiApp::Program> host, Guid tenantId, Guid siteId, Guid finishedBuild, CancellationToken ct)
     {
         using var scope = host.Services.CreateScope();
-        await SiteEndpoints.ContinueIfReleaseMovedAsync(scope.ServiceProvider, tenantId, siteId, finishedBuild, ct);
+        await global::Dcms.AdminApi.Sites.SiteBuilds.ContinueIfReleaseMovedAsync(scope.ServiceProvider, tenantId, siteId, finishedBuild, ct);
     }
 
     private static async Task<List<SiteBuild>> QueuedBuildsAsync(

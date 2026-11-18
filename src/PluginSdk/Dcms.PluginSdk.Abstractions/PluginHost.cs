@@ -25,10 +25,10 @@ public sealed record PluginHost(PluginPlane Plane, IConfiguration Configuration,
     public bool IsAdmin => Plane == PluginPlane.Admin;
 
     /// <summary>
-    /// Whether this process runs background work: hosted services, consumers, schedulers. On
-    /// the admin plane the same code runs as two roles (ADR 0024): admin-api replicas that serve
-    /// requests, and jobs-worker replicas that do the work. A plugin registers its hosted
-    /// services only where this is true, so they run on the workers and not beside every request.
+    /// Whether this process runs background work: hosted services, consumers, schedulers. True in
+    /// jobs-worker only (ADR 0036); admin-api and content-api serve requests. A plugin registers
+    /// its hosted services only where this is true, so they run on the workers and not beside
+    /// every request.
     /// </summary>
     public bool RunsBackgroundWork { get; init; } = true;
 

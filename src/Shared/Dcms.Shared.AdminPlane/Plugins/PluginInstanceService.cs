@@ -92,7 +92,7 @@ public sealed class PluginInstanceService(
         db.PluginInstances.Add(instance);
         await db.SaveChangesAsync(ct);
         await PluginDefaultGrants.ApplyAsync(tenancy, cache, instance.TenantId, manifest, slug, memberDefaults: true, ct);
-        await PluginInstanceEndpoints.PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Created, ct);
+        await PluginInstanceChanges.PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Created, ct);
         return instance;
     }
 
@@ -115,7 +115,7 @@ public sealed class PluginInstanceService(
         instance.AiToolsEnabled = aiToolsEnabled ?? instance.AiToolsEnabled;
         instance.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        await PluginInstanceEndpoints.PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Updated, ct);
+        await PluginInstanceChanges.PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Updated, ct);
         return instance;
     }
 
@@ -148,7 +148,7 @@ public sealed class PluginInstanceService(
         instance.Enabled = enabled;
         instance.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        await PluginInstanceEndpoints.PublishChange(events, cache, metrics, instance,
+        await PluginInstanceChanges.PublishChange(events, cache, metrics, instance,
             instance.Enabled ? PluginInstanceChangeKind.Enabled : PluginInstanceChangeKind.Disabled, ct);
         return instance;
     }

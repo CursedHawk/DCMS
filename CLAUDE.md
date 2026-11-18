@@ -25,8 +25,8 @@ This box **runs tests and builds only** — it is not a deploy target. The full
 
 | Path | What |
 | --- | --- |
-| `src/Services/` | admin-api, content-api, identity, edge (YARP ingress), site-builder, site-host, ai-gateway, media-worker, email-worker, script-runner (flow-script Deno sandbox, ADR 0025), platform-api |
-| `src/Shared/` | Kernel, Data (EF + RLS), Contracts, Messaging (NATS), Security, Vault, Telemetry |
+| `src/Services/` | admin-api (admin requests only), jobs-worker (all background work, ADR 0036), content-api, identity, edge (YARP ingress), site-builder, site-host, ai-gateway, media-worker, email-worker, script-runner (flow-script Deno sandbox, ADR 0025), platform-api |
+| `src/Shared/` | Kernel, Data (EF + RLS), Contracts, Messaging (NATS), Security, Vault, Telemetry; AdminPlane (what admin-api and jobs-worker share, one composition) |
 | `src/Plugins/` | content plugins (Blog, Forms, Search, …) behind `Dcms.PluginSdk` |
 | `apps/admin`, `apps/platform` | React 19 + Vite SPAs |
 | `packages/` | shared UI, api-client, GrapesJS blocks/parse/schema, site template |
@@ -59,6 +59,9 @@ reverts a release.
 - **Hand-run compose on vps1 needs the full three-file `-f` set** (`docker-compose.yml`
   `-f docker-compose.prod.yml` `-f docker-compose.vps.yml`) and explicit service names. A
   partial set recreated Vault in dev/inmem mode and took admin-api down.
+- **A new hosted service or job handler goes in jobs-worker** (`JobsWorkerServices.cs`), never in
+  admin-api, which serves requests only; anything both need goes in `Dcms.Shared.AdminPlane`.
+  `ServiceBoundaryTests` fails the build otherwise (ADR 0036).
 - **Build serially on vps1** (4 CPU / 7.6 GB). Nine parallel service builds drove load average
   to 375 and caused a 30-minute outage; a runaway build cannot be killed without a reboot.
 - **`X-Dcms-Tenant` carries the tenant slug, not the uuid.**

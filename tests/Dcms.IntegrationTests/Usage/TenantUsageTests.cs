@@ -1,3 +1,4 @@
+extern alias JobsWorkerApp;
 extern alias AdminApiApp;
 extern alias PlatformApiApp;
 
@@ -5,6 +6,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AdminApiApp::Dcms.AdminApi.Tenancy.Usage;
+using Dcms.AdminApi.Tenancy.Usage;
+using JobsWorkerApp::Dcms.AdminApi.Tenancy.Usage;
 using PlatformApiApp::Dcms.PlatformApi.Reporting;
 using Dcms.IntegrationTests.Cms;
 using Dcms.IntegrationTests.DynamicApps;

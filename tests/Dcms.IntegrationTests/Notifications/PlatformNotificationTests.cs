@@ -8,9 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 using PlatformNotificationPublisher =
-    AdminApiApp::Dcms.AdminApi.Notifications.PlatformNotificationPublisher;
+    global::Dcms.AdminApi.Notifications.PlatformNotificationPublisher;
 using PlatformNotificationRequest =
-    AdminApiApp::Dcms.AdminApi.Notifications.PlatformNotificationRequest;
+    global::Dcms.AdminApi.Notifications.PlatformNotificationRequest;
 
 namespace Dcms.IntegrationTests.Notifications;
 
