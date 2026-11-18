@@ -8,4 +8,4 @@
 #
 # The failure had no symptom of its own: `--all` printed a list of services it had done and
 # the missing one simply was not on it. Adding a service here is now the whole change.
-DCMS_VAULT_SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker platform-api edge log-janitor"
+DCMS_VAULT_SERVICES="identity admin-api jobs-worker content-api media-worker site-builder site-host ai-gateway email-worker platform-api edge log-janitor"

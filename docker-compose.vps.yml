@@ -282,10 +282,14 @@ services:
       Forgejo__SshHost: "${GIT_HOST:-git.highgeek.eu}"
       Forgejo__SshPort: "2222"
 
-  # admin-api's AppRole and settings: the worker role reads the same Vault path (ADR 0024).
+  # admin-api's settings, its own AppRole and Vault path (ADR 0036): apply.sh mirrors the
+  # secrets it needs from secret/dcms/admin-api into secret/dcms/jobs-worker on every deploy.
   jobs-worker:
     extends:
       service: admin-api
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_JOBS_WORKER:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_JOBS_WORKER:-}"
 
   content-api:
     environment:

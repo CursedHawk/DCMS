@@ -105,6 +105,8 @@ required_keys_for() {
   case "$1" in
     identity)     echo "Audit__ChainKey Identity__AdminApiService__Secret Identity__PlatformApiService__Secret Identity__RealmAdminService__Secret Identity__SuperAdmin__Password Identity__SigningCertificate Identity__EncryptionCertificate" ;;
     admin-api)    echo "Audit__ChainKey ServiceClient__ClientSecret Realms__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret Platform__DbPassword" ;;
+    # Mirrored from admin-api's path by mirror_worker_secrets below, never written by hand.
+    jobs-worker)  echo "Audit__ChainKey ServiceClient__ClientSecret Realms__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret" ;;
     content-api)  echo "Audit__ChainKey ServiceClient__ClientSecret Visitor__SigningKey" ;;
     media-worker) echo "Audit__ChainKey" ;;
     site-host)    echo "Audit__ChainKey" ;;
@@ -397,6 +399,53 @@ else
   echo "    To change it, mint a root token from the recovery keys:"
   echo "      vault operator generate-root -init && vault operator generate-root"
 fi
+
+# ---------------------------------------------------------------------------
+# jobs-worker's secrets: mirrored from admin-api's path
+# ---------------------------------------------------------------------------
+#
+# jobs-worker runs the background work that used to run inside admin-api (ADR 0036): the same
+# code, so the same secrets -- the audit chain key (a different one would break every record's
+# verification), the service-client and realm secrets, Forgejo, and the external API keys
+# (Google Drive, PageSpeed, YouTube). It reads its own path under its own AppRole, and this
+# copies admin-api's values there on every deploy, so an operator still writes a secret ONCE,
+# into secret/dcms/admin-api, and a rotation reaches the worker on the next deploy.
+#
+# Everything except the deny list: the worker ran with all of admin-api's secrets until now,
+# and a key it needs but this forgot would fail a job months later. Platform__DbPassword is
+# denied because only admin-api's tenancy migrator uses it (to set the console role's password).
+#
+# Values travel over stdin (key=-), never argv, so they do not show in the host's process list.
+# Written only when they differ, so an unchanged deploy writes nothing.
+WORKER_SECRET_DENY="Platform__DbPassword"
+mirror_worker_secrets() {
+  echo "==> jobs-worker secrets (mirrored from secret/dcms/admin-api)"
+  if ! vault kv get -mount=secret dcms/admin-api >/dev/null 2>&1 </dev/null; then
+    echo "  secret/dcms/admin-api is empty here; nothing to mirror"
+    return 0
+  fi
+  worker_exists=1
+  vault kv get -mount=secret dcms/jobs-worker >/dev/null 2>&1 </dev/null || worker_exists=0
+  # The key names: the table's Data section, first column.
+  keys=$(vault kv get -mount=secret -format=table dcms/admin-api </dev/null \
+    | awk '/^=+ Data =+$/ { data=1; next } data && NF && $1 != "Key" && $1 !~ /^-+$/ { print $1 }')
+  for key in $keys; do
+    case " $WORKER_SECRET_DENY " in *" $key "*) continue ;; esac
+    value=$(vault kv get -mount=secret -field="$key" dcms/admin-api </dev/null)
+    current=$(vault kv get -mount=secret -field="$key" dcms/jobs-worker 2>/dev/null </dev/null || true)
+    if [ "$worker_exists" = 1 ] && [ "$value" = "$current" ]; then
+      continue
+    fi
+    if [ "$worker_exists" = 1 ]; then
+      printf '%s' "$value" | vault kv patch -mount=secret dcms/jobs-worker "$key=-" >/dev/null
+    else
+      printf '%s' "$value" | vault kv put -mount=secret dcms/jobs-worker "$key=-" >/dev/null
+      worker_exists=1
+    fi
+    echo "  mirrored $key"
+  done
+}
+mirror_worker_secrets
 
 echo "==> AppRole auth"
 if ! vault auth list -format=json | grep -q '"approle/"'; then

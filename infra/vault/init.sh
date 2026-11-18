@@ -23,6 +23,8 @@ vault kv put secret/dcms/identity placeholder=true
 vault kv put secret/dcms/admin-api \
   placeholder=true \
   Platform__DbPassword="dcms-platform-dev"
+# jobs-worker (ADR 0036): production mirrors admin-api's values here (apply.sh); dev has none to mirror.
+vault kv put secret/dcms/jobs-worker placeholder=true
 vault kv put secret/dcms/content-api placeholder=true
 vault kv put secret/dcms/media-worker placeholder=true
 vault kv put secret/dcms/site-builder placeholder=true

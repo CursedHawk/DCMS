@@ -140,6 +140,19 @@ single-use `social.meta_oauth_states` row named by the `state` parameter, not fr
 the callback is necessarily anonymous, because Meta redirects a browser to it with no bearer
 token.
 
+### `secret/dcms/jobs-worker`
+
+**Never written by hand.** jobs-worker runs the background work that used to run inside admin-api
+(ADR 0036) — the same code, so the same secrets — under its own AppRole and policy
+(`dcms-jobs-worker`). `infra/vault/apply.sh` mirrors every key of `secret/dcms/admin-api` here on
+each deploy, except `Platform__DbPassword`, which only admin-api's tenancy migrator uses. Values
+are written only when they differ, so a rotation in admin-api's path reaches the worker on the
+next deploy. Write the admin-api copy; anything written here directly is overwritten by it.
+
+The policy holds both directions of the transit keys background work spends (`dcms-social-tokens`,
+`dcms-plugin-secrets`, `dcms-api-connections`, `dcms-dataprotection`) and neither of
+`dcms-tenant-secrets` or `dcms-tls-keys`, which only admin-api's endpoints use.
+
 ### `secret/dcms/content-api`
 
 | Key | What it is |

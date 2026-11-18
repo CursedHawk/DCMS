@@ -70,9 +70,10 @@ if (role is not ("api" or "worker" or "all"))
 var runsBackgroundWork = role != "api";
 var holdsSockets = role != "worker";
 
-// The worker names itself, so its traces, logs and audit records say which process did the work.
+// The worker names itself, so its traces, logs and audit records say which process did the work,
+// and reads its own Vault path under its own AppRole (ADR 0036; apply.sh mirrors the values).
 var serviceName = role == "worker" ? "jobs-worker" : "admin-api";
-builder.AddDcmsServiceDefaults(serviceName, secretsOf: "admin-api");
+builder.AddDcmsServiceDefaults(serviceName);
 builder.Services.AddDcmsMessaging(builder.Configuration);
 builder.Services.AddDcmsCaching(builder.Configuration);
 builder.Services.AddDcmsEmailQueue();
