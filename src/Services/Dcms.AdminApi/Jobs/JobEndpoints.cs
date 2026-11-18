@@ -1,3 +1,5 @@
+using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.Cms;
 using Dcms.PluginSdk.Abstractions;
 using System.Linq.Expressions;
 using System.Text.Json;
@@ -159,6 +161,15 @@ public static class JobEndpoints
     /// <summary>The durable consumers whose backlog the console shows: every work queue.</summary>
     private static readonly string[] QueueStreams = ["JOBS", "MEDIA", "SITES", "EMAIL", "PLUGIN_JOBS"];
 
+    /// <summary>
+    /// Event streams whose durable consumers are background work too (ADR 0036): notifications,
+    /// audit ingest, cache invalidation, plugin events. Their lag is how a stalled consumer shows,
+    /// since they leave no ledger row per event. Ephemeral consumers (a replica's own cache
+    /// listener, the socket push) are left out: they are not work anyone waits on.
+    /// </summary>
+    private static readonly string[] EventStreams =
+        ["TENANCY", "CMS", "MEDIA_EVENTS", "SITES_EVENTS", "AUDIT", "NOTIFY", "PLUGIN_EVENTS", "JOBS_EVENTS", "ANALYTICS"];
+
     public static void MapJobEndpoints(this WebApplication app)
     {
         const string tenantRoot = "/api/admin/jobs";
@@ -252,7 +263,8 @@ public static class JobEndpoints
           .AllowConsoleService("The console's jobs page lists every tenant's background work.");
 
         app.MapGet(root + "/overview", async (
-            JobsDbContext db, TenancyDbContext tenancy, ConsoleCaller console, INatsJSContext jetStream, CancellationToken ct) =>
+            JobsDbContext db, TenancyDbContext tenancy, CmsDbContext cms, AuditDbContext audit, ConsoleCaller console,
+            INatsJSContext jetStream, CancellationToken ct) =>
         {
             if (!console.Allowed)
             {
@@ -279,7 +291,14 @@ public static class JobEndpoints
                     r.Queued, r.Running, r.Failed))
                 .OrderByDescending(r => r.Running).ThenByDescending(r => r.Queued)
                 .ToList();
-            return Results.Ok(new JobOverviewDto(tenants, await QueueDepthsAsync(jetStream, ct)));
+            var queues = await QueueDepthsAsync(jetStream, ct);
+            // The two outboxes jobs-worker drains, as backlogs: rows written and not yet sent on.
+            // rls: platform -- a count across every tenant's outbox, under the scope above.
+            queues.Add(new QueueDepthDto("outbox", "cms.content_outbox",
+                (ulong)await cms.Outbox.IgnoreQueryFilters().AsNoTracking().LongCountAsync(o => o.SentAt == null, ct), 0));
+            queues.Add(new QueueDepthDto("outbox", "audit.audit_outbox",
+                (ulong)await audit.Outbox.AsNoTracking().LongCountAsync(o => o.AppliedAt == null, ct), 0));
+            return Results.Ok(new JobOverviewDto(tenants, queues));
         }).RequireAuthorization()
           .AllowConsoleService("The console's jobs page shows backlog per tenant and per queue.");
 
@@ -440,6 +459,24 @@ public static class JobEndpoints
             catch (Exception) when (!ct.IsCancellationRequested)
             {
                 // A stream this deployment does not have (yet). The rest of the page still answers.
+            }
+        }
+        foreach (var stream in EventStreams)
+        {
+            try
+            {
+                await foreach (var consumer in jetStream.ListConsumersAsync(stream, ct))
+                {
+                    var info = consumer.Info;
+                    if (info.Config.DurableName is not null)
+                    {
+                        depths.Add(new QueueDepthDto(stream, info.Name, info.NumPending, info.NumAckPending));
+                    }
+                }
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // As above: a stream this deployment does not have.
             }
         }
         return depths;

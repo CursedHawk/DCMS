@@ -1617,6 +1617,9 @@
       },
       "siteAuditBuild": {
         "title": "Preparing {{site}} for an audit"
+      },
+      "tenantUsage": {
+        "title": "Measuring storage and usage"
       }
     },
     "stages": {

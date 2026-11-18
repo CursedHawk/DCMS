@@ -11,10 +11,12 @@ namespace Dcms.AdminApi.Jobs;
 /// Pushes <c>jobs.changed</c> to every console open on the job's tenant, as <c>JobChanged</c> on
 /// the notification hub (ADR 0024).
 ///
-/// <para>Ordered and ephemeral, delivering only what is new — the same shape as platform-api's
-/// <c>PlatformLiveUpdates</c> and for the same reasons: each replica holds its own sockets, so
-/// every replica must see every change, and a progress tick from before a restart is noise. The
-/// Redis backplane is not involved; the replica that holds a socket is the one that hears.</para>
+/// <para>A shared durable consumer: one replica takes each change, and the SignalR Redis
+/// backplane carries the push to the sockets held by every replica. It used to be an ordered
+/// consumer per replica on the reasoning that each replica pushes only to its own sockets, but a
+/// group send through <see cref="IHubContext{THub}"/> goes over the backplane to all of them, so N
+/// replicas pushed every change N times (ADR 0036, for running more than one). A durable created
+/// now starts at the head of the stream: a progress tick from before it existed is noise.</para>
 ///
 /// <para>The message carries ids and counts, never a title: everyone on the tenant group gets
 /// it, including members who may not see the job. What it reveals — that some job moved — their
@@ -31,14 +33,19 @@ public sealed class JobLiveUpdates(
         {
             try
             {
-                var consumer = await jetStream.CreateOrderedConsumerAsync(
-                    Streams.JobsEvents,
-                    new NatsJSOrderedConsumerOpts
-                    {
-                        DeliverPolicy = ConsumerConfigDeliverPolicy.New,
-                        FilterSubjects = [Subjects.JobChanged],
-                    },
-                    stoppingToken);
+                var config = new ConsumerConfig(DurableName)
+                {
+                    FilterSubject = Subjects.JobChanged,
+                    AckPolicy = ConsumerConfigAckPolicy.Explicit,
+                    // A push is worth one retry at most: the next change supersedes it.
+                    MaxDeliver = 2,
+                };
+                // DeliverPolicy is immutable once the durable exists, so it is sent only on creation.
+                if (!await ExistsAsync(stoppingToken))
+                {
+                    config.DeliverPolicy = ConsumerConfigDeliverPolicy.New;
+                }
+                var consumer = await jetStream.CreateOrUpdateConsumerAsync(Streams.JobsEvents, config, stoppingToken);
 
                 await foreach (var msg in consumer.ConsumeAsync<JobChanged>(cancellationToken: stoppingToken))
                 {
@@ -46,6 +53,7 @@ public sealed class JobLiveUpdates(
                     {
                         await PushAsync(tenantId, changed, stoppingToken);
                     }
+                    await msg.AckAsync(cancellationToken: stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -57,6 +65,21 @@ public sealed class JobLiveUpdates(
                 logger.LogWarning(ex, "Job live updates unavailable; retrying in 5s.");
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
+        }
+    }
+
+    private const string DurableName = "admin-api-job-live-updates";
+
+    private async Task<bool> ExistsAsync(CancellationToken ct)
+    {
+        try
+        {
+            await jetStream.GetConsumerAsync(Streams.JobsEvents, DurableName, ct);
+            return true;
+        }
+        catch (NatsJSApiException e) when (e.Error.Code == 404)
+        {
+            return false;
         }
     }
 

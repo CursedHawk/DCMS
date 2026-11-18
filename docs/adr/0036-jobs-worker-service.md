@@ -74,11 +74,24 @@ On 2026-11-18 the audit maintenance ran **admin-api** out of memory while sealin
    by design.
 
 6. **Visibility (epic #650, JW5).**
-   - Periodic passes of an hour or more become recurring ledger jobs: audit maintenance and the
-     retention sweeps on the platform lane, tenant usage on the tenant lane.
-   - Continuous drains (outboxes, event consumers) are not given a ledger row per item, which
-     would be thousands a day. They are shown in the platform console's queue overview as
-     consumer lag and outbox backlog.
+   - **Recurring ledger jobs** (`RecurringJobs.AddRecurringJob`). A scheduler enqueues one routine
+     job per slot of its period. The ledger's unique `(TenantId, DedupeKey)` makes that once per
+     slot across replicas, so there is no lock.
+     - Platform lane: `audit.maintenance` (1 h), `analytics.retention` (6 h),
+       `notifications.retention` and `ai.retention` (24 h).
+     - `tenancy.usage-sweep` (1 h) queues one tenant-lane `tenancy.usage` job per due tenant,
+       visible in that tenant's jobs.
+   - **Plugin interval jobs** are ledger jobs (`plugin:{id}:{job}`, routine, deduped per slot), so
+     a tenant sees its plugins' schedules. Retries follow the ledger: 3 attempts, not 5 NATS
+     deliveries.
+   - **Continuous drains** get no ledger row per item, which would be thousands a day. These are
+     the outboxes, event consumers, the frequent sweeps (scheduled publish, invitations,
+     connections, certificate notifications), AutomationWorker and RunWorker. Instead the
+     platform console's queue overview lists every durable consumer of the event streams with its
+     lag, and the two outboxes' backlogs.
+   - **`JobLiveUpdates`** is a shared durable consumer. A group send goes over the SignalR
+     backplane to every replica's sockets, so one ordered consumer per replica had pushed every
+     change once per replica.
 
 ## Consequences
 

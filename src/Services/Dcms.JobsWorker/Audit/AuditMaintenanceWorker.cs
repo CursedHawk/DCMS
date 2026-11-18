@@ -1,3 +1,4 @@
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Audit;
@@ -29,10 +30,8 @@ public sealed class AuditMaintenanceWorker(
     IServiceProvider services,
     IConfiguration configuration,
     AuditMetrics metrics,
-    ILogger<AuditMaintenanceWorker> logger) : BackgroundService
+    ILogger<AuditMaintenanceWorker> logger) : IJobHandler<RecurringTick>
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
-
     /// <summary>How far back the omission check looks — several passes' worth, on purpose.</summary>
     private static readonly TimeSpan LookBack = TimeSpan.FromHours(6);
 
@@ -43,25 +42,11 @@ public sealed class AuditMaintenanceWorker(
     /// </summary>
     private static readonly TimeSpan SettlePeriod = TimeSpan.FromMinutes(5);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>One pass, as a recurring ledger job (ADR 0036): scheduled in JobsWorkerServices.</summary>
+    public async Task<object?> RunAsync(RecurringTick tick, IJobContext context)
     {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await RunOnceAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Audit maintenance pass failed; retrying next interval.");
-            }
-
-            await Task.Delay(Interval, stoppingToken);
-        }
+        await RunOnceAsync(context.Cancellation);
+        return null;
     }
 
     private async Task RunOnceAsync(CancellationToken ct)

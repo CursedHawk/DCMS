@@ -362,7 +362,7 @@ public sealed class PluginJobScheduler(
                     var sp = scope.ServiceProvider;
                     await PassAsync(
                         scheduled, sp.GetRequiredService<CmsDbContext>(), sp.GetRequiredService<ICacheService>(),
-                        sp.GetRequiredService<IEventPublisher>(), DateTimeOffset.UtcNow, stoppingToken);
+                        sp.GetRequiredService<Dcms.Shared.Jobs.IJobQueue>(), DateTimeOffset.UtcNow, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -377,12 +377,18 @@ public sealed class PluginJobScheduler(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    /// <summary>One scheduling pass. Static and explicit about its inputs so it can be tested as is.</summary>
+    /// <summary>
+    /// One scheduling pass. Static and explicit about its inputs so it can be tested as is.
+    ///
+    /// <para>Each run is a job on the ledger (ADR 0036): the tenant sees its plugins' schedules in
+    /// its jobs list, a failure is visible and retried, and the slot's dedupe key makes it once
+    /// per slot whichever replica gets there. The cache only spares the ledger an insert a minute.</para>
+    /// </summary>
     public static async Task PassAsync(
         IReadOnlyList<(string Plugin, JobDeclaration Job)> scheduled,
         CmsDbContext db,
         ICacheService cache,
-        IEventPublisher bus,
+        Dcms.Shared.Jobs.IJobQueue jobs,
         DateTimeOffset now,
         CancellationToken ct)
     {
@@ -411,10 +417,10 @@ public sealed class PluginJobScheduler(
                 {
                     continue;
                 }
-                var message = new PluginJobRequested(
-                    Guid.CreateVersion7(), now, tenantId, plugin, job.Name, InstanceId: null, PayloadJson: null, NotBefore: null);
-                await bus.PublishAsync(Subjects.PluginJob(plugin, job.Name), message, ct,
-                    messageId: $"{tenantId}:{plugin}:{job.Name}:slot-{slot}");
+                var kind = $"{PluginTrackedJobs.KindPrefix}{plugin}:{job.Name}";
+                await jobs.EnqueueAsync(new Dcms.Shared.Jobs.JobSpec(
+                    kind, tenantId, new PluginJobPayload(plugin, job.Name, null, null), "jobs.kinds.plugin.title",
+                    new { plugin, job = job.Name }, DedupeKey: $"{kind}:slot-{slot}", Cancelable: false, Routine: true), ct);
                 await cache.SetAsync<long?>(key, slot, interval * 2, ct);
             }
         }

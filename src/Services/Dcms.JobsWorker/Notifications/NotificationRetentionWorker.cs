@@ -1,3 +1,4 @@
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data;
@@ -25,30 +26,15 @@ namespace Dcms.AdminApi.Notifications;
 public sealed class NotificationRetentionWorker(
     IServiceProvider services,
     IConfiguration configuration,
-    ILogger<NotificationRetentionWorker> logger) : BackgroundService
+    ILogger<NotificationRetentionWorker> logger) : IJobHandler<RecurringTick>
 {
     private readonly int _retentionDays = configuration.GetValue("Notifications:RetentionDays", 90);
 
-    private readonly TimeSpan _interval =
-        TimeSpan.FromHours(configuration.GetValue("Notifications:RetentionSweepHours", 24));
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>One pass, as a recurring ledger job (ADR 0036): scheduled in JobsWorkerServices.</summary>
+    public async Task<object?> RunAsync(RecurringTick tick, IJobContext context)
     {
-        // Nothing here is urgent, and a sweep on the startup path would compete with migrations.
-        await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await SweepAsync(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Notification retention sweep failed; retrying next cycle.");
-            }
-            await Task.Delay(_interval, stoppingToken);
-        }
+        await SweepAsync(context.Cancellation);
+        return null;
     }
 
     private async Task SweepAsync(CancellationToken ct)

@@ -24,13 +24,14 @@ public class ServiceBoundaryTests(AdminApiFixture fixture)
     [
         nameof(JobConsumerHost), nameof(JobMaintenanceWorker), nameof(JobStateIngestConsumer),
         "PluginJobConsumer", "PluginEventConsumer", "PluginJobScheduler", "AutomationWorker", "RunWorker", "SiteGateReconciler",
-        "MembershipChangedConsumer", "OutboxDispatcher", "ScheduledPublishWorker", "AnalyticsRetentionWorker",
+        "MembershipChangedConsumer", "OutboxDispatcher", "ScheduledPublishWorker",
         "SitePublishedNotificationConsumer", "SiteBuildFailedNotificationConsumer", "MediaProcessedNotificationConsumer",
         "MediaFailedNotificationConsumer", "ContentPublishedNotificationConsumer", "ContentUnpublishedNotificationConsumer",
         "DomainVerifiedNotificationConsumer", "PluginInstanceNotificationConsumer", "NotificationIngestConsumer",
-        "InvitationExpiryWorker", "ApiConnectionWorker", "NotificationRetentionWorker", "AiConversationRetentionWorker",
-        "CertificateNotificationWorker", "AuditChainWriter", "AuditIngestConsumer", "AuditMaintenanceWorker",
-        "AuditLogProjector", "TenantUsageWorker",
+        "InvitationExpiryWorker", "ApiConnectionWorker",
+        "CertificateNotificationWorker", "AuditChainWriter", "AuditIngestConsumer", "AuditLogProjector",
+        // Audit maintenance, the retention sweeps and tenant usage: recurring ledger jobs it enqueues.
+        nameof(RecurringJobScheduler),
     ];
 
     [DockerFact]
@@ -56,6 +57,9 @@ public class ServiceBoundaryTests(AdminApiFixture fixture)
 
         ours.Should().Contain(Background);
         ours.Should().NotContain("JobLiveUpdates", "it holds no sockets");
+        services.GetServices<RecurringJob>().Select(j => j.Kind).Should().Contain(
+            ["audit.maintenance", "analytics.retention", "notifications.retention", "ai.retention", "tenancy.usage-sweep"],
+            "the long passes run as recurring ledger jobs, visible in the console");
         services.GetRequiredService<PluginHost>().RunsBackgroundWork.Should().BeTrue();
 
         var endpoints = services.GetRequiredService<EndpointDataSource>().Endpoints;

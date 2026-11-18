@@ -26,7 +26,7 @@ public static class JobsWorkerServices
         .AddJobLanes(configuration)
         .AddEventConsumers()
         .AddOutboxes()
-        .AddSweeps()
+        .AddSweeps(configuration)
         .AddPluginWork();
 
     /// <summary>The job ledger's two lanes (ADR 0024), their housekeeping, and the admin plane's own job handlers.</summary>
@@ -80,22 +80,30 @@ public static class JobsWorkerServices
         return services;
     }
 
-    /// <summary>Timed passes, each one replica at a time (advisory lock or SKIP LOCKED).</summary>
-    public static IServiceCollection AddSweeps(this IServiceCollection services)
+    /// <summary>
+    /// Timed passes. Those of an hour or more are recurring ledger jobs, so they show in the jobs
+    /// lists and fail visibly (ADR 0036); the frequent ones stay hosted services, each one replica
+    /// at a time (advisory lock or SKIP LOCKED), shown by the console's queue overview instead.
+    /// </summary>
+    public static IServiceCollection AddSweeps(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddHostedService<ScheduledPublishWorker>();
+        // Seals finished months, keeps partitions ahead of the writer, applies retention.
+        services.AddRecurringJob<AuditMaintenanceWorker>("audit.maintenance", TimeSpan.FromHours(1), "jobs.kinds.auditMaintenance.title");
         // analytics.events has no other retention: the daily rollups hold the aggregate.
-        services.AddHostedService<AnalyticsRetentionWorker>();
+        services.AddRecurringJob<AnalyticsRetentionWorker>("analytics.retention", TimeSpan.FromHours(6), "jobs.kinds.analyticsRetention.title");
+        services.AddRecurringJob<NotificationRetentionWorker>("notifications.retention",
+            TimeSpan.FromHours(configuration.GetValue("Notifications:RetentionSweepHours", 24)), "jobs.kinds.notificationRetention.title");
+        services.AddRecurringJob<AiConversationRetentionWorker>("ai.retention",
+            TimeSpan.FromHours(configuration.GetValue("Ai:RetentionSweepHours", 24)), "jobs.kinds.aiRetention.title");
+        // Hourly: finds the tenants due and queues each one's own measurement (tenant lane).
+        services.AddRecurringJob<TenantUsageWorker>(TenantUsageWorker.Kind, TimeSpan.FromHours(1), "jobs.kinds.tenantUsageSweep.title");
+        services.AddJobHandler<TenantUsageJob, TenantUsagePayload>(TenantUsageJob.Kind);
+        services.AddHostedService<ScheduledPublishWorker>();
         // Invitations are a passive column nothing else sweeps.
         services.AddHostedService<InvitationExpiryWorker>();
         services.AddHostedService<ApiConnectionWorker>();
-        services.AddHostedService<NotificationRetentionWorker>();
-        services.AddHostedService<AiConversationRetentionWorker>();
         // The platform bell from the edge's certificate-attempt ledger (the rate-limit guard).
         services.AddHostedService<CertificateNotificationWorker>();
-        // Seals finished months, keeps partitions ahead of the writer, applies retention.
-        services.AddHostedService<AuditMaintenanceWorker>();
-        services.AddHostedService<TenantUsageWorker>();
         return services;
     }
 

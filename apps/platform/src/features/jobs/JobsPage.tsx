@@ -71,13 +71,13 @@ export function JobsPage() {
 
       <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-2 text-sm font-semibold">Work queues</h2>
+          <h2 className="mb-2 text-sm font-semibold">Work queues, consumers and outboxes</h2>
           <DataTable<QueueDepth>
             rows={overview.data?.queues}
             isLoading={overview.isLoading}
             rowKey={(q) => `${q.stream}/${q.consumer}`}
             columns={QUEUE_COLUMNS}
-            empty="No work queues reported."
+            empty="No queues, consumers or outboxes reported."
           />
         </section>
         <section>

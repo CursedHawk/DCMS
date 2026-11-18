@@ -48,7 +48,7 @@ public sealed class PluginJobSchedulerTests(AdminApiFixture fixture)
 
         var scheduled = new[] { (pluginId, JobDeclaration.Of<NoopJob>("refresh", TimeSpan.FromHours(1))) };
         var cache = new MemoryCache();
-        var bus = new Bus();
+        var jobs = new Queue();
         // Ten minutes into an hourly slot, not "now": slots are unix-seconds / interval, so a run in
         // the last minute of an hour put `now.AddMinutes(1)` in the next slot and enqueued twice.
         var hour = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 3600 * 3600);
@@ -57,31 +57,32 @@ public sealed class PluginJobSchedulerTests(AdminApiFixture fixture)
         using (var scope = fixture.Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
-            await PluginJobScheduler.PassAsync(scheduled, db, cache, bus, now, ct);
-            await PluginJobScheduler.PassAsync(scheduled, db, cache, bus, now.AddMinutes(1), ct);
+            await PluginJobScheduler.PassAsync(scheduled, db, cache, jobs, now, ct);
+            await PluginJobScheduler.PassAsync(scheduled, db, cache, jobs, now.AddMinutes(1), ct);
         }
 
-        var job = bus.Published.Should().ContainSingle().Which;
+        var job = jobs.Enqueued.Should().ContainSingle().Which;
         job.TenantId.Should().Be(enabledTenant);
-        job.JobName.Should().Be("refresh");
+        job.Kind.Should().Be($"plugin:{pluginId}:refresh");
+        job.Routine.Should().BeTrue("a schedule's tick is work nobody is waiting on");
 
         using (var scope = fixture.Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
-            await PluginJobScheduler.PassAsync(scheduled, db, cache, bus, now.AddHours(1), ct);
+            await PluginJobScheduler.PassAsync(scheduled, db, cache, jobs, now.AddHours(1), ct);
         }
-        bus.Published.Should().HaveCount(2, "the next interval slot runs again");
+        jobs.Enqueued.Should().HaveCount(2, "the next interval slot runs again");
+        jobs.Enqueued.Select(j => j.DedupeKey).Should().OnlyHaveUniqueItems("each slot is its own job, once");
     }
 
-    private sealed class Bus : IEventPublisher
+    private sealed class Queue : Dcms.Shared.Jobs.IJobQueue
     {
-        public List<PluginJobRequested> Published { get; } = [];
+        public List<Dcms.Shared.Jobs.JobSpec> Enqueued { get; } = [];
 
-        public ValueTask PublishAsync<T>(string subject, T @event, CancellationToken ct = default, string? messageId = null)
-            where T : IDcmsEvent
+        public Task<Dcms.Shared.Jobs.JobRef> EnqueueAsync(Dcms.Shared.Jobs.JobSpec spec, CancellationToken ct)
         {
-            Published.Add((PluginJobRequested)(object)@event!);
-            return ValueTask.CompletedTask;
+            Enqueued.Add(spec);
+            return Task.FromResult(new Dcms.Shared.Jobs.JobRef(Guid.NewGuid()));
         }
     }
 

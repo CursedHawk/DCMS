@@ -1,3 +1,4 @@
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data;
@@ -46,10 +47,8 @@ namespace Dcms.AdminApi.Analytics;
 public sealed class AnalyticsRetentionWorker(
     IServiceProvider services,
     IConfiguration configuration,
-    ILogger<AnalyticsRetentionWorker> logger) : BackgroundService
+    ILogger<AnalyticsRetentionWorker> logger) : IJobHandler<RecurringTick>
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(6);
-
     /// <summary>
     /// One statement's worth. Small enough that the lock it takes is uninteresting to the
     /// ingest consumer running alongside it.
@@ -63,47 +62,11 @@ public sealed class AnalyticsRetentionWorker(
     /// </summary>
     private const int MaxBatchesPerPass = 20;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>One pass, as a recurring ledger job (ADR 0036): scheduled in JobsWorkerServices.</summary>
+    public async Task<object?> RunAsync(RecurringTick tick, IJobContext context)
     {
-        // A short delay rather than running at once: startup already runs every migration, the
-        // RLS configurator, the view configurator and the audit maintenance pass, and adding a
-        // bulk delete to that is how a deploy times out its own health check.
-        try
-        {
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await RunOnceAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                // Never fatal. Analytics retention failing is a disk that fills more slowly
-                // than it otherwise would; taking admin-api down over it would stop the
-                // platform.
-                logger.LogError(ex, "Analytics retention pass failed.");
-            }
-
-            try
-            {
-                await Task.Delay(Interval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
+        await RunOnceAsync(context.Cancellation);
+        return null;
     }
 
     private async Task RunOnceAsync(CancellationToken ct)

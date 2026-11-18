@@ -1650,6 +1650,9 @@
       },
       "siteAuditBuild": {
         "title": "Příprava webu {{site}} na audit"
+      },
+      "tenantUsage": {
+        "title": "Měření úložiště a využití"
       }
     },
     "stages": {
