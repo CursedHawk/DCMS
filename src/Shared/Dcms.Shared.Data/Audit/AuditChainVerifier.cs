@@ -35,21 +35,18 @@ public sealed class AuditChainVerifier(AuditDbContext db, IAuditChainKeyProvider
     {
         var key = keys.GetKey();
 
-        var rows = await db.Events
+        // Streamed, one row at a time: a month of a busy chain does not fit in admin-api's memory,
+        // and running out of it at startup failed every request that came in meanwhile.
+        var rows = db.Events
             .AsNoTracking()
             .Where(e => e.ChainKey == chainKey && e.Period == period)
             .OrderBy(e => e.Seq)
-            .ToListAsync(cancellationToken);
-
-        if (rows.Count == 0)
-        {
-            return new AuditChainSegmentResult(chainKey, period, 0, true, null, null);
-        }
+            .AsAsyncEnumerable();
 
         byte[]? previousHash = null;
         long expectedSeq = 1;
 
-        foreach (var row in rows)
+        await foreach (var row in rows.WithCancellation(cancellationToken))
         {
             if (row.Seq != expectedSeq)
             {
@@ -88,7 +85,7 @@ public sealed class AuditChainVerifier(AuditDbContext db, IAuditChainKeyProvider
             expectedSeq++;
         }
 
-        return new AuditChainSegmentResult(chainKey, period, rows.Count, true, null, null);
+        return new AuditChainSegmentResult(chainKey, period, expectedSeq - 1, true, null, null);
     }
 
     /// <summary>Verifies every segment of one tenant's chain, newest month first.</summary>

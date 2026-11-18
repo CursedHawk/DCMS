@@ -105,29 +105,27 @@ public sealed class AuditChainSealer(
             return false;
         }
 
-        var rows = await db.Events
-            .AsNoTracking()
-            .Where(e => e.ChainKey == chainKey && e.Period == period)
-            .OrderBy(e => e.Seq)
-            .Select(e => new { e.Seq, e.Hash })
-            .ToListAsync(ct);
-
-        if (rows.Count == 0)
+        // Its ends and its size, not every row: a month of a busy chain is a lot of memory.
+        var segment = db.Events.AsNoTracking().Where(e => e.ChainKey == chainKey && e.Period == period);
+        var first = await segment.OrderBy(e => e.Seq).Select(e => new { e.Seq, e.Hash }).FirstOrDefaultAsync(ct);
+        if (first is null)
         {
             // A head with no rows: the segment was created and nothing landed in it. Nothing to
             // anchor, and an anchor over an empty range would later look like data loss.
             return false;
         }
+        var last = await segment.OrderByDescending(e => e.Seq).Select(e => new { e.Seq, e.Hash }).FirstAsync(ct);
+        var count = await segment.LongCountAsync(ct);
 
         var anchor = new AuditChainAnchor
         {
             ChainKey = chainKey,
             Period = period,
-            FirstSeq = rows[0].Seq,
-            LastSeq = rows[^1].Seq,
-            FirstHash = rows[0].Hash,
-            LastHash = rows[^1].Hash,
-            RowCount = rows.Count,
+            FirstSeq = first.Seq,
+            LastSeq = last.Seq,
+            FirstHash = first.Hash,
+            LastHash = last.Hash,
+            RowCount = count,
             SealedAt = DateTimeOffset.UtcNow,
         };
         anchor.AnchorHmac = ComputeHmac(anchor, keys.GetKey());
