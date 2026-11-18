@@ -462,15 +462,16 @@ services:
     # overridable per host because the right value is a property of that host's traffic.
     # Raise the variable rather than the default if one of these OOM-kills; `docker stats`
     # and the infrastructure dashboard's per-container-usage-vs-limit panel are the evidence.
-    # admin-api is the largest because it builds the api-client and site-starter zips and the
-    # static site bundle in memory.
+    # admin-api builds the api-client and site-starter zips and the static site bundle in
+    # memory; it runs no background work any more (ADR 0036), which is why jobs-worker, which
+    # runs all of it, now has the larger ceiling.
     #
     # These four bring the declared ceilings on vps1 to ~7.1 GB against 7.6 GB of RAM, and
     # several containers still have none. That is deliberate and not a budget error: a ceiling
     # is not a reservation, and every one of these sits far above steady state. What it buys is
     # that a single runaway is killed at its own limit instead of taking the host -- it is not
     # a promise that all sixteen can peak at once.
-    mem_limit: "${ADMIN_API_MEM_LIMIT:-768m}"
+    mem_limit: "${ADMIN_API_MEM_LIMIT:-640m}"
     # Operator-installed plugins (PluginLoader): one published plugin per subfolder of
     # ./plugins. Both plugin hosts load the same set; read-only, the hosts never write here.
     volumes:
@@ -507,7 +508,11 @@ services:
   jobs-worker:
     extends:
       service: admin-api
-    mem_limit: "${JOBS_WORKER_MEM_LIMIT:-512m}"
+    # All the background work, and only here: audit sealing, retention sweeps, outboxes, event
+    # consumers, job lanes and plugin workers. 2026-11-18 the audit sealing ran admin-api out
+    # of memory while it still ran in both containers; it streams now, but this is where any
+    # such pass lands.
+    mem_limit: "${JOBS_WORKER_MEM_LIMIT:-768m}"
     environment:
       Dcms__Role: "worker"
       # The image is admin-api's, whose Dockerfile names the profiler after it; traces and logs take

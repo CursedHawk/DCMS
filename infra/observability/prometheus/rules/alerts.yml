@@ -24,7 +24,7 @@ groups:
         labels: { severity: critical, area: audit }
         annotations:
           summary: "Audit log has recorded nothing for 15 minutes while requests are being served"
-          description: "A silent audit log is indistinguishable from an idle platform, which is why this is keyed on traffic. Check the AuditChainWriter in admin-api and audit.audit_outbox depth."
+          description: "A silent audit log is indistinguishable from an idle platform, which is why this is keyed on traffic. Check the AuditChainWriter in jobs-worker and audit.audit_outbox depth."
 
       - alert: AuditSinkFailing
         expr: increase(dcms_audit_sink_failed_total[5m]) > 0

@@ -650,7 +650,7 @@
             "type": "loki",
             "uid": "dcms-loki"
           },
-          "expr": "{service=~\"admin-api|identity|content-api|ai-gateway|media-worker|site-host\"} |~ \"AUDIT ANCHOR|Refusing to seal|Audit gap\"",
+          "expr": "{service=~\"admin-api|jobs-worker|identity|content-api|ai-gateway|media-worker|site-host\"} |~ \"AUDIT ANCHOR|Refusing to seal|Audit gap\"",
           "refId": "A",
           "queryType": "range"
         }

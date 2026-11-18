@@ -11,6 +11,7 @@ using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security.Realms;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -236,18 +237,28 @@ public sealed class SiteGatePublisher(
 /// once; this catches what changes elsewhere — a domain verified or removed, the plugin switched
 /// on or off, a tenant deleted — and anything a failed publish missed.
 /// </summary>
-public sealed class SiteGateReconciler(IServiceScopeFactory scopes, ILogger<SiteGateReconciler> logger) : BackgroundService
+public sealed class SiteGateReconciler(
+    IServiceScopeFactory scopes, IConfiguration configuration, ILogger<SiteGateReconciler> logger)
+    : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var connectionString = configuration.GetConnectionString("Postgres");
         using var timer = new PeriodicTimer(Interval);
         do
         {
             try
             {
-                await ReconcileAsync(stoppingToken);
+                // One replica per pass: the worker scales out, and each would rescan every environment.
+                await using var leadership = string.IsNullOrWhiteSpace(connectionString)
+                    ? null
+                    : await PostgresAdvisoryLock.TryAcquireAsync(connectionString, PostgresAdvisoryLock.SiteGateReconcileLockKey, logger, stoppingToken);
+                if (leadership is not null || string.IsNullOrWhiteSpace(connectionString))
+                {
+                    await ReconcileAsync(stoppingToken);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

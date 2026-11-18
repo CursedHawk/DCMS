@@ -69,6 +69,17 @@ if (role is not ("api" or "worker" or "all"))
 }
 var runsBackgroundWork = role != "api";
 var holdsSockets = role != "worker";
+// Background work registers through this, so the api role -- admin-api, serving requests -- runs
+// none of it and jobs-worker runs all of it (ADR 0036). Until now these ran in both containers,
+// kept from doing the work twice only by their locks; the audit sealing that ran admin-api out
+// of memory on 2026-11-18 was one of them.
+void Background<T>() where T : class, Microsoft.Extensions.Hosting.IHostedService
+{
+    if (runsBackgroundWork)
+    {
+        builder.Services.AddHostedService<T>();
+    }
+}
 
 // The worker names itself, so its traces, logs and audit records say which process did the work,
 // and reads its own Vault path under its own AppRole (ADR 0036; apply.sh mirrors the values).
@@ -235,12 +246,12 @@ builder.Services.AddScoped<TenancyPermissionResolver>();
 builder.Services.AddScoped<IPermissionResolver>(sp => sp.GetRequiredService<TenancyPermissionResolver>());
 
 builder.Services.AddSingleton<DnsTxtLookup>();
-builder.Services.AddHostedService<MembershipChangedConsumer>();
-builder.Services.AddHostedService<OutboxDispatcher>();
-builder.Services.AddHostedService<ScheduledPublishWorker>();
+Background<MembershipChangedConsumer>();
+Background<OutboxDispatcher>();
+Background<ScheduledPublishWorker>();
 // analytics.events had no retention at all: every pageview from every tenant site accumulated
 // forever on a host with 40 GB free. The daily rollups next to it already hold the aggregate.
-builder.Services.AddHostedService<AnalyticsRetentionWorker>();
+Background<AnalyticsRetentionWorker>();
 
 // In-app notifications. Each consumer turns one already-published subject into a
 // notification, so the producing services are untouched. All are shared durables: the work
@@ -250,18 +261,18 @@ builder.Services.AddScoped<NotificationPublisher>();
 // Singleton: it holds nothing but an IHubContext, and endpoints, consumers and workers all
 // reach for it — a scoped registration would be a scope per push for no reason.
 builder.Services.AddSingleton<ResourceChangePublisher>();
-builder.Services.AddHostedService<SitePublishedNotificationConsumer>();
-builder.Services.AddHostedService<SiteBuildFailedNotificationConsumer>();
-builder.Services.AddHostedService<MediaProcessedNotificationConsumer>();
-builder.Services.AddHostedService<MediaFailedNotificationConsumer>();
-builder.Services.AddHostedService<ContentPublishedNotificationConsumer>();
-builder.Services.AddHostedService<ContentUnpublishedNotificationConsumer>();
-builder.Services.AddHostedService<DomainVerifiedNotificationConsumer>();
-builder.Services.AddHostedService<PluginInstanceNotificationConsumer>();
-builder.Services.AddHostedService<NotificationIngestConsumer>();
+Background<SitePublishedNotificationConsumer>();
+Background<SiteBuildFailedNotificationConsumer>();
+Background<MediaProcessedNotificationConsumer>();
+Background<MediaFailedNotificationConsumer>();
+Background<ContentPublishedNotificationConsumer>();
+Background<ContentUnpublishedNotificationConsumer>();
+Background<DomainVerifiedNotificationConsumer>();
+Background<PluginInstanceNotificationConsumer>();
+Background<NotificationIngestConsumer>();
 // Invitation expiry is the one source with no event behind it -- it is a passive column
 // that nothing has ever swept. See InvitationExpiryWorker.
-builder.Services.AddHostedService<InvitationExpiryWorker>();
+Background<InvitationExpiryWorker>();
 // External API connections (Mode D, backlog #124): fetched here, served as snapshots by
 // content-api. Public addresses only, and no redirects — a redirect would carry a header
 // credential to whatever host the provider names.
@@ -275,26 +286,26 @@ builder.Services.AddHttpClient(Dcms.AdminApi.Connections.ApiConnectionFetcher.Ht
         return handler;
     });
 builder.Services.AddScoped<Dcms.AdminApi.Connections.ApiConnectionFetcher>();
-builder.Services.AddHostedService<Dcms.AdminApi.Connections.ApiConnectionWorker>();
-builder.Services.AddHostedService<NotificationRetentionWorker>();
-builder.Services.AddHostedService<Dcms.AdminApi.Ai.AiConversationRetentionWorker>();
+Background<Dcms.AdminApi.Connections.ApiConnectionWorker>();
+Background<NotificationRetentionWorker>();
+Background<Dcms.AdminApi.Ai.AiConversationRetentionWorker>();
 // The platform console's own bell. Separate publisher and separate tables, because these
 // notifications have no tenant and their audience is a global role admin-api cannot enumerate
 // -- see PlatformNotification. The worker reads the edge's attempt ledger rather than
 // consuming an event: that ledger is the rate-limit guard, so it cannot be skipped.
 builder.Services.AddScoped<PlatformNotificationPublisher>();
-builder.Services.AddHostedService<CertificateNotificationWorker>();
-builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditChainWriter>();
+Background<CertificateNotificationWorker>();
+Background<Dcms.AdminApi.Audit.AuditChainWriter>();
 // Brings in the records from the two services that cannot reach the audit schema, so
 // everything still reaches the chain by one path.
-builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditIngestConsumer>();
+Background<Dcms.AdminApi.Audit.AuditIngestConsumer>();
 // Seals finished months, keeps partitions ahead of the writer, drops what retention has
 // expired, and publishes the numbers that say whether any of it is working.
-builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditMaintenanceWorker>();
+Background<Dcms.AdminApi.Audit.AuditMaintenanceWorker>();
 // Reads audit.recorded — the fan-out subject the chain writer has always published and
 // nothing consumed — and projects each record onto the log pipeline, giving the audit log a
 // searchable presence next to the traces it shares a TraceId with.
-builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditLogProjector>();
+Background<Dcms.AdminApi.Audit.AuditLogProjector>();
 
 // Outbound client-credentials token provider for calling ai-gateway.
 builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
@@ -391,7 +402,7 @@ builder.Services.AddScoped<Dcms.AdminApi.Sites.SiteDeleter>();
 builder.Services.AddSingleton<Dcms.AdminApi.Sites.SiteLiveUpdates>();
 builder.Services.AddScoped<TenantDeleter>();
 builder.Services.AddScoped<TenantUsageMeasurer>();
-builder.Services.AddHostedService<TenantUsageWorker>();
+Background<TenantUsageWorker>();
 
 var app = builder.Build();
 

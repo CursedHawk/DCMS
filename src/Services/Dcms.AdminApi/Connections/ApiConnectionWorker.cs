@@ -10,8 +10,8 @@ namespace Dcms.AdminApi.Connections;
 /// tenants (a platform-scoped read), then refreshes each as its own tenant, one at a time — a
 /// slow provider delays the next refresh, never anyone's site, which serves snapshots.
 ///
-/// <para>One replica per pass, elected by an advisory lock: admin-api and jobs-worker both run
-/// this, and without it each would call every due provider.</para>
+/// <para>One replica per pass, elected by an advisory lock: jobs-worker scales out, and without
+/// it each replica would call every due provider.</para>
 /// </summary>
 public sealed class ApiConnectionWorker(IServiceProvider services, IConfiguration configuration, ILogger<ApiConnectionWorker> logger)
     : BackgroundService

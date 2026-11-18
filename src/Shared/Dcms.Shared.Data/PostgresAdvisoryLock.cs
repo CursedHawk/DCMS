@@ -79,6 +79,12 @@ public static class PostgresAdvisoryLock
     public const long ApiConnectionRefreshLockKey = 0x44434D530000000E;
 
     /// <summary>
+    /// The site gate reconciliation (User Authentication). One replica per pass: each would
+    /// otherwise rescan every environment's rules and republish whatever differs.
+    /// </summary>
+    public const long SiteGateReconcileLockKey = 0x44434D530000000F;
+
+    /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then
     /// find there is nothing left to do. Giving up and carrying on would let it serve traffic
