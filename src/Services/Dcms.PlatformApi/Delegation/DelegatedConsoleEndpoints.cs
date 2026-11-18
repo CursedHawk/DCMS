@@ -1,3 +1,5 @@
+using Dcms.PlatformApi.Realtime;
+using Microsoft.AspNetCore.SignalR;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
@@ -64,13 +66,13 @@ public static class DelegatedConsoleEndpoints
             PlatformConsolePermissions.NotificationsRead);
         Delegate(notifications, HttpMethod.Post, "/{id:guid}/read",
             "/api/admin/platform/notifications/{0}/read",
-            PlatformConsolePermissions.NotificationsRead);
+            PlatformConsolePermissions.NotificationsRead, tellOperatorsTabs: true);
         Delegate(notifications, HttpMethod.Post, "/read-all",
             "/api/admin/platform/notifications/read-all",
-            PlatformConsolePermissions.NotificationsRead);
+            PlatformConsolePermissions.NotificationsRead, tellOperatorsTabs: true);
         Delegate(notifications, HttpMethod.Post, "/{id:guid}/dismiss",
             "/api/admin/platform/notifications/{0}/dismiss",
-            PlatformConsolePermissions.NotificationsRead);
+            PlatformConsolePermissions.NotificationsRead, tellOperatorsTabs: true);
 
         // ---- Background jobs (jobs schema; ADR 0024) ----
 
@@ -137,7 +139,8 @@ public static class DelegatedConsoleEndpoints
         string pattern,
         string upstream,
         string permission,
-        bool forwardQuery = false)
+        bool forwardQuery = false,
+        bool tellOperatorsTabs = false)
     {
         var builder = group.MapMethods(
             pattern.Length == 0 ? "/" : pattern,
@@ -154,6 +157,11 @@ public static class DelegatedConsoleEndpoints
                 }
 
                 await proxy.ForwardAsync(method, path, context, ct);
+
+                if (tellOperatorsTabs && context.Response.StatusCode is >= 200 and < 300)
+                {
+                    await TellOperatorsTabsAsync(context, ct);
+                }
             });
 
         builder.RequirePlatformPermission(permission);
@@ -164,5 +172,28 @@ public static class DelegatedConsoleEndpoints
         builder.AuditExempt(
             "Delegated to admin-api, which records the action against the operator named in the "
             + "propagated actor headers. Recording here too would duplicate every entry.");
+    }
+
+    /// <summary>
+    /// Read and dismissed are the operator's state, not one tab's: every console they have open
+    /// refreshes its bell, as it does when a notification is raised. Never fails the request: a
+    /// tab that misses it catches up when it is next shown.
+    /// </summary>
+    internal static async Task TellOperatorsTabsAsync(HttpContext context, CancellationToken ct)
+    {
+        if (context.User.FindFirst("sub")?.Value is not { Length: > 0 } subject)
+        {
+            return;
+        }
+        try
+        {
+            var hub = context.RequestServices.GetRequiredService<IHubContext<PlatformHub>>();
+            await hub.Clients.Group(PlatformHub.UserGroup(subject))
+                .SendAsync("ResourceChanged", new { tag = PlatformResourceTags.Notifications, id = (string?)null }, ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // The read is saved; the other consoles catch up on their next fetch.
+        }
     }
 }

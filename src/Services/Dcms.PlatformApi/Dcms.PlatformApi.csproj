@@ -18,4 +18,8 @@
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Vault\Dcms.Shared.Vault.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

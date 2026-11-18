@@ -39,6 +39,12 @@ public sealed class PlatformHub(
     /// </summary>
     public const string JobsGroup = "platform:jobs";
 
+    /// <summary>
+    /// One operator's consoles, every tab and device: what is theirs alone (their bell's read
+    /// state) is told to this group, not to everyone.
+    /// </summary>
+    public static string UserGroup(string subject) => $"platform:user:{subject}";
+
     public override async Task OnConnectedAsync()
     {
         var roles = Context.User?.FindAll("role").Select(c => c.Value).Distinct().ToArray() ?? [];
@@ -60,6 +66,10 @@ public sealed class PlatformHub(
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, Group);
+        if (Context.User?.FindFirst("sub")?.Value is { Length: > 0 } subject)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(subject));
+        }
         if (superAdmin || held!.Contains(PlatformConsolePermissions.JobsRead))
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, JobsGroup);
