@@ -420,7 +420,11 @@ public sealed class PluginJobScheduler(
                 var kind = $"{PluginTrackedJobs.KindPrefix}{plugin}:{job.Name}";
                 await jobs.EnqueueAsync(new Dcms.Shared.Jobs.JobSpec(
                     kind, tenantId, new PluginJobPayload(plugin, job.Name, null, null), "jobs.kinds.plugin.title",
-                    new { plugin, job = job.Name }, DedupeKey: $"{kind}:slot-{slot}", Cancelable: false, Routine: true), ct);
+                    new { plugin, job = job.Name },
+                    // A schedule's run is tenant-wide, and its error can carry the plugin's data:
+                    // seen (and retried) by who manages the workspace's plugins, not every member.
+                    RequiredPermission: Dcms.Shared.Security.PlatformPermissions.PluginsManage,
+                    DedupeKey: $"{kind}:slot-{slot}", Cancelable: false, Routine: true), ct);
                 await cache.SetAsync<long?>(key, slot, interval * 2, ct);
             }
         }

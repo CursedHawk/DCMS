@@ -65,6 +65,7 @@ public sealed class PluginJobSchedulerTests(AdminApiFixture fixture)
         job.TenantId.Should().Be(enabledTenant);
         job.Kind.Should().Be($"plugin:{pluginId}:refresh");
         job.Routine.Should().BeTrue("a schedule's tick is work nobody is waiting on");
+        job.RequiredPermission.Should().Be("plugins:manage", "a schedule's run is not every member's to see");
 
         using (var scope = fixture.Factory.Services.CreateScope())
         {
