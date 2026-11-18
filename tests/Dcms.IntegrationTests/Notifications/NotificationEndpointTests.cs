@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Tenancy;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Dcms.IntegrationTests.Notifications;
@@ -74,6 +76,62 @@ public class NotificationEndpointTests(AdminApiFixture fixture)
         (await ListAsync(client, slug, mine, ct)).GetProperty("unreadCount").GetInt32().Should().Be(0);
         (await ListAsync(client, slug, theirs, ct)).GetProperty("unreadCount").GetInt32().Should().Be(1,
             "read state is per recipient, not per notification");
+    }
+
+    [DockerFact]
+    public async Task Reading_tells_the_users_other_tabs_and_only_when_something_changed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var hub = new RecordingHub();
+        await using var host = fixture.Factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
+            services.AddSingleton<IHubContext<global::Dcms.AdminApi.Notifications.NotificationHub>>(hub)));
+        var client = host.CreateClient();
+
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var mine = Guid.NewGuid();
+        var first = await SeedNotificationAsync(tenantId, [mine], ct);
+        await SeedNotificationAsync(tenantId, [mine], ct);
+        var myTabs = global::Dcms.AdminApi.Notifications.NotificationHub.UserGroup(tenantId, mine);
+
+        (await client.SendAsync(Request(HttpMethod.Post, $"/api/admin/notifications/{first}/read", slug, mine), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        hub.Sent.Should().ContainSingle().Which.Should().Be((myTabs, "NotificationUpdated"),
+            "a tab that marked it read is not the only one showing the badge");
+
+        // Already read: nothing changed, so nothing to tell.
+        await client.SendAsync(Request(HttpMethod.Post, $"/api/admin/notifications/{first}/read", slug, mine), ct);
+        hub.Sent.Should().HaveCount(1);
+
+        await client.SendAsync(Request(HttpMethod.Post, "/api/admin/notifications/read-all", slug, mine), ct);
+        hub.Sent.Should().HaveCount(2).And.AllBeEquivalentTo((myTabs, "NotificationUpdated"));
+    }
+
+    /// <summary>What admin-api sent over the notification hub, instead of sending it.</summary>
+    private sealed class RecordingHub : IHubContext<global::Dcms.AdminApi.Notifications.NotificationHub>
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<(string Group, string Method)> Sent { get; } = new();
+
+        public IHubClients Clients => new To(this, "");
+        public IGroupManager Groups => throw new NotSupportedException();
+
+        private sealed class To(RecordingHub hub, string group) : IHubClients, IClientProxy
+        {
+            public IClientProxy All => this;
+            public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => this;
+            public IClientProxy Client(string connectionId) => this;
+            public IClientProxy Clients(IReadOnlyList<string> connectionIds) => this;
+            public IClientProxy Group(string groupName) => new To(hub, groupName);
+            public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => new To(hub, groupName);
+            public IClientProxy Groups(IReadOnlyList<string> groupNames) => this;
+            public IClientProxy User(string userId) => this;
+            public IClientProxy Users(IReadOnlyList<string> userIds) => this;
+
+            public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
+            {
+                hub.Sent.Enqueue((group, method));
+                return Task.CompletedTask;
+            }
+        }
     }
 
     [DockerFact]

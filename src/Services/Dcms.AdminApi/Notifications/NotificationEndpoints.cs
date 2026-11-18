@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.SignalR;
+using Dcms.Shared.Kernel.Abstractions;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
@@ -106,7 +108,7 @@ public static class NotificationEndpoints
 
         app.MapPost("/api/admin/notifications/{id:guid}/read", async (
             Guid id, NotificationsDbContext db, CurrentUser me, AuditScope audit,
-            CancellationToken ct) =>
+            ITenantContext tenant, IHubContext<NotificationHub> hub, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
             var now = DateTimeOffset.UtcNow;
@@ -116,10 +118,11 @@ public static class NotificationEndpoints
             // click, so a second call is an ordinary race rather than a mistake. The
             // TenantId query filter plus the UserId predicate mean this can only ever touch
             // the caller's own row.
-            await db.Recipients
+            var updated = await db.Recipients
                 .Where(r => r.NotificationId == id && r.UserId == userId && r.ReadAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.ReadAt, now), ct);
 
+            await TellOtherTabsAsync(hub, tenant, userId, updated, ct);
             return Results.NoContent();
         }).RequireAuthorization()
           .AuditExempt("Marking one's own notification read is a per-user UI state change, "
@@ -127,7 +130,7 @@ public static class NotificationEndpoints
 
         app.MapPost("/api/admin/notifications/read-all", async (
             NotificationsDbContext db, CurrentUser me, AuditScope audit,
-            CancellationToken ct) =>
+            ITenantContext tenant, IHubContext<NotificationHub> hub, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
             var now = DateTimeOffset.UtcNow;
@@ -136,26 +139,51 @@ public static class NotificationEndpoints
             var updated = await db.Recipients
                 .Where(r => r.UserId == userId && r.ReadAt == null && r.DismissedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.ReadAt, now), ct);
+            await TellOtherTabsAsync(hub, tenant, userId, updated, ct);
             return Results.Ok(new { updated });
         }).RequireAuthorization()
           .AuditExempt("Marking one's own notifications read is a per-user UI state change.");
 
         app.MapPost("/api/admin/notifications/{id:guid}/dismiss", async (
             Guid id, NotificationsDbContext db, CurrentUser me, AuditScope audit,
-            CancellationToken ct) =>
+            ITenantContext tenant, IHubContext<NotificationHub> hub, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
             var now = DateTimeOffset.UtcNow;
             using var suppressed = audit.SuppressBulkCapture();
 
             // Dismissing implies read: a dismissed row must never keep inflating the badge.
-            await db.Recipients
+            var updated = await db.Recipients
                 .Where(r => r.NotificationId == id && r.UserId == userId && r.DismissedAt == null)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(r => r.DismissedAt, now)
                     .SetProperty(r => r.ReadAt, r => r.ReadAt ?? now), ct);
+            await TellOtherTabsAsync(hub, tenant, userId, updated, ct);
             return Results.NoContent();
         }).RequireAuthorization()
           .AuditExempt("Dismissing one's own notification is a per-user UI state change.");
+    }
+
+    /// <summary>
+    /// Read and dismissed are the user's state, not one tab's: every tab and device they have open
+    /// on this workspace refreshes its bell, as for a notification that grew ("NotificationUpdated"
+    /// refreshes without toasting). Only when something changed, and never failing the request:
+    /// a tab that misses it is corrected by its next fetch.
+    /// </summary>
+    private static async Task TellOtherTabsAsync(
+        IHubContext<NotificationHub> hub, ITenantContext tenant, Guid userId, int updated, CancellationToken ct)
+    {
+        if (updated == 0 || tenant.TenantId is not { } tenantId)
+        {
+            return;
+        }
+        try
+        {
+            await hub.Clients.Group(NotificationHub.UserGroup(tenantId, userId)).SendAsync("NotificationUpdated", ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // The read is saved; the other tabs catch up on their next fetch.
+        }
     }
 }
