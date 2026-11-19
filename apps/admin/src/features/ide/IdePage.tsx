@@ -17,7 +17,7 @@ import { appendOutput } from './panel/output';
 import { useTranslation } from 'react-i18next';
 import { EditorHeader } from '../sites/EditorHeader';
 import { toast } from 'sonner';
-import { Button, CenteredSpinner } from '@dcms/ui';
+import { Button, CenteredSpinner, useIsDesktop } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import {
@@ -150,6 +150,10 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
     320,
     1100,
   );
+  // Below the desktop breakpoint (a phone that pressed "Show it anyway") the workspace pans
+  // sideways inside the page, and a flex-1 editor got only what the sidebar and preview left:
+  // a sliver, which changed with the preview. It keeps the preview's width instead.
+  const isDesktop = useIsDesktop();
 
   const site = useQuery({
     queryKey: ['site', siteId],
@@ -716,7 +720,7 @@ export function IdePage({ siteId, repo }: { siteId: string; repo?: RepoTarget })
           onDelta={(dx) => setSidebarWidth((w) => w + dx)}
           onReset={resetSidebarWidth}
         />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col" style={isDesktop ? undefined : { minWidth: previewWidth }}>
           <EditorTabs />
           <Breadcrumbs path={activeDiff ? (activeDiffTab?.path ?? null) : activePath} />
           <div className="relative min-h-0 flex-1">

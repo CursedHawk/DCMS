@@ -67,6 +67,32 @@ test('the IDE refuses the screen instead of rendering badly on it', async ({ pag
   await expect(page.getByText(/wider screen/i)).toBeVisible();
 });
 
+test('past the refusal, the editor keeps its width whether or not the preview is shown', async ({ page, api }) => {
+  const SITE = '33333333-3333-3333-3333-333333333333';
+  api
+    .on('GET', '/api/admin/sites/:id', { id: SITE, name: 'Acme site', renderMode: 'ReactApp', slug: 'acme-site' })
+    .on('GET', '/api/admin/sites/:id/ide', {
+      branch: 'main', baseSha: 'abc1234', version: 1,
+      files: { 'src/App.tsx': 'export default function App() {}\n' }, hashes: { 'src/App.tsx': 'h' },
+    })
+    .on('GET', '/api/admin/sites/:id/git/changes', [])
+    .on('GET', '/api/admin/sites/:id/git/branches', [{ name: 'main', isDefault: true }])
+    .on('GET', '/api/admin/sites/:id/git/history', [])
+    .on('GET', '/api/admin/sites/:id/builds', [])
+    .on('GET', '/api/admin/ai/conversations', []);
+  await page.goto(`/sites/${SITE}`);
+  await page.getByRole('button', { name: /show it anyway/i }).click();
+
+  // The workspace pans sideways on a phone. A flex-1 editor got what the sidebar and the
+  // preview left over: 5px beside the preview, a third of the screen without it.
+  const editor = page.locator('.monaco-editor').first();
+  await expect(editor).toBeVisible({ timeout: 25000 });
+  const withPreview = (await editor.boundingBox())!.width;
+  await page.getByRole('button', { name: /hide preview/i }).first().click();
+  await expect.poll(async () => (await editor.boundingBox())!.width).toBe(withPreview);
+  expect(withPreview).toBeGreaterThanOrEqual(320);
+});
+
 /*
  * Every control on the page is on the screen.
  *
