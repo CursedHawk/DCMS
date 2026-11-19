@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Dcms.Shared.Contracts.Messaging;
+using NATS.Client.JetStream;
 
 namespace Dcms.IntegrationTests.Jobs;
 
@@ -33,6 +35,23 @@ public class ServiceBoundaryTests(AdminApiFixture fixture)
         // Audit maintenance, the retention sweeps and tenant usage: recurring ledger jobs it enqueues.
         nameof(RecurringJobScheduler),
     ];
+
+    /// <summary>
+    /// The job push survives a restart. Its durable outlives admin-api, so every start updates
+    /// it: a config that left out the (immutable) deliver policy was refused from the second
+    /// start on, and no console saw a job it had not started itself until the next fresh stream.
+    /// </summary>
+    [DockerFact]
+    public async Task The_job_push_consumer_can_be_reopened()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var js = fixture.Factory.Services.GetRequiredService<INatsJSContext>();
+        await js.CreateOrUpdateConsumerAsync(Streams.JobsEvents, AdminApiApp::Dcms.AdminApi.Jobs.JobLiveUpdates.Consumer(), ct);
+
+        var reopened = await js.CreateOrUpdateConsumerAsync(Streams.JobsEvents, AdminApiApp::Dcms.AdminApi.Jobs.JobLiveUpdates.Consumer(), ct);
+
+        reopened.Info.Config.DeliverPolicy.Should().Be(NATS.Client.JetStream.Models.ConsumerConfigDeliverPolicy.New);
+    }
 
     [DockerFact]
     public void Admin_api_serves_requests_and_runs_no_background_work()

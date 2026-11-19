@@ -33,19 +33,7 @@ public sealed class JobLiveUpdates(
         {
             try
             {
-                var config = new ConsumerConfig(DurableName)
-                {
-                    FilterSubject = Subjects.JobChanged,
-                    AckPolicy = ConsumerConfigAckPolicy.Explicit,
-                    // A push is worth one retry at most: the next change supersedes it.
-                    MaxDeliver = 2,
-                };
-                // DeliverPolicy is immutable once the durable exists, so it is sent only on creation.
-                if (!await ExistsAsync(stoppingToken))
-                {
-                    config.DeliverPolicy = ConsumerConfigDeliverPolicy.New;
-                }
-                var consumer = await jetStream.CreateOrUpdateConsumerAsync(Streams.JobsEvents, config, stoppingToken);
+                var consumer = await jetStream.CreateOrUpdateConsumerAsync(Streams.JobsEvents, Consumer(), stoppingToken);
 
                 await foreach (var msg in consumer.ConsumeAsync<JobChanged>(cancellationToken: stoppingToken))
                 {
@@ -70,18 +58,18 @@ public sealed class JobLiveUpdates(
 
     private const string DurableName = "admin-api-job-live-updates";
 
-    private async Task<bool> ExistsAsync(CancellationToken ct)
+    /// <summary>What every start sends: identical each time, so updating the existing durable is a no-op.</summary>
+    public static ConsumerConfig Consumer() => new(DurableName)
     {
-        try
-        {
-            await jetStream.GetConsumerAsync(Streams.JobsEvents, DurableName, ct);
-            return true;
-        }
-        catch (NatsJSApiException e) when (e.Error.Code == 404)
-        {
-            return false;
-        }
-    }
+        FilterSubject = Subjects.JobChanged,
+        AckPolicy = ConsumerConfigAckPolicy.Explicit,
+        // A push is worth one retry at most: the next change supersedes it.
+        MaxDeliver = 2,
+        // Immutable once the durable exists, so it must be sent unchanged every time:
+        // left out, it defaults to All and the server refuses the update ("deliver
+        // policy can not be updated"), which stopped every push after the first restart.
+        DeliverPolicy = ConsumerConfigDeliverPolicy.New,
+    };
 
     private async Task PushAsync(Guid tenantId, JobChanged changed, CancellationToken ct)
     {
