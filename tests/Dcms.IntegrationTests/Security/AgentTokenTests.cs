@@ -36,8 +36,8 @@ public sealed class AgentTokenTests(AdminApiFixture fixture)
         me.GetProperty("agent").GetProperty("name").GetString().Should().Be("Claude Code on laptop");
         me.GetProperty("roles").GetArrayLength().Should().Be(0, "an agent is never a SuperAdmin, nor anything by role claim");
 
-        // A route nobody has offered to agents is closed to them (members stay a person's).
-        await Refused(client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/members", slug, token), ct), "not offered");
+        // A person's own route is closed to agents (members stay a person's).
+        await Refused(client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/members", slug, token), ct), "Only a person");
         // One offered to them is open, as far as the person's own permissions reach.
         (await client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/sites", slug, token), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
 
