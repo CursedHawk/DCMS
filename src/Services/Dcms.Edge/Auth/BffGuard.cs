@@ -100,6 +100,9 @@ public static class BffGuard
     /// The command line signs in with the device flow (client <c>dcms-cli</c>) and has no
     /// cookie to send. The claim is read, not verified: admin-api verifies the signature, and a
     /// forged claim only gets a token admin-api refuses as far as admin-api.</para>
+    ///
+    /// <para>A desktop agent's token (ADR 0032) is kept the same way: opaque, <c>dcms_agt_…</c>,
+    /// and checked by admin-api alone; identity and content-api have no scheme for it.</para>
     /// </summary>
     public static bool KeepsBearer(string? sessionId, string? authorization)
     {
@@ -108,6 +111,7 @@ public static class BffGuard
         {
             return false;
         }
+        if (authorization.StartsWith("Bearer " + AgentTokenPrefix, StringComparison.Ordinal)) return true;
         var parts = authorization["Bearer ".Length..].Trim().Split('.');
         if (parts.Length != 3) return false;
         try
@@ -127,6 +131,9 @@ public static class BffGuard
 
     /// <summary>Identity's public client for the <c>dcms</c> command line.</summary>
     public const string CliClientId = "dcms-cli";
+
+    /// <summary>What a desktop agent's token starts with (<c>Dcms.Shared.Security.Agents.AgentClaims.TokenPrefix</c>).</summary>
+    public const string AgentTokenPrefix = "dcms_agt_";
 
     /// <summary>
     /// Whether this request may carry the session's authority, judged on where it came from.

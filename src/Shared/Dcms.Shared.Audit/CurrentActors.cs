@@ -48,7 +48,16 @@ public sealed class HttpCurrentActor(IHttpContextAccessor accessor) : ICurrentAc
     public Guid? Id =>
         Guid.TryParse(Principal?.FindFirstValue("sub"), out var id) ? id : null;
 
-    public string? Key => Id is null ? Principal?.FindFirstValue("sub") : null;
+    /// <summary>
+    /// A machine caller's client_id. For a person it says what they acted through, when that is not
+    /// the console (ADR 0032): <c>agent:&lt;name&gt;</c> for a desktop agent's token, <c>dcms-cli</c>
+    /// for the command line. The audit record keeps it beside the person.
+    /// </summary>
+    public string? Key => Id is null
+        ? Principal?.FindFirstValue("sub")
+        : Principal?.FindFirstValue("dcms_agent") is { } agent ? $"agent:{agent}"
+        : Principal?.FindFirstValue("client_id") is "dcms-cli" ? "dcms-cli"
+        : null;
 
     public string? Display =>
         Principal?.FindFirstValue("email") ?? Principal?.FindFirstValue("name");

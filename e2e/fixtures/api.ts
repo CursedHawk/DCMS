@@ -336,6 +336,8 @@ export function adminApi(
     .on('GET', '/account/api/me', { email: 'ada@example.test', displayName: 'Ada Lovelace', forgejoUsername: null, hasGitPassword: false })
     .on('GET', '/account/api/ssh-keys', [])
     .on('GET', '/account/api/devices', [])
+    // Desktop agents' tokens (ADR 0032) are admin-api's, listed on the same card.
+    .on('GET', '/api/admin/me/agent-tokens', [])
     .on('GET', '/api/admin/me/account', { workspaces: [], canDelete: true })
     .on('GET', '/api/admin/ai/conversations', [])
     .on('GET', '/api/admin/sites/:id', {

@@ -39,6 +39,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
     public DbSet<EnvironmentPolicy> EnvironmentPolicies => Set<EnvironmentPolicy>();
     public DbSet<EnvironmentLink> EnvironmentLinks => Set<EnvironmentLink>();
     public DbSet<TenantEnvironment> Environments => Set<TenantEnvironment>();
+    public DbSet<AgentToken> AgentTokens => Set<AgentToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -69,6 +70,19 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasIndex(d => new { d.TenantId, d.IsPrimary });
             e.HasQueryFilter(QueryFilters.Tenant, d => d.TenantId == CurrentTenantId)
                 .HasQueryFilter(QueryFilters.Environment, d => CurrentEnvironmentId == null || d.EnvironmentId == CurrentEnvironmentId);
+        });
+
+        builder.Entity<AgentToken>(e =>
+        {
+            e.ToTable("agent_tokens");
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Name).HasMaxLength(100).IsRequired();
+            e.Property(t => t.TokenHash).HasMaxLength(64).IsRequired();
+            e.Property(t => t.Hint).HasMaxLength(16).IsRequired();
+            // Looked up by hash on every agent request, before any tenant is known.
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.HasIndex(t => new { t.TenantId, t.UserId });
+            e.HasQueryFilter(QueryFilters.Tenant, t => t.TenantId == CurrentTenantId);
         });
 
         builder.Entity<TenantMembership>(e =>

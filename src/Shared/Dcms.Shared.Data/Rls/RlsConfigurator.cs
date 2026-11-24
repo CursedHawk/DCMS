@@ -49,6 +49,8 @@ public static class RlsConfigurator
         ("tenancy", "environment_links"),
         // The tenant's environments themselves (ADR 0028): a tenant table, not an environment one.
         ("tenancy", "environments"),
+        // Desktop agents' tokens (ADR 0032): workspace-wide like memberships.
+        ("tenancy", "agent_tokens"),
         ("plugins", "plugin_instances"),
         // Every plugin's private documents and Transit-encrypted credentials, all tenants in
         // two tables: the policy is the only thing between one tenant's plugin state and another's.

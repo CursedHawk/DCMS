@@ -35,6 +35,7 @@ public static class TenantUsageMap
             [("tenancy", "tenant_role_permissions")] = Workspace,
             [("tenancy", "member_roles")] = Workspace,
             [("tenancy", "invitations")] = Workspace,
+            [("tenancy", "agent_tokens")] = Workspace,
             [("tenancy", "tenant_usage")] = new("workspace", "settings"),
             [("tenancy", "table_views")] = new("workspace", "settings"),
             [("tenancy", "table_view_shares")] = new("workspace", "settings"),

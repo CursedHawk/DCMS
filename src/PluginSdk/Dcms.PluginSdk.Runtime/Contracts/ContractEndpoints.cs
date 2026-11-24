@@ -6,6 +6,7 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
+using Dcms.Shared.Security.Agents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -69,9 +70,15 @@ public static class ContractEndpoints
             {
                 return Results.BadRequest(new { error = "A tenant and plane=admin|ai are required." });
             }
-            return Results.Ok(await dispatcher.CatalogAsync(tenantId, p, Permissions(user, authz), ct));
+            if (AgentRefusal(user, p) is { } refused) return refused;
+            var catalog = await dispatcher.CatalogAsync(tenantId, p, Permissions(user, authz), ct);
+            // A read-only agent is shown only what it may call.
+            return Results.Ok(user.IsReadOnlyAgent()
+                ? catalog.Select(c => c with { Operations = [.. c.Operations.Where(o => o.Risk == OpRisk.Read)] }).Where(c => c.Operations.Count > 0).ToList()
+                : catalog);
         }).RequireAuthorization()
-          .PermissionExempt("Lists only operations the caller's own permissions allow.");
+          .PermissionExempt("Lists only operations the caller's own permissions allow.")
+          .Cli("contracts.catalog", "Lists the plugin and platform operations you may call (plane=ai for agents).", CliRisk.Read);
 
         app.MapPost("/api/admin/contracts/{contractId}/{operation}", async (
             string contractId, string operation, string? instance, string? plane, HttpRequest request,
@@ -82,15 +89,30 @@ public static class ContractEndpoints
             {
                 return Results.BadRequest(new { error = "A tenant and plane=admin|ai are required." });
             }
+            if (AgentRefusal(user, p) is { } refused) return refused;
+            if (user.IsReadOnlyAgent() && dispatcher.RiskOf(contractId, operation) is not OpRisk.Read)
+            {
+                return Results.Json(new { error = "This agent token may only read.", code = "agent_scope" }, statusCode: StatusCodes.Status403Forbidden);
+            }
             return await dispatcher.InvokeAsync(
                 tenantId, contractId, operation, instance, await ReadInputAsync(request, ct),
                 p, factory.CurrentActor(), Permissions(user, authz), ct);
         }).RequireAuthorization()
           .PermissionExempt("Dispatcher: checks each operation's own Permission for the caller before invoking it.")
+          .Cli("contracts.invoke", "Calls one plugin or platform operation (plane=ai for agents).", CliRisk.PerOperation)
           .AuditExempt("Per operation, not per route: the contract proxy records every Safe or Dangerous call as plugin.contract.invoked; reads are not audited.");
 
         return app;
     }
+
+    /// <summary>
+    /// A desktop agent (ADR 0032) uses the AI plane only, as the console's own assistant does: what
+    /// each operation exposes to AI, on the instances whose AI tools are on.
+    /// </summary>
+    private static IResult? AgentRefusal(ClaimsPrincipal user, ContractPlane plane) =>
+        user.IsAgent() && plane != ContractPlane.Ai
+            ? Results.Json(new { error = "Agents call operations on plane=ai.", code = "agent_scope" }, statusCode: StatusCodes.Status403Forbidden)
+            : null;
 
     private static ContractPlane? ParsePlane(string? plane) => plane?.ToLowerInvariant() switch
     {

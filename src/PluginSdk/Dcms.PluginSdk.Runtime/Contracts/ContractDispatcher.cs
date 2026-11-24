@@ -278,6 +278,10 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
     /// <summary>Planes an anonymous member of the public reaches: no permissions, no platform contracts.</summary>
     private static bool IsPublic(ContractPlane plane) => plane is ContractPlane.Site or ContractPlane.SiteAi;
 
+    /// <summary>An operation's declared risk, or null when there is no such operation.</summary>
+    public OpRisk? RiskOf(string contractId, string operation) =>
+        registry.FindContract(contractId)?.Descriptor.FindOperation(operation)?.Risk;
+
     /// <summary>Planes that only see instances the tenant opted in to AI.</summary>
     private static bool IsAi(ContractPlane plane) => plane is ContractPlane.Ai or ContractPlane.SiteAi;
 

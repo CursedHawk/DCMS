@@ -131,6 +131,7 @@ internal sealed class Commands(Config config, Api api, HttpClient http, TextWrit
         });
 
         root.Subcommands.Add(Secrets());
+        root.Subcommands.Add(Agents());
 
         Add(root, new Command("deploy", "Merge main into release, wait for the build, deploy it."), async (_, ct) =>
         {
@@ -182,6 +183,61 @@ internal sealed class Commands(Config config, Api api, HttpClient http, TextWrit
             async (r, ct) => await UpdateAsync(r.GetValue(updateServer), ct));
 
         return root;
+    }
+
+    /// <summary>
+    /// Desktop agents' tokens (ADR 0032): each is a person's authority narrowed to one workspace,
+    /// some environments and optionally reads, for an agent such as Claude Code to use.
+    /// </summary>
+    private Command Agents()
+    {
+        var agents = new Command("agents", "Your desktop agents' tokens: list them, mint one, revoke one.");
+        Add(agents, new Command("list", "Your agents' tokens, in every workspace."), async (_, ct) => await ListAgents(ct));
+        agents.SetAction(async (_, ct) => await Guard(() => ListAgents(ct)));
+
+        var name = new Argument<string>("name") { Description = "What to call it, e.g. \"Claude Code on laptop\"." };
+        var workspace = new Option<string>("--workspace") { Description = "The workspace it works in (its slug).", Required = true };
+        var environments = new Option<string[]>("--env") { Description = "An environment it may reach; repeat for more. None: every one you reach.", AllowMultipleArgumentsPerToken = true };
+        var readOnly = new Option<bool>("--read-only") { Description = "It may only read." };
+        var days = new Option<int>("--days") { Description = "How long it lasts (1-365).", DefaultValueFactory = _ => 90 };
+        Add(agents, new Command("create", "Mint a token for an agent. It is shown once.") { name, workspace, environments, readOnly, days }, async (r, ct) =>
+        {
+            var envs = new JsonArray();
+            foreach (var e in r.GetValue(environments) ?? []) envs.Add((JsonNode?)JsonValue.Create(e));
+            var minted = await api.CallInAsync("/api/admin/me/agent-tokens", r.GetValue(workspace)!, null, new JsonObject
+            {
+                ["name"] = r.GetValue(name),
+                ["environments"] = envs,
+                ["readOnly"] = r.GetValue(readOnly),
+                ["expiresInDays"] = r.GetValue(days),
+            }, null, ct);
+            stderr.WriteLine($"Minted {Api.Str(minted?["name"])} for {Api.Str(minted?["workspace"])}, until {minted?["expiresAt"]}. Shown once:");
+            stdout.WriteLine(Api.Str(minted?["token"]));
+            return 0;
+        });
+
+        var id = new Argument<string>("id") { Description = "The token's id (dcms agents lists them)." };
+        Add(agents, new Command("revoke", "Revoke an agent's token: it stops working at once.") { id }, async (r, ct) =>
+        {
+            await api.CallAsync($"/api/admin/me/agent-tokens/{Uri.EscapeDataString(r.GetValue(id)!)}", null, null, HttpMethod.Delete, ct);
+            stdout.WriteLine("Revoked.");
+            return 0;
+        });
+        return agents;
+    }
+
+    private async Task<int> ListAgents(CancellationToken ct)
+    {
+        var tokens = (await api.CallAsync("/api/admin/me/agent-tokens", null, null, null, ct))?.AsArray() ?? [];
+        if (tokens.Count == 0) stdout.WriteLine("No agent tokens. Mint one with: dcms agents create <name> --workspace <slug>");
+        foreach (var t in tokens)
+        {
+            var envs = t?["environments"]?.AsArray().Select(e => (string?)e).ToList() ?? [];
+            stdout.WriteLine($"{t?["id"]}  {Api.Str(t?["name"]),-28} {Api.Str(t?["workspace"]),-16} "
+                + $"{(envs.Count == 0 ? "all environments" : string.Join(",", envs))}{(t?["readOnly"]?.GetValue<bool>() == true ? "  read-only" : "")}"
+                + $"  until {t?["expiresAt"]}  last used {t?["lastUsedAt"]?.ToString() ?? "never"}");
+        }
+        return 0;
     }
 
     private Command Secrets()

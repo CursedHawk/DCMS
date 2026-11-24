@@ -145,6 +145,8 @@ public static class MyAccountEndpoints
                 .Where(d => d.UserId == userId).ExecuteDeleteAsync(ct);
             var aiSettings = await ai.UserSettings
                 .Where(s => s.UserId == userId).ExecuteDeleteAsync(ct);
+            // Their desktop agents' tokens go with them (ADR 0032).
+            await db.AgentTokens.IgnoreTenantFilter().Where(t => t.UserId == userId).ExecuteDeleteAsync(ct);
 
             // The platform-scope counterpart: the tenants each saw their own member go, but
             // nothing above says the account itself was taken apart.

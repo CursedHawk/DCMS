@@ -1,3 +1,5 @@
+using Dcms.Shared.Security.Agents;
+using Dcms.AdminApi.Agents;
 using Dcms.AdminApi.Environments;
 using Dcms.Shared.Caching.Idempotency;
 using System.Security.Claims;
@@ -69,6 +71,8 @@ builder.AddDcmsServiceDefaults(serviceName);
 // their background work), and the domain services both reach for (ADR 0036).
 builder.AddDcmsAdminPlane(serviceName, runsBackgroundWork: false);
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
+// Desktop agents' tokens beside identity's JWTs (ADR 0032): a dcms_agt_ bearer goes to its own scheme.
+builder.Services.AddAgentTokenAuthentication();
 
 // The hubs' token used to arrive in the query string, because a WebSocket handshake cannot set
 // an Authorization header. ADR 0014 phase 5 removed that: the edge sets one on the operator's
@@ -208,6 +212,9 @@ app.UseDcmsIdempotency("admin-api", app.Configuration.GetValue("Idempotency:Requ
 app.UseMultiTenant();
 // ADR 0028: the environment the request names, after the tenant it belongs to.
 app.UseDcmsEnvironment();
+// An agent token reaches only what it was minted for, and only routes offered to agents (ADR 0032):
+// decided first, from the token and the route alone, so an agent hears why rather than a generic 403.
+app.UseMiddleware<Dcms.AdminApi.Agents.AgentScopeMiddleware>();
 // Between resolution and authorization: the tenant is now known, so membership can be
 // checked, and the endpoints that survive still see a tenant context. Without this, an
 // endpoint guarded by a bare RequireAuthorization() trusts X-Dcms-Tenant outright.
@@ -234,6 +241,7 @@ app.MapEnvironmentEndpoints();
 app.MapEnvironmentMigrationEndpoints();
 app.MapTenantUsageEndpoints();
 app.MapMyAccountEndpoints();
+app.MapAgentTokenEndpoints();
 app.MapInvitationEndpoints();
 app.MapDomainEndpoints();
 app.MapDomainCertificateEndpoints();
@@ -300,7 +308,17 @@ app.MapGet("/api/admin/me", (ClaimsPrincipal user) => Results.Ok(new
     name = user.FindFirstValue("name"),
     email = user.FindFirstValue("email"),
     roles = user.FindAll("role").Select(c => c.Value),
-})).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+    // A desktop agent (ADR 0032) learns here what its token reaches.
+    agent = user.IsAgent()
+        ? new
+        {
+            name = user.FindFirstValue(AgentClaims.Name),
+            environments = user.FindAll(AgentClaims.Environment).Select(c => c.Value),
+            readOnly = user.IsReadOnlyAgent(),
+        }
+        : null,
+})).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+  .Cli("me", "Who you are, and what an agent's token reaches.", CliRisk.Read);
 
 // Proves the service-to-service client-credentials flow end to end:
 // admin-api obtains a dcms.ai token and calls ai-gateway's protected ping.

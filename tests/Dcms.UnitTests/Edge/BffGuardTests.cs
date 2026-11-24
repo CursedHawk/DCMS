@@ -202,6 +202,15 @@ public class BffGuardTests
         BffGuard.KeepsBearer(sessionId, $"Bearer e30.{payload}.sig").Should().Be(kept);
     }
 
+    [Fact]
+    public void Keeps_a_desktop_agents_token_only_without_a_session()
+    {
+        BffGuard.KeepsBearer(null, "Bearer dcms_agt_abc").Should().BeTrue();
+        BffGuard.KeepsBearer("sid-1", "Bearer dcms_agt_abc").Should().BeFalse();
+        BffGuard.KeepsBearer(null, "Bearer dcms_agtX").Should().BeFalse();
+        BffGuard.AgentTokenPrefix.Should().Be(Dcms.Shared.Security.Agents.AgentClaims.TokenPrefix);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("Basic dXNlcjpwYXNz")]

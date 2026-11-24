@@ -111,19 +111,26 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
 
     public async Task<JsonNode?> CallAsync(string path, Link? link, JsonNode? body, HttpMethod? method, CancellationToken ct)
     {
-        using var res = await SendAsync(path, link, body, method, ct);
+        using var res = await SendAsync(path, link?.Tenant, link?.Environment, body, method, ct);
         return res.StatusCode == HttpStatusCode.NoContent ? null : await JsonAsync(res, ct);
     }
 
     public async Task<byte[]> BytesAsync(string path, Link? link, CancellationToken ct)
     {
-        using var res = await SendAsync(path, link, null, HttpMethod.Get, ct);
+        using var res = await SendAsync(path, link?.Tenant, link?.Environment, null, HttpMethod.Get, ct);
         if (!res.IsSuccessStatusCode) await JsonAsync(res, ct);
         return await res.Content.ReadAsByteArrayAsync(ct);
     }
 
     /// <summary>An admin API call as the signed-in person: their bearer, the link's tenant and environment.</summary>
-    private async Task<HttpResponseMessage> SendAsync(string path, Link? link, JsonNode? body, HttpMethod? method, CancellationToken ct)
+    /// <summary>A call in a workspace named outright, not through a clone's link: <c>--workspace</c>.</summary>
+    public async Task<JsonNode?> CallInAsync(string path, string tenant, string? environment, JsonNode? body, HttpMethod? method, CancellationToken ct)
+    {
+        using var res = await SendAsync(path, tenant, environment, body, method, ct);
+        return res.StatusCode == HttpStatusCode.NoContent ? null : await JsonAsync(res, ct);
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(string path, string? tenant, string? environment, JsonNode? body, HttpMethod? method, CancellationToken ct)
     {
         var creds = await FreshAsync(ct);
         var verb = method ?? (body is null ? HttpMethod.Get : HttpMethod.Post);
@@ -131,11 +138,8 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", creds.AccessToken);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         req.Headers.Add("X-Dcms-Request-Id", Guid.NewGuid().ToString("N"));
-        if (link is not null)
-        {
-            req.Headers.Add("X-Dcms-Tenant", link.Tenant);
-            req.Headers.Add("X-Dcms-Environment", link.Environment);
-        }
+        if (tenant is not null) req.Headers.Add("X-Dcms-Tenant", tenant);
+        if (environment is not null) req.Headers.Add("X-Dcms-Environment", environment);
         // Every write carries one, as the console's do (ADR 0024): a retried request is then one action.
         if (verb != HttpMethod.Get && verb != HttpMethod.Head) req.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         if (body is not null) req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");

@@ -1,6 +1,6 @@
 # ADR 0032: The dcms command line and desktop agents
 
-**Status:** accepted (2026-11-06) · kanban epic #616 · C1 shipped, C2–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
+**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1 and C2 shipped, C3–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
 
 ## Context
 
@@ -62,9 +62,30 @@ What the platform had to start from:
    - **C6: coverage waves.** One area at a time (plugins, Dynamic Apps, environments, content, people, operations) until the coverage test's exceptions list is empty.
    - **C7: hardening.** Per-grant rate limits, telemetry, docs, and a scripted MCP-client end-to-end test.
 
+## Amendment (2026-11-24): agent tokens, the assistant's limits, an allow-list
+
+By then, #624 had given the console's assistant about 119 AI-exposed contract operations, plus 58 hand-written browser tools for the rest of the console. Those tools deliberately leave out members, roles, invitations, ownership and AI settings. The user decided three things:
+- **An agent's credential is an admin-api agent token, not an identity device-flow grant.**
+  - Identity's device flow cannot carry scope parameters without custom OpenIddict handlers, and identity does not know workspaces or environments; admin-api does.
+  - A person mints a token with their own sign-in: `dcms agents create`, later `dcms link-agent`. The token is `dcms_agt_…` and is stored only as SHA-256 in `tenancy.agent_tokens`.
+  - It covers one workspace, some environments (the ones the person holds a role in), and optionally only reads. It expires after 90 days by default.
+- **Desktop agents get the console assistant's limits.** Never members, roles, invitations, ownership or AI settings, and never flipping a plugin's AI switch.
+- **They respect each plugin instance's AI tools switch.** Contract calls go to `plane=ai` only.
+
+How C2 enforces it (`src/Services/Dcms.AdminApi/Agents/AgentTokens.cs`):
+- **Authentication.** A policy scheme sends a `dcms_agt_` bearer to the `AgentToken` handler and anything else to JWT.
+  - The handler finds the token by hash, under platform scope, and caches the result for 30 s per process. A revoke clears the cache.
+  - The principal it builds is the person (`sub`) with the agent's claims and **no role claims**, so an agent is never a SuperAdmin.
+  - Permissions are still the person's own, read live.
+- **Scope.** `AgentScopeMiddleware` runs before the membership check and applies `AgentScope.Refusal` (`Dcms.Shared.Security`). An agent reaches only routes marked `.Cli(...)` and not `HumanOnly`. Every other route, including any nobody has decided about yet, is an **allow-list** refusal: `403 { code: "agent_scope" }`. Within that, the token must match the workspace and environments, and a read-only token must use a route whose risk is `Read`.
+- **Contracts.** The contracts proxy routes are `.Cli(..., PerOperation)`. They refuse any plane but `ai` for agents, and refuse non-Read operations for read-only tokens.
+- **Tokens never manage tokens.** An agent cannot mint or revoke one.
+- **Edge and audit.** The edge keeps a `dcms_agt_` bearer when there is no browser session (`BffGuard.KeepsBearer`). Audit records the person and what they acted through (`HttpCurrentActor.Key`: `agent:<name>`, or `dcms-cli`).
+- **Console.** Account → Devices lists the agent tokens beside the CLI sign-ins and revokes them.
+
 ## Consequences
 
 - **Installing needs nothing but a shell**, and the CLI cannot drift from its console. The binaries are unsigned (beyond macOS's ad-hoc signature). A browser download may meet SmartScreen or Gatekeeper; the installers avoid both. Notarization and code signing come when someone asks.
 - **The admin image builds five .NET publishes**, which adds about 70 MB to it and a few minutes to its build.
-- **Until C2, a CLI token is as strong as a console session.** Agents should not be linked to a workspace before C2 ships.
+- **A person's own `dcms login` stays as strong as their console session.** Agents use agent tokens, which reach only routes offered to agents; routes are opened to them wave by wave (C3, C6).
 - **`packages/cli` is gone**, and with it the npm install line.

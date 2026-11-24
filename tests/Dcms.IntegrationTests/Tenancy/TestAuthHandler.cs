@@ -25,6 +25,12 @@ public sealed class TestAuthHandler(
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        // A desktop agent's token (ADR 0032) goes to admin-api's real scheme: what it allows is
+        // the thing under test, so no header stands in for it.
+        if (Request.Headers.Authorization.ToString().StartsWith("Bearer dcms_agt_", StringComparison.Ordinal))
+        {
+            return Context.AuthenticateAsync("AgentToken");
+        }
         if (!Request.Headers.TryGetValue("X-Test-Sub", out var sub) || string.IsNullOrEmpty(sub))
         {
             return Task.FromResult(AuthenticateResult.NoResult());

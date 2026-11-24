@@ -252,6 +252,12 @@ public static class AuditActions
     /// <summary>A dcms command line's sign-in code approved or denied at /connect/verify.</summary>
     public const string CliDeviceDecided = "auth.cli-device.decided";
 
+    /// <summary>A person minted a desktop agent's token (ADR 0032).</summary>
+    public const string AgentTokenCreated = "auth.agent-token.created";
+
+    /// <summary>A desktop agent's token revoked by the person who minted it.</summary>
+    public const string AgentTokenRevoked = "auth.agent-token.revoked";
+
     /// <summary>The sign-in page's account list: switched to an account this browser already
     /// holds a live login for, with no password.</summary>
     public const string AccountSwitched = "auth.account.switched";
