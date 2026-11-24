@@ -69,7 +69,7 @@ public sealed class AgentTokenTests(AdminApiFixture fixture)
 
         // A token never mints or revokes tokens.
         await Refused(client.SendAsync(AsAgent(HttpMethod.Post, "/api/admin/me/agent-tokens", slug, token,
-            new { name = "another", readOnly = false }), ct), "not offered");
+            new { name = "another", readOnly = false }), ct), "Only a person");
 
         // The person's list shows it; revoking it ends it.
         var list = await Json(await client.SendAsync(AsPerson(HttpMethod.Get, "/api/admin/me/agent-tokens", slug, owner), ct), ct);
