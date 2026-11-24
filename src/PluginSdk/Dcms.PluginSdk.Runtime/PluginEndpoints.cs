@@ -272,7 +272,7 @@ internal static class PluginPermissionConvention
                     OpRisk.Read => CliRisk.Read,
                     OpRisk.Safe => CliRisk.Safe,
                     _ => CliRisk.Dangerous,
-                }, cli.HumanOnly));
+                }, cli.HumanOnly, ExternalText: cli.ExternalText));
             }
         });
 }

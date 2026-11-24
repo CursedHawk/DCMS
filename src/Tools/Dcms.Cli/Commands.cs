@@ -137,6 +137,7 @@ internal sealed partial class Commands(Config config, Api api, HttpClient http, 
         root.Subcommands.Add(LinkAgent());
         root.Subcommands.Add(UnlinkAgent());
         root.Subcommands.Add(Mcp());
+        AddSyncCommands(root);
 
         Add(root, new Command("deploy", "Merge main into release, wait for the build, deploy it."), async (_, ct) =>
         {

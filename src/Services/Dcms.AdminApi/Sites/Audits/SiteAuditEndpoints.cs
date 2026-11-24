@@ -112,14 +112,14 @@ public static class SiteAuditEndpoints
                 .OrderByDescending(a => a.CreatedAt).Take(20).ToListAsync(ct);
             return Results.Ok(new { configured = psi.Configured, audits = audits.Select(a => View(a, full: false)) });
         }).RequirePermission(PlatformPermissions.SiteEdit)
-          .Cli("sites.audits", "A site's PageSpeed audits, newest first.", CliRisk.Read);
+          .Cli("sites.audits", "A site's PageSpeed audits, newest first.", CliRisk.Read, externalText: true);
 
         app.MapGet("/api/admin/sites/{id:guid}/audits/{auditId:guid}", async (Guid id, Guid auditId, SitesDbContext db, CancellationToken ct) =>
         {
             var audit = await db.Audits.AsNoTracking().FirstOrDefaultAsync(a => a.Id == auditId && a.SiteId == id, ct);
             return audit is null ? Results.NotFound() : Results.Ok(View(audit, full: true));
         }).RequirePermission(PlatformPermissions.SiteEdit)
-          .Cli("sites.audit", "One PageSpeed audit in full.", CliRisk.Read);
+          .Cli("sites.audit", "One PageSpeed audit in full.", CliRisk.Read, externalText: true);
 
         return app;
     }

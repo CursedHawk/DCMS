@@ -34,7 +34,8 @@ public static class CliCatalogEndpoints
 
     public sealed record CliOperation(
         string Name, string Summary, string Risk, bool HumanOnly, string Method, string Path,
-        IReadOnlyList<CliParameter> PathParameters, IReadOnlyList<CliParameter> Query, JsonNode? Body, IReadOnlyList<string>? Files);
+        IReadOnlyList<CliParameter> PathParameters, IReadOnlyList<CliParameter> Query, JsonNode? Body, IReadOnlyList<string>? Files,
+        bool ReturnsExternalText);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -121,7 +122,8 @@ public static class CliCatalogEndpoints
             .ToList();
         var bodyType = endpoint.Metadata.GetMetadata<IAcceptsMetadata>()?.RequestType;
         return new CliOperation(cli.Name, cli.Summary, cli.Risk.ToString(), cli.HumanOnly, method,
-            "/" + endpoint.RoutePattern.RawText!.TrimStart('/'), path, query, bodyType is null || cli.Files is not null ? null : Schema(bodyType), cli.Files);
+            "/" + endpoint.RoutePattern.RawText!.TrimStart('/'), path, query, bodyType is null || cli.Files is not null ? null : Schema(bodyType), cli.Files,
+            cli.ExternalText);
     }
 
     private static bool IsQuery(ParameterInfo p, HashSet<string> pathNames)

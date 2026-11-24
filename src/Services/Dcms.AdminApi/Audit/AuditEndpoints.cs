@@ -116,7 +116,7 @@ public static class AuditEndpoints
                 nextCursor = last is null ? null : new { occurredAt = last.OccurredAt, seq = last.Seq },
             });
         }).RequirePermission(PlatformPermissions.AuditRead)
-          .Cli("audit.search", "The audit log, newest first, by action, category, actor or time.", CliRisk.Read);
+          .Cli("audit.search", "The audit log, newest first, by action, category, actor or time.", CliRisk.Read, externalText: true);
 
         // rls: the request's tenant -- a tenant's chain holds only its own rows.
         app.MapGet("/api/admin/audit/verify", async (
@@ -171,7 +171,7 @@ public static class AuditEndpoints
 
             return row is null ? Results.NotFound() : Results.Ok(Project(row, tenantId));
         }).RequirePermission(PlatformPermissions.AuditRead)
-          .Cli("audit.get", "One audit record in full.", CliRisk.Read);
+          .Cli("audit.get", "One audit record in full.", CliRisk.Read, externalText: true);
 
         // Export, as newline-delimited JSON.
         //
@@ -231,7 +231,7 @@ public static class AuditEndpoints
             return Results.Empty;
         }).RequirePermission(PlatformPermissions.AuditExport)
           .WithAudit(AuditActions.AuditExported, category: AuditCategory.Access)
-          .Cli("audit.export", "The audit log as a file, for a time range.", CliRisk.Read);
+          .Cli("audit.export", "The audit log as a file, for a time range.", CliRisk.Read, externalText: true);
 
         return app;
     }

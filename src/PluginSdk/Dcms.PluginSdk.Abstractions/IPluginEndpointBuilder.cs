@@ -63,7 +63,7 @@ public sealed record PluginAuditExemptMetadata(string Reason);
 /// A plugin route offered to the dcms command line and desktop agents (ADR 0032): named
 /// <c>{pluginId}.{Name}</c> in the platform's operation catalog.
 /// </summary>
-public sealed record PluginCliMetadata(string Name, string Summary, Contracts.OpRisk Risk, bool HumanOnly = false);
+public sealed record PluginCliMetadata(string Name, string Summary, Contracts.OpRisk Risk, bool HumanOnly = false, bool ExternalText = false);
 
 /// <summary>
 /// How a plugin states what gates and records its routes — with the SDK alone, so a plugin built
@@ -100,10 +100,12 @@ public static class PluginEndpointConventions
     /// Offers this route to the dcms command line and, unless <paramref name="humanOnly"/>, to desktop
     /// agents (ADR 0032): <c>.Cli("check", "Builds the draft…", OpRisk.Read)</c> is <c>{pluginId}.check</c>.
     /// </summary>
-    public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, Contracts.OpRisk risk, bool humanOnly = false)
+    /// <param name="externalText">Its answer carries text someone outside wrote: agents treat it as data, never instructions.</param>
+    public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, Contracts.OpRisk risk, bool humanOnly = false,
+        bool externalText = false)
         where TBuilder : IEndpointConventionBuilder
     {
-        builder.WithMetadata(new PluginCliMetadata(name, summary, risk, humanOnly));
+        builder.WithMetadata(new PluginCliMetadata(name, summary, risk, humanOnly, externalText));
         return builder;
     }
 

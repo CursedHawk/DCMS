@@ -108,6 +108,17 @@ public sealed class CliCoverageTests : IDisposable
     }
 
     [Fact]
+    public void The_command_line_hashes_and_encodes_files_as_the_server_does()
+    {
+        foreach (var text in new[] { "", "hello", "ünïcödé ✓", "line\r\nbreaks\n", new string('x', 10_000) })
+        {
+            CliApp::Dcms.Cli.Sync.Hash(text).Should().Be(Dcms.Shared.Data.Sites.SiteFileMap.Hash(text), text);
+        }
+        CliApp::Dcms.Cli.Sync.BinaryExtensions.Should().BeEquivalentTo(Dcms.Shared.Data.Sites.SiteFileMap.BinaryExtensions,
+            "a file the server keeps as base64 must be bytes on disk, and the other way round");
+    }
+
+    [Fact]
     public void Not_for_cli_says_why()
     {
         Endpoints().Select(e => e.Metadata.GetMetadata<NotForCliMetadata>()).OfType<NotForCliMetadata>()

@@ -1,6 +1,6 @@
 # ADR 0032: The dcms command line and desktop agents
 
-**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1–C4 shipped, C5–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
+**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1–C5 shipped, C6–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
 
 ## Context
 
@@ -127,6 +127,19 @@ How C2 enforces it (`src/Services/Dcms.AdminApi/Agents/AgentTokens.cs`):
     - anything else: printed JSON.
   - It writes the skill where the client reads it: `.claude/skills/dcms/SKILL.md`, or `.cursor/rules/dcms.mdc`.
   - `dcms unlink-agent <id>` revokes the token and removes the configuration. `dcms agents` shows which tokens are linked on this machine.
+
+## Sites and apps on disk (C5, 2026-11-24)
+
+- **The commands.**
+  - `dcms pull <site|app> --dir <folder>` writes your draft of a branch (`--branch`, default `main`) into a folder. It keeps `.dcms/sync.json`: the workspace, the branch, and the server's hash of every file (FNV-1a, as `SiteFileMap.Hash`).
+  - Binary files (`SiteFileMap.BinaryExtensions`) are base64 text on the server and in git, and real bytes on disk. A test pins both the hash and the extension list to the server's.
+  - `status` and `diff` compare the folder with the base. `push` writes the changes into your draft (`PATCH …/ide/files` with each file's base hash, in batches).
+  - A second `pull` in the same folder takes the server's changes in: a file changed only there is taken, one changed only here is kept, and one changed on both sides gets conflict markers.
+  - `commit -m` pushes, then commits. When the branch moved, the conflicted files get markers. `--resolved` sends exactly those as `resolutions`; `--ours` and `--theirs` settle all of them one way.
+  - `publish` publishes a site's branch, or merges an app's into `release`. `builds [--watch]` follows a site's builds. `sites create <name> --mode … --template … --dir …` creates a site, starts it from a template, commits, and pulls it.
+- **For agents.** `dcms mcp` offers all of them as tools (`dcms_pull`, `dcms_status`, `dcms_diff`, `dcms_push`, `dcms_commit`, `dcms_publish`, `dcms_builds`, `dcms_create_site`), on folders of the project, for the agent to edit with its own file tools.
+- **What an agent may touch on this machine.** Any path an agent names, a sync folder or a file to upload, must be inside the folder `dcms mcp` was started in (the project), reached through no symbolic link, and in no hidden folder. That keeps out this machine's dcms sign-in and agent tokens, `~/.ssh` and `.env`. (Security review of C4.)
+- **Untrusted text.** Routes whose answers carry text someone outside wrote say `.Cli(..., externalText: true)`: build logs, PageSpeed audits, an API connection's answer, the audit log and function runs. Like visitor-text contract operations, their results come back inside a fence made for that one answer, which the text cannot close.
 
 ## Consequences
 

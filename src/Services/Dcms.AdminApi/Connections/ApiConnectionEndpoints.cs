@@ -102,7 +102,7 @@ public static class ApiConnectionEndpoints
             await fetcher.RefreshAsync(row, ct);
             return Results.Ok(View(row));
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionRefreshed, "api_connection")
-          .Cli("connections.refresh", "Fetches a connection's operations now, to see their shapes and errors.", CliRisk.Safe);
+          .Cli("connections.refresh", "Fetches a connection's operations now, to see their shapes and errors.", CliRisk.Safe, externalText: true);
 
         // The key alone. It is each environment's own and never deploys (ADR 0028), so an
         // environment that leaves the connection itself to deployments still sets it here.

@@ -32,8 +32,12 @@ public enum CliRisk
 /// lock, deploy from), or what every environment shares (the media library). An agent token
 /// limited to some environments never reaches it; one allowed every environment does.
 /// </param>
+/// <param name="ExternalText">
+/// Its answer carries text someone outside wrote (visitors, an external API, a site's own code):
+/// agents are told to treat it as data, never as instructions.
+/// </param>
 public sealed record CliOperationMetadata(string Name, string Summary, CliRisk Risk, bool HumanOnly = false, string[]? Files = null,
-    bool CrossEnvironment = false);
+    bool CrossEnvironment = false, bool ExternalText = false);
 
 /// <summary>A route deliberately not offered to the command line, and why.</summary>
 public sealed record NotForCliMetadata(string Reason);
@@ -42,10 +46,10 @@ public static class CliEndpointExtensions
 {
     /// <summary>Offers this route to the dcms command line and, unless <paramref name="humanOnly"/>, to desktop agents.</summary>
     public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, CliRisk risk, bool humanOnly = false, string[]? files = null,
-        bool crossEnvironment = false)
+        bool crossEnvironment = false, bool externalText = false)
         where TBuilder : IEndpointConventionBuilder
     {
-        builder.WithMetadata(new CliOperationMetadata(name, summary, risk, humanOnly, files, crossEnvironment));
+        builder.WithMetadata(new CliOperationMetadata(name, summary, risk, humanOnly, files, crossEnvironment, externalText));
         return builder;
     }
 

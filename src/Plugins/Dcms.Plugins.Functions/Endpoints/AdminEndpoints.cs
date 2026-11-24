@@ -90,14 +90,14 @@ internal static class AdminEndpoints
         endpoints.MapGet("/_functions/runs", (string? function, string? status, int? page, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.RunsAsync(function, status, page ?? 1, ct))))
             .RequirePluginPermission("logs")
-            .Cli("runs", "Function runs, newest first, by function or status.", OpRisk.Read);
+            .Cli("runs", "Function runs, newest first, by function or status.", OpRisk.Read, externalText: true);
 
         endpoints.MapGet("/_functions/runs/{id:guid}", (Guid id, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => await deployments.RunAsync(id, ct) is { } run
                     ? Results.Ok(run)
                     : Results.NotFound(new { error = $"There is no run {id}." })))
             .RequirePluginPermission("logs")
-            .Cli("run-detail", "One run: input, result, logs and trace.", OpRisk.Read);
+            .Cli("run-detail", "One run: input, result, logs and trace.", OpRisk.Read, externalText: true);
 
         // API keys: the secret is in the answer to the create, once, and stored only as its hash.
         endpoints.MapGet("/_functions/keys", (ApiKeyService keys, CancellationToken ct) =>
@@ -206,7 +206,7 @@ internal static class AdminEndpoints
                 }))
             .RequirePluginPermission("deploy")
             .AuditAs("function.tested")
-            .Cli("test", "Builds files and runs one function of them now, for real, under your permissions; nothing is deployed.", OpRisk.Safe);
+            .Cli("test", "Builds files and runs one function of them now, for real, under your permissions; nothing is deployed.", OpRisk.Safe, externalText: true);
 
         // Runs a function now: the live deployment, or a built one tried before deploying it,
         // which needs what deploying it would. Either way it acts, so only deployers may.
@@ -218,7 +218,7 @@ internal static class AdminEndpoints
                 }))
             .RequirePluginPermission("deploy")
             .AuditAs("function.ran")
-            .Cli("run", "Runs one function of the live deployment now, for real.", OpRisk.Safe);
+            .Cli("run", "Runs one function of the live deployment now, for real.", OpRisk.Safe, externalText: true);
     }
 
     public sealed record SecretBody(string Value);

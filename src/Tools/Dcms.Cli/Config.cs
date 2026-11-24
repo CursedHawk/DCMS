@@ -22,6 +22,7 @@ internal sealed record AgentLink(string Id, string Name, string Server, string T
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]
 [JsonSerializable(typeof(Credentials))]
 [JsonSerializable(typeof(AgentLink))]
+[JsonSerializable(typeof(SyncState))]
 [JsonSerializable(typeof(Dictionary<string, Link>))]
 internal sealed partial class CliJson : JsonSerializerContext;
 

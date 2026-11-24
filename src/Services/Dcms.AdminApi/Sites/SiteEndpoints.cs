@@ -849,7 +849,7 @@ public static class SiteEndpoints
                 return Results.Text(build.Error ?? "The build log could not be retrieved.", "text/plain");
             }
         }).RequirePermission(PlatformPermissions.SiteEdit)
-          .Cli("sites.build-log", "One build's log, to find out why it failed.", CliRisk.Read);
+          .Cli("sites.build-log", "One build's log, to find out why it failed.", CliRisk.Read, externalText: true);
 
         // Force a fresh build+deploy of the current release head, even if its tree is
         // unchanged (recovers from a failed build or a wedged queue — the tree-diff no-op
