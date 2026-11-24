@@ -18,8 +18,12 @@ internal static class Sync
 {
     public const string StateFile = ".dcms/sync.json";
 
-    /// <summary>What a folder never sends: the state, git's and package managers' own folders.</summary>
-    private static readonly string[] Skipped = [".dcms", ".git", "node_modules"];
+    /// <summary>
+    /// Hidden files and folders (<c>.env</c>, <c>.npmrc</c>, <c>.git</c>, this tool's own <c>.dcms</c>)
+    /// never leave this machine: what a folder holds besides a site's files is often a secret. Ones the
+    /// server holds (a <c>.gitignore</c>) are still pulled, and stay the server's.
+    /// </summary>
+    public static bool IsHidden(string path) => path.Split('/').Any(p => p.StartsWith('.'));
 
     /// <summary>The server's hash of a file's text (<c>SiteFileMap.Hash</c>): FNV-1a 64 over its UTF-8, lowercase hex.</summary>
     public static string Hash(string content)
@@ -83,12 +87,11 @@ internal static class Sync
         {
             foreach (var entry in new DirectoryInfo(dir).EnumerateFileSystemInfos())
             {
-                if (entry.LinkTarget is not null) continue;
+                if (entry.LinkTarget is not null || entry.Name.StartsWith('.')) continue;
                 var path = prefix + entry.Name;
                 if (entry is DirectoryInfo sub)
                 {
-                    if (prefix.Length == 0 && Skipped.Contains(entry.Name, StringComparer.Ordinal)) continue;
-                    if (entry.Name is ".git" or "node_modules") continue;
+                    if (entry.Name is "node_modules") continue;
                     Walk(sub.FullName, path + "/");
                 }
                 else
@@ -105,7 +108,7 @@ internal static class Sync
     {
         var added = local.Keys.Where(p => !baseHashes.ContainsKey(p)).Order(StringComparer.Ordinal).ToList();
         var modified = local.Where(f => baseHashes.TryGetValue(f.Key, out var h) && h != Hash(f.Value)).Select(f => f.Key).Order(StringComparer.Ordinal).ToList();
-        var deleted = baseHashes.Keys.Where(p => !local.ContainsKey(p)).Order(StringComparer.Ordinal).ToList();
+        var deleted = baseHashes.Keys.Where(p => !local.ContainsKey(p) && !IsHidden(p)).Order(StringComparer.Ordinal).ToList();
         return (added, modified, deleted);
     }
 
@@ -132,8 +135,14 @@ internal static class Sync
         var conflicts = new List<string>();
         foreach (var path in local.Keys.Union(server.Keys).Union(baseHashes.Keys).Distinct(StringComparer.Ordinal))
         {
-            var mine = local.GetValueOrDefault(path);
             var theirs = server.GetValueOrDefault(path);
+            if (IsHidden(path))
+            {
+                // Never read from here, so always the server's.
+                write[path] = theirs;
+                continue;
+            }
+            var mine = local.GetValueOrDefault(path);
             var basis = baseHashes.GetValueOrDefault(path);
             var mineHash = mine is null ? null : Hash(mine);
             var theirsHash = theirs is null ? null : Hash(theirs);

@@ -245,7 +245,9 @@ internal sealed partial class Commands
                         _ => await CreateSiteAsync(Api.Str(args["name"]) ?? throw new CliException("Name the site."), Api.Str(args["mode"]) ?? "react-builder",
                             Api.Str(args["template"]), dir, agent.Workspace, environment, w, ct),
                     };
-                    return new CallToolResult { IsError = code == 1, Content = [new TextContentBlock { Text = w.ToString() }] };
+                    // A diff shows the server's copy of files; builds show their errors: text from outside.
+                    var output = call.Name is "dcms_diff" or "dcms_builds" ? Untrusted(w.ToString()) : w.ToString();
+                    return new CallToolResult { IsError = code == 1, Content = [new TextContentBlock { Text = output }] };
                 }
                 case "dcms_call":
                     return await InvokeAsync(agent, environment, Api.Str(args["name"]) ?? "", args["path"] as JsonObject, args["query"] as JsonObject,

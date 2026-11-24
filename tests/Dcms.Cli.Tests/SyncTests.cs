@@ -45,6 +45,28 @@ public sealed class SyncTests
     }
 
     [Fact]
+    public void Hidden_files_never_leave_this_machine_but_the_server_s_are_still_pulled()
+    {
+        var root = Directory.CreateTempSubdirectory("dcms-hidden-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(root, ".env"), "SECRET=1");
+            Directory.CreateDirectory(Path.Combine(root, ".git"));
+            File.WriteAllText(Path.Combine(root, ".git", "config"), "x");
+            Directory.CreateDirectory(Path.Combine(root, "src"));
+            File.WriteAllText(Path.Combine(root, "src", "a.ts"), "a");
+            Sync.LocalFiles(root).Keys.Should().Equal("src/a.ts");
+            var basis = Hashes(Files((".gitignore", "x"), ("src/a.ts", "a")));
+            Sync.Changes(Sync.LocalFiles(root), basis).Deleted.Should().BeEmpty("a hidden file the server holds is not deleted by being unread");
+            Sync.Merge(Sync.LocalFiles(root), basis, Files((".gitignore", "y"), ("src/a.ts", "a"))).Write[".gitignore"].Should().Be("y");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_binary_file_is_base64_on_the_server_and_bytes_on_disk()
     {
         byte[] png = [137, 80, 78, 71, 0, 1];

@@ -126,6 +126,7 @@ internal sealed partial class Commands
         foreach (var p in modified) w.WriteLine($"  modified  {p}");
         foreach (var p in deleted) w.WriteLine($"  deleted   {p}");
         if (added.Count + modified.Count + deleted.Count == 0) w.WriteLine("  nothing to push");
+        w.WriteLine("  (hidden files and folders, such as .env, never leave this machine)");
         if (state.Conflicts is { Length: > 0 } open) w.WriteLine($"  to resolve before `dcms commit --resolved`: {string.Join(", ", open)}");
         return 0;
     }
@@ -239,6 +240,10 @@ internal sealed partial class Commands
             var resolutions = new JsonObject();
             foreach (var p in state.Conflicts!)
             {
+                if (!Sync.IsSafePath(p) || !Clone.PlainUnder(root, p) && File.Exists(Path.Combine(root, p)))
+                {
+                    throw new CliException($"Refusing to read {p}: it is outside this folder, or reached through a symbolic link.");
+                }
                 var full = Path.Combine(root, p);
                 resolutions[p] = File.Exists(full) ? Sync.ToServer(p, File.ReadAllBytes(full)) : null;
             }
@@ -253,7 +258,8 @@ internal sealed partial class Commands
             var files = new Dictionary<string, byte[]>();
             foreach (var f in moved?["files"]?.AsArray() ?? [])
             {
-                var path = Api.Str(f?["path"])!;
+                var path = Api.Str(f?["path"]) ?? "";
+                if (!Sync.IsSafePath(path) || Sync.IsHidden(path)) throw new CliException($"The server named a conflicted file this command line refuses: {path}");
                 conflicts.Add(path);
                 if (!Sync.IsBinary(path)) files[path] = Clone.Utf8(Sync.Marked(Api.Str(f?["draftContent"]), Api.Str(f?["branchContent"])));
             }
