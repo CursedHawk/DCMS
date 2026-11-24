@@ -65,7 +65,7 @@ public static class EnvironmentEndpoints
         app.MapGet("/api/admin/environments/copy-scopes", (EnvironmentDuplicator duplicator) =>
             Results.Ok(duplicator.Scopes.Select(x => new { scope = x.Scope, personalData = x.PersonalData })))
             .RequireAuthorization()
-            .Cli("environments.copy-scopes", "What a new environment can copy from another.", CliRisk.Read);
+            .Cli("environments.copy-scopes", "What a new environment can copy from another.", CliRisk.Read, crossEnvironment: true);
 
         // A new environment goes upstream of the current most-upstream one, which may then be
         // deployed into from it: adding staging, test and development in that order builds
@@ -167,7 +167,7 @@ public static class EnvironmentEndpoints
 
             return Results.Created($"/api/admin/environments/{created.Id}", View(created, true));
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentCreated, "environment")
-          .Cli("environments.create", "Creates an environment, empty or copied from another (production by default).", CliRisk.Safe);
+          .Cli("environments.create", "Creates an environment, empty or copied from another (production by default).", CliRisk.Safe, crossEnvironment: true);
 
         app.MapPatch("/api/admin/environments/{id:guid}", async (
             Guid id, UpdateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, EnvironmentStore environments,
@@ -220,7 +220,7 @@ public static class EnvironmentEndpoints
             environments.Evict(tenantId);
             return Results.Ok(View(target, true));
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentUpdated, "environment")
-          .Cli("environments.update", "Renames or reorders an environment, or changes which may deploy into it.", CliRisk.Safe);
+          .Cli("environments.update", "Renames or reorders an environment, or changes which may deploy into it.", CliRisk.Safe, crossEnvironment: true);
 
         app.MapDelete("/api/admin/environments/{id:guid}", async (
             Guid id, ITenantContext tenant, CurrentUser me,
@@ -236,7 +236,7 @@ public static class EnvironmentEndpoints
             return result is null ? Results.NotFound() : Results.Ok(result);
         }).RequireAuthorization().PermissionExempt(ProductionGate)
           .AuditExempt("TenantDeleter.DeleteEnvironmentAsync records environment.deleted itself, with the manifest of what went.")
-          .Cli("environments.delete", "Deletes an environment and everything in it, for good.", CliRisk.Dangerous);
+          .Cli("environments.delete", "Deletes an environment and everything in it, for good.", CliRisk.Dangerous, crossEnvironment: true);
 
         // Who owns each kind of configuration in an environment, or one item of it (ADR 0026).
         app.MapGet("/api/admin/environments/{id:guid}/policies", async (
@@ -250,7 +250,7 @@ public static class EnvironmentEndpoints
                 .ToListAsync(ct);
             return Results.Ok(policies);
         }).RequireAuthorization()
-          .Cli("environments.locks", "An environment's locks: per kind of configuration, edited here or left to deployments.", CliRisk.Read);
+          .Cli("environments.locks", "An environment's locks: per kind of configuration, edited here or left to deployments.", CliRisk.Read, crossEnvironment: true);
 
         // Replaces the environment's policies with the given set; anything left out is Mixed.
         app.MapPut("/api/admin/environments/{id:guid}/policies", async (
@@ -332,7 +332,7 @@ public static class EnvironmentEndpoints
             }
             return Results.NoContent();
         }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "environment")
-          .Cli("environments.set-locks", "Replaces an environment's locks (send the whole list back changed).", CliRisk.Dangerous);
+          .Cli("environments.set-locks", "Replaces an environment's locks (send the whole list back changed).", CliRisk.Dangerous, crossEnvironment: true);
 
         // Links (ADR 0026, 0028): this environment using another's resource, within the workspace --
         // an app's /api, sign-in, contract operations, or Dynamic Apps tables.

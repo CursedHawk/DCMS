@@ -100,6 +100,11 @@ How C2 enforces it (`src/Services/Dcms.AdminApi/Agents/AgentTokens.cs`):
   - plugin catalog and instances, contracts, `me`, the CLI catalog itself.
 
   Human-only: plugin installs, updates and enables (agents use the `dcms.plugins` contract), environment links, own certificates, analytics deletion, account detachment, and agent tokens themselves. Not for the CLI: the git webhook and the Google Drive import.
+- **Cross-environment routes.** Some routes act beyond the environment the request names:
+  - managing environments, which names another by id (create, update, delete, locks, migrations, deploy, rollback);
+  - deleting from the media library, which every environment of the workspace shares.
+
+  These say `crossEnvironment: true`. An agent token limited to some environments is refused them and never sees them in its catalog; a token for every environment keeps them. (Found by a security review of C3: without it, a `staging` token could delete production by id.)
 - **The coverage guard.** `CliCoverageTests` holds every route under a covered area to `.Cli` or `.NotForCli`. Areas join `CoveredPrefixes` wave by wave (C6).
 - **The commands.** `dcms ops [search]` lists operations, `dcms op describe <name>` describes one, and `dcms op call <name> --path k=v --query k=v --body json|@file --file field=path --form k=v --instance slug --out file` calls one. Any marked route or contract operation works, with no per-operation code.
 

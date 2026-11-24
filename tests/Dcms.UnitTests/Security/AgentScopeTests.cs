@@ -47,6 +47,14 @@ public sealed class AgentScopeTests
     }
 
     [Fact]
+    public void An_agent_limited_to_some_environments_never_reaches_beyond_them()
+    {
+        var acrossEnvironments = Write with { CrossEnvironment = true };
+        AgentScope.Refusal(acrossEnvironments, Agent(false, "staging"), Tenant, "staging", "DELETE").Should().Contain("beyond one environment");
+        AgentScope.Refusal(acrossEnvironments, Agent(), Tenant, "staging", "DELETE").Should().BeNull("a token for every environment may manage them");
+    }
+
+    [Fact]
     public void A_read_only_agent_only_reads()
     {
         AgentScope.Refusal(Write, Agent(readOnly: true), Tenant, "production", "POST").Should().Contain("only read");

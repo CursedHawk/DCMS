@@ -253,7 +253,7 @@ public static class MediaEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderDeleted, "media_folder")
-          .Cli("media.delete-folder", "Deletes a media folder (empty it first if the server refuses).", CliRisk.Dangerous);
+          .Cli("media.delete-folder", "Deletes a media folder (empty it first if the server refuses).", CliRisk.Dangerous, crossEnvironment: true);
 
         // ---- Asset detail / edit / delete ------------------------------------
 
@@ -366,7 +366,7 @@ public static class MediaEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { deleted = assets.Count });
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaDeleted, "media_asset")
-          .Cli("media.delete", "Deletes media files for good, with every rendition; anything using them breaks.", CliRisk.Dangerous);
+          .Cli("media.delete", "Deletes media files for good, with every rendition; anything using them breaks.", CliRisk.Dangerous, crossEnvironment: true);
 
         // Delete the originals of one or many assets to free space, keeping the assets and the
         // copies the worker made of them. Only what MediaOriginals allows; the rest is skipped and
@@ -423,7 +423,7 @@ public static class MediaEndpoints
                 freedBytes,
             });
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaOriginalsDeleted, "media_asset")
-          .Cli("media.delete-originals", "Deletes images' uploaded originals, keeping their web renditions, to free storage.", CliRisk.Dangerous);
+          .Cli("media.delete-originals", "Deletes images' uploaded originals, keeping their web renditions, to free storage.", CliRisk.Dangerous, crossEnvironment: true);
 
         // Streams the original (or a named variant, e.g. ?variant=thumb / webp-640)
         // so the admin SPA can render previews behind the bearer token. No public

@@ -27,7 +27,13 @@ public enum CliRisk
 /// an agent token never reaches it, whatever the person's permissions.
 /// </summary>
 /// <param name="Files">A multipart route's file fields (<c>["file"]</c>); its other form fields are named in the summary.</param>
-public sealed record CliOperationMetadata(string Name, string Summary, CliRisk Risk, bool HumanOnly = false, string[]? Files = null);
+/// <param name="CrossEnvironment">
+/// It acts beyond the environment the request names: another environment by id (create, delete,
+/// lock, deploy from), or what every environment shares (the media library). An agent token
+/// limited to some environments never reaches it; one allowed every environment does.
+/// </param>
+public sealed record CliOperationMetadata(string Name, string Summary, CliRisk Risk, bool HumanOnly = false, string[]? Files = null,
+    bool CrossEnvironment = false);
 
 /// <summary>A route deliberately not offered to the command line, and why.</summary>
 public sealed record NotForCliMetadata(string Reason);
@@ -35,10 +41,11 @@ public sealed record NotForCliMetadata(string Reason);
 public static class CliEndpointExtensions
 {
     /// <summary>Offers this route to the dcms command line and, unless <paramref name="humanOnly"/>, to desktop agents.</summary>
-    public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, CliRisk risk, bool humanOnly = false, string[]? files = null)
+    public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, CliRisk risk, bool humanOnly = false, string[]? files = null,
+        bool crossEnvironment = false)
         where TBuilder : IEndpointConventionBuilder
     {
-        builder.WithMetadata(new CliOperationMetadata(name, summary, risk, humanOnly, files));
+        builder.WithMetadata(new CliOperationMetadata(name, summary, risk, humanOnly, files, crossEnvironment));
         return builder;
     }
 

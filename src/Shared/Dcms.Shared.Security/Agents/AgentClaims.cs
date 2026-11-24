@@ -52,6 +52,10 @@ public static class AgentScope
         {
             return $"This agent token does not reach the {environment} environment.";
         }
+        if (allowed.Count > 0 && cli.CrossEnvironment)
+        {
+            return "This reaches beyond one environment; an agent token limited to some environments cannot do it.";
+        }
         var reads = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
         if (user.IsReadOnlyAgent() && !reads && cli.Risk is not (CliRisk.Read or CliRisk.PerOperation))
         {

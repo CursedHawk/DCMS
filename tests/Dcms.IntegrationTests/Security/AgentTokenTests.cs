@@ -64,6 +64,9 @@ public sealed class AgentTokenTests(AdminApiFixture fixture)
         staging.Headers.Add("X-Dcms-Environment", "staging");
         await Refused(client.SendAsync(staging, ct), "staging");
 
+        // Managing environments reaches beyond the one named: not for a token limited to some.
+        await Refused(client.SendAsync(AsAgent(HttpMethod.Delete, $"/api/admin/environments/{Guid.NewGuid()}", slug, token), ct), "beyond one environment");
+
         // A token never mints or revokes tokens.
         await Refused(client.SendAsync(AsAgent(HttpMethod.Post, "/api/admin/me/agent-tokens", slug, token,
             new { name = "another", readOnly = false }), ct), "not offered");

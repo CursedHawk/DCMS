@@ -56,7 +56,9 @@ public static class CliCatalogEndpoints
             foreach (var endpoint in endpoints.Endpoints.OfType<RouteEndpoint>())
             {
                 if (endpoint.Metadata.GetMetadata<CliOperationMetadata>() is not { } cli) continue;
-                if (agent && (cli.HumanOnly || (readOnly && cli.Risk is not (CliRisk.Read or CliRisk.PerOperation)))) continue;
+                // For an agent, exactly what its token would let through (AgentScopeMiddleware): nothing it would be refused.
+                var method = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods.FirstOrDefault() ?? "GET";
+                if (agent && AgentScope.Refusal(cli, user, tenantId, EnvironmentName(http), method) is not null) continue;
                 if (endpoint.Metadata.GetMetadata<PermissionMetadata>() is { } permission && !await allowed(permission.Permission)) continue;
                 operations.Add(Describe(endpoint, cli));
             }
@@ -86,6 +88,9 @@ public static class CliCatalogEndpoints
 
         return app;
     }
+
+    private static string EnvironmentName(HttpContext http) =>
+        http.Request.Headers["X-Dcms-Environment"].ToString() is { Length: > 0 } named ? named : "production";
 
     /// <summary>One route as a client needs it: where it is, what it takes, what it can change.</summary>
     public static CliOperation Describe(RouteEndpoint endpoint, CliOperationMetadata cli)
