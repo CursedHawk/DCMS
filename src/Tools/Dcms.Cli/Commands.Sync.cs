@@ -64,7 +64,12 @@ internal sealed partial class Commands
         using var res = await In(s, HttpMethod.Get, $"/ide?branch={Uri.EscapeDataString(s.Branch)}", null, ct);
         var draft = await Api.JsonAsync(res, ct) ?? throw new CliException("The server sent no files.");
         var files = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (path, content) in draft["files"]?.AsObject() ?? []) files[path] = Api.Str(content) ?? "";
+        foreach (var (path, content) in draft["files"]?.AsObject() ?? [])
+        {
+            // The server checks paths too; nothing that would leave the folder is taken on its word.
+            if (!Sync.IsSafePath(path)) throw new CliException($"The server sent a file path this command line refuses: {path}");
+            files[path] = Api.Str(content) ?? "";
+        }
         return (Api.Str(draft["baseSha"]), files);
     }
 
@@ -137,6 +142,7 @@ internal sealed partial class Commands
         {
             foreach (var path in added.Concat(modified).Concat(deleted).Where(p => only is null || p == only).Where(p => !Sync.IsBinary(p)))
             {
+                if (!Sync.IsSafePath(path)) continue;
                 var theirs = Path.Combine(temp, "server", path);
                 var mine = Path.Combine(temp, "yours", path);
                 Directory.CreateDirectory(Path.GetDirectoryName(theirs)!);

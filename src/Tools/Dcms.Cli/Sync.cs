@@ -46,6 +46,14 @@ internal static class Sync
 
     public static bool IsBinary(string path) => BinaryExtensions.Contains(Path.GetExtension(path));
 
+    /// <summary>
+    /// A file path as a site's draft may name one: relative, forward slashes, no empty, <c>.</c> or
+    /// <c>..</c> segment. Whatever the server sends is held to it before it touches this machine.
+    /// </summary>
+    public static bool IsSafePath(string path) =>
+        path.Length > 0 && !path.Contains('\\') && !path.Contains(':') && !Path.IsPathRooted(path)
+        && path.Split('/').All(p => p.Length > 0 && p != "." && p != "..");
+
     /// <summary>A file's bytes as the server holds them.</summary>
     public static string ToServer(string path, byte[] bytes) => IsBinary(path) ? Convert.ToBase64String(bytes) : Encoding.UTF8.GetString(bytes);
 

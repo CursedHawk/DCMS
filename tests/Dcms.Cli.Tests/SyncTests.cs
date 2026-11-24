@@ -38,6 +38,13 @@ public sealed class SyncTests
     }
 
     [Fact]
+    public void Only_relative_paths_inside_the_folder_are_taken_from_the_server()
+    {
+        foreach (var good in new[] { "a.ts", "src/pages/index.tsx", "dcms/home.json" }) Sync.IsSafePath(good).Should().BeTrue(good);
+        foreach (var bad in new[] { "", "/etc/passwd", "../x", "a/../../x", "a//b", "./a", "a\\b", "C:/x", "a/." }) Sync.IsSafePath(bad).Should().BeFalse(bad);
+    }
+
+    [Fact]
     public void A_binary_file_is_base64_on_the_server_and_bytes_on_disk()
     {
         byte[] png = [137, 80, 78, 71, 0, 1];
