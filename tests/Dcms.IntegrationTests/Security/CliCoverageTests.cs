@@ -1,4 +1,5 @@
 extern alias AdminApiApp;
+extern alias CliApp;
 using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -96,6 +97,14 @@ public sealed class CliCoverageTests : IDisposable
         operations.Where(x => x.Cli!.Risk == CliRisk.Read
                               && x.Endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.IHttpMethodMetadata>()?.HttpMethods.Contains("DELETE") == true)
             .Select(x => x.Cli!.Name).Should().BeEmpty("a DELETE is never a read");
+    }
+
+    [Fact]
+    public void Every_core_mcp_tool_names_an_operation_that_exists()
+    {
+        var names = Endpoints().Select(e => e.Metadata.GetMetadata<CliOperationMetadata>()?.Name).OfType<string>().ToHashSet();
+        CliApp::Dcms.Cli.Commands.CoreTools.Where(t => !names.Contains(t)).Should().BeEmpty(
+            "`dcms mcp` offers these as tools of their own; a renamed operation would quietly drop one");
     }
 
     [Fact]

@@ -86,8 +86,20 @@ public static class CliCatalogEndpoints
         }).RequireAuthorization()
           .Cli("cli.catalog", "What you may call here: every operation, with its parameters, body schema and risk.", CliRisk.Read);
 
+        // What a desktop agent is taught about DCMS: `dcms link-agent` writes it as the agent's skill.
+        app.MapGet("/api/admin/cli/skill", () => Results.Text(Skill.Value, "text/markdown; charset=utf-8"))
+            .RequireAuthorization()
+            .Cli("cli.skill", "The guide desktop agents read about DCMS: how it is shaped and how to work in it.", CliRisk.Read);
+
         return app;
     }
+
+    private static readonly Lazy<string> Skill = new(() =>
+    {
+        using var stream = typeof(CliCatalogEndpoints).Assembly.GetManifestResourceStream("dcms-skill.md")
+            ?? throw new InvalidOperationException("dcms-skill.md is not embedded.");
+        return new StreamReader(stream).ReadToEnd();
+    });
 
     private static string EnvironmentName(HttpContext http) =>
         http.Request.Headers["X-Dcms-Environment"].ToString() is { Length: > 0 } named ? named : "production";

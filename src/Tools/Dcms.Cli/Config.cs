@@ -12,8 +12,16 @@ internal sealed record Remote(string Name, string Url);
 /// <summary>Which app a clone is: kept beside the sign-in, never in the clone (someone else's content).</summary>
 internal sealed record Link(string Tenant, string Environment, string App, string RepoId, string? Plugin, string? Repo, Remote Remote);
 
+/// <summary>
+/// A desktop agent linked on this machine (ADR 0032): its token, which only it uses, and where it
+/// was set up, so <c>dcms unlink-agent</c> can take it down again.
+/// </summary>
+internal sealed record AgentLink(string Id, string Name, string Server, string Token, string Workspace, string[] Environments, bool ReadOnly,
+    string Client, string? ConfigPath, DateTimeOffset ExpiresAt);
+
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]
 [JsonSerializable(typeof(Credentials))]
+[JsonSerializable(typeof(AgentLink))]
 [JsonSerializable(typeof(Dictionary<string, Link>))]
 internal sealed partial class CliJson : JsonSerializerContext;
 
@@ -59,6 +67,24 @@ internal sealed class Config(string dir)
         WritePrivate(CredentialsPath, JsonSerializer.SerializeToUtf8Bytes(value, CliJson.Default.Credentials));
 
     public void RemoveCredentials() => File.Delete(CredentialsPath);
+
+    public string AgentPath(string id) => Path.Combine(Dir, "agents", $"{id}.json");
+
+    public AgentLink ReadAgent(string id)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(id, "^[0-9a-fA-F-]{36}$") || !File.Exists(AgentPath(id)))
+        {
+            throw new CliException($"No agent {id} is linked on this machine. `dcms agents` lists them.");
+        }
+        return JsonSerializer.Deserialize(File.ReadAllBytes(AgentPath(id)), CliJson.Default.AgentLink)!;
+    }
+
+    public IEnumerable<AgentLink> ReadAgents() =>
+        Directory.Exists(Path.Combine(Dir, "agents"))
+            ? Directory.GetFiles(Path.Combine(Dir, "agents"), "*.json").Select(f => JsonSerializer.Deserialize(File.ReadAllBytes(f), CliJson.Default.AgentLink)!)
+            : [];
+
+    public void WriteAgent(AgentLink agent) => WritePrivate(AgentPath(agent.Id), JsonSerializer.SerializeToUtf8Bytes(agent, CliJson.Default.AgentLink));
 
     public Dictionary<string, Link> ReadLinks() =>
         File.Exists(LinksPath) ? JsonSerializer.Deserialize(File.ReadAllBytes(LinksPath), CliJson.Default.DictionaryStringLink) ?? [] : [];

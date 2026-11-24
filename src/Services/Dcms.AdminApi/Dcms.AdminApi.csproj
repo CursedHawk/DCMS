@@ -18,6 +18,8 @@
   <!-- Vendor the @dcms/api-client runtime source into the downloadable client zip. -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\..\packages\api-client\src\index.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.index.ts" />
+    <!-- What a desktop agent is taught about DCMS (ADR 0032): served at /api/admin/cli/skill. -->
+    <EmbeddedResource Include="Cli\dcms-skill.md" LogicalName="dcms-skill.md" />
     <EmbeddedResource Include="..\..\..\packages\api-client\src\types.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.types.ts" />
   </ItemGroup>
 

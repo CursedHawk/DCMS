@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="ModelContextProtocol.Core" />
   </ItemGroup>
 
   <ItemGroup>

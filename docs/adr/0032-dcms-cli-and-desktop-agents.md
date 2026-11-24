@@ -1,6 +1,6 @@
 # ADR 0032: The dcms command line and desktop agents
 
-**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1–C3 shipped, C4–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
+**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1–C4 shipped, C5–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
 
 ## Context
 
@@ -107,6 +107,26 @@ How C2 enforces it (`src/Services/Dcms.AdminApi/Agents/AgentTokens.cs`):
   These say `crossEnvironment: true`. An agent token limited to some environments is refused them and never sees them in its catalog; a token for every environment keeps them. (Found by a security review of C3: without it, a `staging` token could delete production by id.)
 - **The coverage guard.** `CliCoverageTests` holds every route under a covered area to `.Cli` or `.NotForCli`. Areas join `CoveredPrefixes` wave by wave (C6).
 - **The commands.** `dcms ops [search]` lists operations, `dcms op describe <name>` describes one, and `dcms op call <name> --path k=v --query k=v --body json|@file --file field=path --form k=v --instance slug --out file` calls one. Any marked route or contract operation works, with no per-operation code.
+
+## Desktop agents over MCP (C4, 2026-11-24)
+
+- **`dcms mcp --agent <id>`** is a stdio MCP server built on `ModelContextProtocol.Core`'s low-level API. It is trim-safe; the single-file build is about 15 MB.
+  - It calls with **the agent's own token**, never the person's sign-in.
+  - Its tools come from the catalog as that token sees it, at each `tools/list`:
+    - `dcms_whoami`, `dcms_find`, `dcms_describe` and `dcms_call`, which reach every operation;
+    - the everyday operations as tools of their own (`Commands.CoreTools`, about 30). Their input schema is built from the operation's path and query parameters and body schema. A tool disappears when the token cannot call its operation.
+  - Annotations follow the risk: Read gives `readOnlyHint`, Dangerous gives `destructiveHint`. The agent's own permission modes then decide when to ask the person.
+  - Results from contract operations that return visitor-written text are wrapped as untrusted. A token limited to several environments gets an `environment` choice on every tool.
+- **The skill.** `GET /api/admin/cli/skill` serves `src/Services/Dcms.AdminApi/Cli/dcms-skill.md`, the guide to DCMS for agents. It is also the MCP server's instructions.
+- **`dcms link-agent --claude-code | --cursor | --codex | --generic [--workspace] [--env …] [--read-only] [--name] [--days] [--user]`.**
+  - It mints the token with the person's sign-in and keeps it in `<config>/agents/<id>.json` (private file modes).
+  - It points the client's MCP configuration at `dcms mcp --agent <id>`:
+    - Claude Code: `.mcp.json`, or `claude mcp add --scope user`;
+    - Cursor: `.cursor/mcp.json`;
+    - Codex: `~/.codex/config.toml`;
+    - anything else: printed JSON.
+  - It writes the skill where the client reads it: `.claude/skills/dcms/SKILL.md`, or `.cursor/rules/dcms.mdc`.
+  - `dcms unlink-agent <id>` revokes the token and removes the configuration. `dcms agents` shows which tokens are linked on this machine.
 
 ## Consequences
 

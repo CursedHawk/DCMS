@@ -48,7 +48,8 @@ public static class SitePreviewEndpoints
             .RequirePermission(PlatformPermissions.SiteEdit)
             .AuditExempt("Transparent proxy to content-api. The real action is recorded there, "
                        + "against the tenant; recording it here too would double every "
-                       + "preview interaction.");
+                       + "preview interaction.")
+            .NotForCli("The preview's pass-through to the site's own API, for the preview page in the browser; the CLI calls operations directly.");
 
         /*
          * Which tenant a preview's site belongs to, and the domain whose site access rules it

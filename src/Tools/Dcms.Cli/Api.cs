@@ -82,9 +82,20 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         throw new CliException("The code expired. Run `dcms login` again.");
     }
 
+    /// <summary>
+    /// Set by <c>dcms mcp --agent</c>: every call goes out with that agent's own token, never the
+    /// person's sign-in, so the server holds the agent to what the person minted it for.
+    /// </summary>
+    public AgentLink? Agent { get; set; }
+
     /// <summary>A token good for at least another minute, refreshed under the machine-wide lock if not.</summary>
     public async Task<Credentials> FreshAsync(CancellationToken ct)
     {
+        if (Agent is { } agent)
+        {
+            Origin(agent.Server);
+            return new Credentials(agent.Server, agent.Server, agent.Token, null, long.MaxValue);
+        }
         var creds = config.ReadCredentials() ?? throw new CliException("Not signed in. Run `dcms login`.");
         Origin(creds.Server);
         Origin(creds.TokenEndpoint);

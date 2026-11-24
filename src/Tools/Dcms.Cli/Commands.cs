@@ -134,6 +134,9 @@ internal sealed partial class Commands(Config config, Api api, HttpClient http, 
         root.Subcommands.Add(Agents());
         root.Subcommands.Add(OpsList());
         root.Subcommands.Add(Op());
+        root.Subcommands.Add(LinkAgent());
+        root.Subcommands.Add(UnlinkAgent());
+        root.Subcommands.Add(Mcp());
 
         Add(root, new Command("deploy", "Merge main into release, wait for the build, deploy it."), async (_, ct) =>
         {
@@ -231,13 +234,15 @@ internal sealed partial class Commands(Config config, Api api, HttpClient http, 
     private async Task<int> ListAgents(CancellationToken ct)
     {
         var tokens = (await api.CallAsync("/api/admin/me/agent-tokens", null, null, null, ct))?.AsArray() ?? [];
-        if (tokens.Count == 0) stdout.WriteLine("No agent tokens. Mint one with: dcms agents create <name> --workspace <slug>");
+        if (tokens.Count == 0) stdout.WriteLine("No agent tokens. Connect one with: dcms link-agent --claude-code --workspace <slug>");
+        var here = config.ReadAgents().ToDictionary(a => a.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var t in tokens)
         {
             var envs = t?["environments"]?.AsArray().Select(e => (string?)e).ToList() ?? [];
             stdout.WriteLine($"{t?["id"]}  {Api.Str(t?["name"]),-28} {Api.Str(t?["workspace"]),-16} "
                 + $"{(envs.Count == 0 ? "all environments" : string.Join(",", envs))}{(t?["readOnly"]?.GetValue<bool>() == true ? "  read-only" : "")}"
-                + $"  until {t?["expiresAt"]}  last used {t?["lastUsedAt"]?.ToString() ?? "never"}");
+                + $"  until {t?["expiresAt"]}  last used {t?["lastUsedAt"]?.ToString() ?? "never"}"
+                + (here.TryGetValue(Api.Str(t?["id"]) ?? "", out var linked) ? $"  [linked here: {linked.Client}]" : ""));
         }
         return 0;
     }

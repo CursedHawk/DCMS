@@ -61,3 +61,29 @@ public sealed class OpsTests
         }
     }
 }
+
+/// <summary>`dcms link-agent` writes the agent's MCP configuration without disturbing what else is in it.</summary>
+public sealed class LinkAgentTests
+{
+    [Fact]
+    public void Adding_a_server_keeps_the_others()
+    {
+        var dir = Directory.CreateTempSubdirectory("dcms-mcp-").FullName;
+        try
+        {
+            var path = Path.Combine(dir, ".mcp.json");
+            File.WriteAllText(path, """{"mcpServers":{"other":{"command":"x"}},"keep":1}""");
+            Commands.MergeJson(path, "dcms-acme", new JsonObject { ["command"] = "dcms", ["args"] = new JsonArray("mcp", "--agent", "id") })
+                .Should().Be($"{path}#dcms-acme");
+            var doc = JsonNode.Parse(File.ReadAllText(path))!;
+            ((string?)doc["mcpServers"]!["other"]!["command"]).Should().Be("x");
+            ((string?)doc["mcpServers"]!["dcms-acme"]!["args"]![2]).Should().Be("id");
+            ((int)doc["keep"]!).Should().Be(1);
+            Commands.ToolName("sites.write-files").Should().Be("sites_write-files");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+}
