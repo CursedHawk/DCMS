@@ -44,7 +44,7 @@ internal static class RecordEndpoints
                     ? Results.Ok(record)
                     : NotFound(table, id)))
             .RequirePluginPermission("data-read")
-            .Cli("record", "One record.", OpRisk.Read, externalText: true);
+            .Cli("record", "One record of a table, with its fields.", OpRisk.Read, externalText: true);
 
         endpoints.MapPost("/_records/{table}", (string table, JsonObject values, RecordService records, CancellationToken ct) =>
                 Run(async () =>

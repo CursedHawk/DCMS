@@ -67,7 +67,7 @@ internal static class UserAuthAdminEndpoints
         endpoints.MapGet("/users/{userId:guid}", (Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Get, $"/users/{userId}", null, ct))
             .RequirePluginPermission("users-read")
-            .Cli("user", "One site user.", OpRisk.Read, externalText: true);
+            .Cli("user", "One site user, with their groups and roles.", OpRisk.Read, externalText: true);
         endpoints.MapPost("/users/invite", (RealmInvite body, RealmRelay relay, IPluginContext context, ILogger<RealmRelay> logger, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Post, "/users/invite", body, ct,
                     then: answer => UserEvents.InvitedAsync(context, JsonSerializer.Deserialize<RealmInviteResult>(answer, JsonSerializerOptions.Web)!.User, logger, ct)))
