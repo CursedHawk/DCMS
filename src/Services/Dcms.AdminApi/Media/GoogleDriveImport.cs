@@ -42,7 +42,8 @@ public static partial class GoogleDriveImport
             return o.IsConfigured
                 ? Results.Ok(new { clientId = o.ClientId, apiKey = o.ApiKey, appId = o.AppId })
                 : Results.NotFound();
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite)
+          .NotForCli("Google Drive files are picked in the browser, with the person signed in to Google.");
 
         // Queues the picked files and returns (ADR 0024). Each file is a job the worker runs --
         // download, ingest, then the media conversion under the same group -- so the import goes
@@ -82,7 +83,8 @@ public static partial class GoogleDriveImport
                     RequiredPermission: PlatformPermissions.MediaWrite, ParentId: group.Id, LinkPath: "/media"), ct);
             }
             return Results.Accepted($"/api/admin/jobs/{group.Id}", new { jobId = group.Id });
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaImported, "media_asset");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaImported, "media_asset")
+          .NotForCli("Google Drive files are picked in the browser, with the person signed in to Google.");
 
         return app;
     }

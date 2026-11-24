@@ -28,7 +28,8 @@ public static class EnvironmentMigrationEndpoints
         {
             var changes = await migrator.UnpublishedAsync((await environments.CurrentAsync(tenant, ct))!, ct);
             return Results.Ok(changes.Select(c => View(c)));
-        }).RequirePermission(PlatformPermissions.EnvironmentsManage);
+        }).RequirePermission(PlatformPermissions.EnvironmentsManage)
+          .Cli("environments.changes", "What changed in this environment since its last migration was cut.", CliRisk.Read);
 
         app.MapPost("/api/admin/environments/migrations", async (
             CutRequest body, ITenantContext tenant, EnvironmentStore environments, CurrentUser me, EnvironmentMigrator migrator,
@@ -48,7 +49,8 @@ public static class EnvironmentMigrationEndpoints
                 .With("changes", EnvironmentMigrator.Changes(migration).Count);
             return Results.Created($"/api/admin/environments/migrations/{migration.MigrationId}", Row(migration, null));
         }).RequirePermission(PlatformPermissions.EnvironmentsManage)
-          .WithAudit(AuditActions.EnvironmentMigrationCreated, "environment_migration");
+          .WithAudit(AuditActions.EnvironmentMigrationCreated, "environment_migration")
+          .Cli("environments.cut-migration", "Cuts a migration from this environment's changes, ready to deploy elsewhere.", CliRisk.Safe);
 
         app.MapGet("/api/admin/environments/migrations", async (
             ITenantContext tenant, CurrentUser me, IPermissionResolver permissions, EnvironmentMigrator migrator,
@@ -64,7 +66,8 @@ public static class EnvironmentMigrationEndpoints
             var history = await migrator.HistoryAsync(current, ct);
             var names = (await environments.ListAsync(current.TenantId, ct)).ToDictionary(e => e.Id, e => e.Name);
             return Results.Ok(history.Select(m => Row(m, names)));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("environments.migrations", "The migrations cut here or deployed here.", CliRisk.Read);
 
         // What the source has that this environment has not, change by change, against what
         // this environment holds now. Nothing is applied by reading it.
@@ -79,7 +82,8 @@ public static class EnvironmentMigrationEndpoints
                 migration = Row(p.Migration, null),
                 changes = p.Changes.Select(r => View(r.Change, r)),
             }));
-        }).RequirePermission(PlatformPermissions.EnvironmentsPromote);
+        }).RequirePermission(PlatformPermissions.EnvironmentsPromote)
+          .Cli("environments.pending", "What is ready to deploy into this environment from another, migration by migration.", CliRisk.Read);
 
         app.MapPost("/api/admin/environments/pending/apply", async (
             ApplyRequest body, ITenantContext tenant, EnvironmentStore environments, CurrentUser me, IJobQueue jobs,
@@ -98,7 +102,8 @@ public static class EnvironmentMigrationEndpoints
                 LinkPath: "/deployments") { EnvironmentId = target.Id }, ct);
             return Results.Accepted(value: new { jobId = job.Id });
         }).RequirePermission(PlatformPermissions.EnvironmentsPromote)
-          .AuditExempt(JobAudits);
+          .AuditExempt(JobAudits)
+          .Cli("environments.deploy", "Deploys pending migrations from another environment into this one.", CliRisk.Dangerous);
 
         app.MapGet("/api/admin/environments/migrations/{migrationId:guid}/rollback", async (
             Guid migrationId, ITenantContext tenant, EnvironmentStore environments, EnvironmentMigrator migrator, CancellationToken ct) =>
@@ -112,7 +117,8 @@ public static class EnvironmentMigrationEndpoints
             {
                 return Results.Conflict(new { error = ex.Key });
             }
-        }).RequirePermission(PlatformPermissions.EnvironmentsPromote);
+        }).RequirePermission(PlatformPermissions.EnvironmentsPromote)
+          .Cli("environments.rollback-preview", "What rolling a migration back would change.", CliRisk.Read);
 
         app.MapPost("/api/admin/environments/migrations/{migrationId:guid}/rollback", async (
             Guid migrationId, RollbackRequest body, ITenantContext tenant, CurrentUser me, IJobQueue jobs,
@@ -130,7 +136,8 @@ public static class EnvironmentMigrationEndpoints
                 LinkPath: "/deployments") { EnvironmentId = tenant.EnvironmentId }, ct);
             return Results.Accepted(value: new { jobId = job.Id });
         }).RequirePermission(PlatformPermissions.EnvironmentsPromote)
-          .AuditExempt(JobAudits);
+          .AuditExempt(JobAudits)
+          .Cli("environments.rollback", "Rolls a deployed migration back.", CliRisk.Dangerous);
 
         return app;
     }

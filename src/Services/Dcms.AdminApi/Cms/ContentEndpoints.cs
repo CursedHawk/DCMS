@@ -105,7 +105,8 @@ public static class ContentEndpoints
                     ? ContentListEndpoints.FormatCursor(new ContentListQueries.Cursor(rows[^1].updatedAt, rows[^1].id))
                     : null,
             });
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("content.list", "Content items in this workspace, newest first, one page at a time; filter by type, status or search.", CliRisk.Read);
 
         app.MapGet("/api/admin/content/{id:guid}", async (Guid id, CmsDbContext db, CancellationToken ct) =>
         {
@@ -137,7 +138,8 @@ public static class ContentEndpoints
                 versions = item.Versions.OrderByDescending(v => v.VersionNo)
                     .Select(v => new { v.Id, v.VersionNo, v.CreatedAt, published = v.Id == item.PublishedVersionId }),
             });
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("content.get", "One content item in full: slug, status and its current draft field values.", CliRisk.Read);
 
         /*
          * The tag vocabulary already in use for one field of one content type, most
@@ -197,7 +199,8 @@ public static class ContentEndpoints
                 .ToList();
 
             return Results.Ok(tags);
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("content.tags", "The tags used on content, for filtering and for tagging new items.", CliRisk.Read);
 
         app.MapPost("/api/admin/content", async (
             CreateContentRequest body, IPluginCatalog catalog, CmsDbContext db, CurrentUser me, CancellationToken ct) =>
@@ -236,7 +239,8 @@ public static class ContentEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/content/{item.Id}", new { id = item.Id });
         }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentCreated, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.create", "Creates a content item as a DRAFT: nothing is public until it is published.", CliRisk.Safe);
 
         app.MapPut("/api/admin/content/{id:guid}", async (
             Guid id, UpdateContentRequest body, IPluginCatalog catalog, CmsDbContext db, CurrentUser me, CancellationToken ct) =>
@@ -260,7 +264,8 @@ public static class ContentEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { versionId = version.Id, versionNo = version.VersionNo });
         }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentUpdated, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.update", "Changes field values of a content item, as a new draft version; only the fields given change.", CliRisk.Safe);
 
         // An optional `data` body makes this "save and publish": the edits become a new
         // draft version and that version is published, in one transaction.
@@ -314,7 +319,8 @@ public static class ContentEndpoints
             metrics.ContentPublished(tenant.TenantId!.Value, item.ContentType);
             return Results.Ok(new { status = "published", instanceSlug = instance?.Slug });
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentPublished, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.publish", "Publishes a content item: its current draft becomes publicly visible.", CliRisk.Dangerous);
 
         app.MapPost("/api/admin/content/{id:guid}/schedule", async (
             Guid id, ScheduleRequest body, IPluginCatalog catalog, CmsDbContext db, ITenantContext tenant,
@@ -368,7 +374,8 @@ public static class ContentEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { scheduleId = scheduled.Id, publishAt = scheduled.PublishAt });
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduled, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.schedule", "Schedules a content item to publish itself at a given time.", CliRisk.Dangerous);
 
         // Cancel a pending schedule. Scoped by item id rather than schedule id so the
         // editor can cancel from what it displays without holding the row's key.
@@ -389,7 +396,8 @@ public static class ContentEndpoints
 
             return Results.Ok(new { cancelled });
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduleCancelled, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.cancel-schedule", "Cancels a scheduled publish; the item stays as it is.", CliRisk.Safe);
 
         app.MapPost("/api/admin/content/{id:guid}/unpublish", async (
             Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope,
@@ -419,7 +427,8 @@ public static class ContentEndpoints
             metrics.ContentUnpublished(tenant.TenantId!.Value, item.ContentType);
             return Results.Ok(new { status = "unpublished" });
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentUnpublished, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.unpublish", "Takes a published item off the public site; its draft is kept.", CliRisk.Dangerous);
 
         // Delete an item for good: its versions cascade, a pending schedule goes with it, and a
         // published one leaves the site first (search, caches) through the same event an
@@ -462,7 +471,8 @@ public static class ContentEndpoints
             await tx.CommitAsync(ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentDeleted, "content_item")
-            .ManagedByDeployments("content");
+            .ManagedByDeployments("content")
+            .Cli("content.delete", "Deletes a content item for good, every version of it.", CliRisk.Dangerous);
 
         return app;
     }

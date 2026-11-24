@@ -48,7 +48,8 @@ public static partial class PublishBranchEndpoints
             return Results.Ok(
                 new[] { Row(null, site.ActiveBuildId) }
                     .Concat(branches.Select(b => Row(b.Branch, b.ActiveBuildId))));
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.publish-branches", "A site's publishing branches: each builds onto its own domains.", CliRisk.Read);
 
         // Start publishing a branch: it must exist in the site's repository. Its head is built at
         // once, so a domain linked next has something to serve.
@@ -79,7 +80,8 @@ public static partial class PublishBranchEndpoints
             var buildId = await SiteBuilds.EnqueueBranchBuildAsync(db, cms, events, git, site, live, user.UserId, branch, ct);
             scope.Declared?.For("site", site.Id, site.Name).With("branch", branch).With("build_id", buildId);
             return Results.Created($"/api/admin/sites/{id}/publish-branches", new { branch, buildId });
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishBranchAdded, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishBranchAdded, "site")
+          .Cli("sites.add-publish-branch", "Makes an existing branch a publishing branch, and builds it.", CliRisk.Dangerous);
 
         // Stop publishing a branch. Its domains are unlinked, not deleted — they are the tenant's —
         // and its builds stay in the history.
@@ -100,7 +102,8 @@ public static partial class PublishBranchEndpoints
             await db.SaveChangesAsync(ct);
             await tenancy.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishBranchRemoved, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishBranchRemoved, "site")
+          .Cli("sites.remove-publish-branch", "Stops a branch publishing.", CliRisk.Dangerous);
 
         return app;
     }

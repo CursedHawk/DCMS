@@ -41,7 +41,8 @@ public static class TenancyEndpoints
                 .Select(t => new { tenantId = t.Id, slug = t.Identifier, name = t.Name })
                 .ToListAsync(ct);
             return Results.Ok(result);
-        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .Cli("me.workspaces", "The workspaces you belong to.", CliRisk.Read);
 
         // The caller's effective permissions in the selected tenant — drives the
         // SPA's permission-filtered navigation and action gating. SuperAdmins see
@@ -60,7 +61,8 @@ public static class TenancyEndpoints
             }
             var permissions = await resolver.GetPermissionsAsync(tenantId, userId, ct);
             return Results.Ok(new { isSuperAdmin = false, permissions });
-        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .Cli("me.permissions", "Your permissions in this workspace and environment.", CliRisk.Read);
 
         // ---- Tenant provisioning (platform SuperAdmin only) ----
         app.MapPost("/api/admin/tenants", async (

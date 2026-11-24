@@ -36,8 +36,22 @@ public sealed class AgentTokenTests(AdminApiFixture fixture)
         me.GetProperty("agent").GetProperty("name").GetString().Should().Be("Claude Code on laptop");
         me.GetProperty("roles").GetArrayLength().Should().Be(0, "an agent is never a SuperAdmin, nor anything by role claim");
 
-        // A route nobody has offered to agents yet is closed to them.
-        await Refused(client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/sites", slug, token), ct), "not offered");
+        // A route nobody has offered to agents is closed to them (members stay a person's).
+        await Refused(client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/members", slug, token), ct), "not offered");
+        // One offered to them is open, as far as the person's own permissions reach.
+        (await client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/sites", slug, token), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // The catalog: what the agent may call, never what is a person's alone.
+        var catalog = await Json(await client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/cli/catalog", slug, token), ct), ct);
+        var names = catalog.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("name").GetString()).ToList();
+        names.Should().Contain(["sites.list", "sites.commit", "media.upload", "contracts.invoke"]).And.NotContain(["agents.mint", "plugins.install"]);
+        catalog.GetProperty("plane").GetString().Should().Be("ai");
+        var person = await Json(await client.SendAsync(AsPerson(HttpMethod.Get, "/api/admin/cli/catalog", slug, owner), ct), ct);
+        person.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("name").GetString()).Should().Contain("agents.mint");
+        var commit = catalog.GetProperty("operations").EnumerateArray().Single(o => o.GetProperty("name").GetString() == "sites.commit");
+        commit.GetProperty("method").GetString().Should().Be("POST");
+        commit.GetProperty("path").GetString().Should().Be("/api/admin/sites/{id:guid}/git/commit");
+        commit.GetProperty("body").ValueKind.Should().Be(JsonValueKind.Object, "the body's JSON Schema, for the agent to fill");
 
         // The contracts: the AI plane only, as the console's own assistant.
         (await client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/contracts?plane=ai", slug, token), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -72,6 +86,10 @@ public sealed class AgentTokenTests(AdminApiFixture fixture)
 
         var reader = (await Json(await client.SendAsync(AsPerson(HttpMethod.Post, "/api/admin/me/agent-tokens", slug, owner,
             new { name = "reader", readOnly = true }), ct), ct)).GetProperty("token").GetString()!;
+        var risks = (await Json(await client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/cli/catalog", slug, reader), ct), ct))
+            .GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("risk").GetString()).Distinct().ToList();
+        risks.Should().OnlyContain(r => r == "Read" || r == "PerOperation", "a read-only agent is shown only what it may call");
+        await Refused(client.SendAsync(AsAgent(HttpMethod.Post, "/api/admin/sites", slug, reader, new { name = "x" }), ct), "only read");
         (await client.SendAsync(AsAgent(HttpMethod.Get, "/api/admin/contracts?plane=ai", slug, reader), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
         // dcms.plugins SetEnabled is Dangerous: refused before it is dispatched, whatever its input.
         await Refused(client.SendAsync(AsAgent(HttpMethod.Post, "/api/admin/contracts/dcms.plugins@1/SetEnabled?plane=ai", slug, reader,

@@ -64,7 +64,8 @@ public static class DomainCertificateEndpoints
                 expired = c.NotAfter <= now,
                 daysRemaining = (int)Math.Floor((c.NotAfter - now).TotalDays),
             }));
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage)
+          .Cli("domains.certificates", "The domains' TLS certificates and when they expire.", CliRisk.Read);
 
         // Ask for a fresh certificate before the current one is due.
         //
@@ -112,7 +113,8 @@ public static class DomainCertificateEndpoints
 
             return Results.Accepted();
         }).RequirePermission(PlatformPermissions.DomainsManage)
-          .WithAudit(AuditActions.DomainCertificateReissued, "domain");
+          .WithAudit(AuditActions.DomainCertificateReissued, "domain")
+          .Cli("domains.reissue-certificate", "Asks for a domain's TLS certificate to be issued again.", CliRisk.Safe);
 
         // Upload your own certificate for a domain you have verified.
         app.MapPut("/api/admin/domains/{id:guid}/certificate", async (
@@ -176,7 +178,8 @@ public static class DomainCertificateEndpoints
 
             return Results.Ok(new { hostname = domain.Hostname, notAfter = row.NotAfter, issuer = row.Issuer });
         }).RequirePermission(PlatformPermissions.DomainsManage)
-          .WithAudit(AuditActions.DomainCertificateUploaded, "domain");
+          .WithAudit(AuditActions.DomainCertificateUploaded, "domain")
+          .Cli("domains.upload-certificate", "Installs your own certificate and key for a domain.", CliRisk.Dangerous, humanOnly: true);
 
         // Drop an uploaded certificate and go back to DCMS-managed issuance.
         app.MapDelete("/api/admin/domains/{id:guid}/certificate", async (
@@ -206,7 +209,8 @@ public static class DomainCertificateEndpoints
 
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.DomainsManage)
-          .WithAudit(AuditActions.DomainCertificateRemoved, "domain");
+          .WithAudit(AuditActions.DomainCertificateRemoved, "domain")
+          .Cli("domains.remove-certificate", "Removes a domain's own certificate; the platform issues one again.", CliRisk.Dangerous);
 
         return app;
     }

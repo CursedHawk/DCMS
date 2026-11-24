@@ -22,18 +22,21 @@ internal static class AdminEndpoints
         // The repository, created with the starter the first time anyone opens the code.
         endpoints.MapGet("/_functions/repo", (DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.RepoAsync(ct))))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("repo", "The app's repository: its id for repos.* operations, clone URLs, branch.", OpRisk.Read);
 
         // @dcms/functions as the editor's type checker sees it: what a build checks against now.
         // Only what the reader may see of the tables and contracts it describes.
         endpoints.MapGet("/_functions/sdk.d.ts", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
                 Sdk(http, SdkTypings.TypeScript(await sdk.ModelAsync(ct, May(http, authz))), "application/typescript; charset=utf-8"))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("sdk-typescript", "The generated TypeScript SDK (@dcms/functions) for this environment.", OpRisk.Read);
 
         // The C# half (ADR 0030): Sdk.g.cs, compiled together with a repository's .cs files.
         endpoints.MapGet("/_functions/sdk.cs", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
                 Sdk(http, SdkTypings.CSharp(await sdk.ModelAsync(ct, May(http, authz))), "text/x-csharp; charset=utf-8"))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("sdk-csharp", "The generated C# SDK source (Sdk.g.cs) for this environment.", OpRisk.Read);
 
         // Both, as JSON for the console's client, which reads every answer as JSON.
         endpoints.MapGet("/_functions/sdk", async (HttpContext http, SdkTypings sdk, IAuthorizationService authz, CancellationToken ct) =>
@@ -42,26 +45,31 @@ internal static class AdminEndpoints
                 var (typings, csharp) = (SdkTypings.TypeScript(model), SdkTypings.CSharp(model));
                 return Results.Ok(new { typings, csharp, etag = SdkTypings.ETag(typings + csharp), package = CSharpSdkPackage.Version });
             })
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("sdk", "Both generated SDKs and the C# SDK package's version.", OpRisk.Read);
 
         // Dcms.Functions.Sdk, for a desktop C# build (`dcms sdk` saves it in the clone).
         endpoints.MapGet("/_functions/sdk.nupkg", () =>
                 Results.File(CSharpSdkPackage.Bytes, "application/octet-stream", CSharpSdkPackage.FileName))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("sdk-package", "The Dcms.Functions.Sdk NuGet package this server builds C# functions with.", OpRisk.Read);
 
         // What a function can use (Docs/functions-runtime.md), for the editor's help and the CLI.
         endpoints.MapGet("/_functions/runtime", () => Results.Ok(new { markdown = RuntimeReference.Text }))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("runtime", "What a function may use: the runtime reference, as markdown.", OpRisk.Read);
 
         endpoints.MapGet("/_functions/deployments", (DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.ListAsync(ct))))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("deployments", "The app's deployments, newest first, and which is live.", OpRisk.Read);
 
         endpoints.MapGet("/_functions/deployments/{id:guid}", (Guid id, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => await deployments.GetAsync(id, ct) is { } deployment
                     ? Results.Ok(deployment)
                     : Results.NotFound(new { error = $"There is no deployment {id}." })))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("deployment", "One deployment: its functions, problems, permissions and packages.", OpRisk.Read);
 
         // Deploy a build, or roll back to an earlier one: the caller must hold what it uses.
         endpoints.MapPost("/_functions/deployments/{id:guid}/activate", (Guid id, DeploymentService deployments, CancellationToken ct) =>
@@ -69,46 +77,54 @@ internal static class AdminEndpoints
                     ? Results.Ok(live)
                     : Results.NotFound(new { error = $"There is no deployment {id}." })))
             .RequirePluginPermission("deploy")
-            .AuditAs("deployment.activated");
+            .AuditAs("deployment.activated")
+            .Cli("deploy", "Makes a built deployment live (deploy), or an earlier one again (rollback).", OpRisk.Dangerous);
 
         endpoints.MapPost("/_functions/build", (DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Accepted(value: await deployments.RebuildAsync(ct))))
             .RequirePluginPermission("deploy")
-            .AuditAs("build.requested");
+            .AuditAs("build.requested")
+            .Cli("build", "Builds a deployment from the release branch now.", OpRisk.Safe);
 
         // The run history: inputs, results and logs are the tenant's data, so the logs permission.
         endpoints.MapGet("/_functions/runs", (string? function, string? status, int? page, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.RunsAsync(function, status, page ?? 1, ct))))
-            .RequirePluginPermission("logs");
+            .RequirePluginPermission("logs")
+            .Cli("runs", "Function runs, newest first, by function or status.", OpRisk.Read);
 
         endpoints.MapGet("/_functions/runs/{id:guid}", (Guid id, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => await deployments.RunAsync(id, ct) is { } run
                     ? Results.Ok(run)
                     : Results.NotFound(new { error = $"There is no run {id}." })))
-            .RequirePluginPermission("logs");
+            .RequirePluginPermission("logs")
+            .Cli("run-detail", "One run: input, result, logs and trace.", OpRisk.Read);
 
         // API keys: the secret is in the answer to the create, once, and stored only as its hash.
         endpoints.MapGet("/_functions/keys", (ApiKeyService keys, CancellationToken ct) =>
                 Run(async () => Results.Ok(await keys.ListAsync(ct))))
-            .RequirePluginPermission("keys");
+            .RequirePluginPermission("keys")
+            .Cli("keys", "The API keys outside callers use for HTTP functions (never the secrets).", OpRisk.Read);
 
         endpoints.MapPost("/_functions/keys", (CreateApiKey body, ApiKeyService keys, CancellationToken ct) =>
                 Run(async () => Results.Ok(await keys.CreateAsync(body, ct))))
             .RequirePluginPermission("keys")
-            .AuditAs("key.created");
+            .AuditAs("key.created")
+            .Cli("create-key", "Creates an API key; its secret is shown once.", OpRisk.Safe);
 
         endpoints.MapDelete("/_functions/keys/{id:guid}", (Guid id, ApiKeyService keys, CancellationToken ct) =>
                 Run(async () => await keys.RevokeAsync(id, ct)
                     ? Results.NoContent()
                     : Results.NotFound(new { error = $"There is no key {id}." })))
             .RequirePluginPermission("keys")
-            .AuditAs("key.revoked");
+            .AuditAs("key.revoked")
+            .Cli("revoke-key", "Revokes an API key: callers using it are refused.", OpRisk.Dangerous);
 
         // Secrets, per instance and so per environment: names listed, values only ever written.
         endpoints.MapGet("/_functions/secrets", (IPluginContext context, CancellationToken ct) =>
                 Run(async () => Results.Ok((await context.Contracts.Get<IPluginSecrets>()
                     .ListAsync(new SecretNames(context.Instance!.InstanceId), ct)).Names)))
-            .RequirePluginPermission("secrets");
+            .RequirePluginPermission("secrets")
+            .Cli("secrets", "The names of the secrets set (never their values).", OpRisk.Read);
 
         endpoints.MapPut("/_functions/secrets/{name}", (string name, SecretBody body, IPluginContext context, CancellationToken ct) =>
                 Run(async () =>
@@ -117,32 +133,37 @@ internal static class AdminEndpoints
                     return Results.NoContent();
                 }))
             .RequirePluginPermission("secrets")
-            .AuditAs("secret.set");
+            .AuditAs("secret.set")
+            .Cli("set-secret", "Sets or replaces a secret; write-only.", OpRisk.Safe);
 
         endpoints.MapDelete("/_functions/secrets/{name}", (string name, IPluginContext context, CancellationToken ct) =>
                 Run(async () => (await context.Contracts.Get<IPluginSecrets>().DeleteAsync(new SecretName(name, context.Instance!.InstanceId), ct)).Found
                     ? Results.NoContent()
                     : Results.NotFound(new { error = $"There is no secret {name}." })))
             .RequirePluginPermission("secrets")
-            .AuditAs("secret.deleted");
+            .AuditAs("secret.deleted")
+            .Cli("remove-secret", "Removes a secret.", OpRisk.Dangerous);
 
         // Packages (ADR 0031): the IDE's search, and adding or removing one in the caller's draft.
         // The answer is the manifest and lock to write: the draft is the caller's, and theirs to commit.
         endpoints.MapGet("/_functions/packages/search", (string ecosystem, string q, Packages.PackageResolver packages, CancellationToken ct) =>
                 Run(async () => Results.Ok(await packages.SearchAsync(ecosystem, q, ct))))
-            .RequirePluginPermission("read");
+            .RequirePluginPermission("read")
+            .Cli("search-packages", "Searches npm (ecosystem=npm) or NuGet (ecosystem=nuget).", OpRisk.Read);
 
         // The locked npm packages' declarations, for the editor's type checker: package.json + its lock in, files out.
         endpoints.MapPost("/_functions/packages/types", (DraftFiles body, Packages.PackageResolver packages, CancellationToken ct) =>
                 Run(async () => Results.Ok(await packages.TypesAsync(body.Files, ct))))
             .RequirePluginPermission("read")
-            .SkipAudit("Reads the declarations of packages the caller's own lock names; changes nothing.");
+            .SkipAudit("Reads the declarations of packages the caller's own lock names; changes nothing.")
+            .Cli("package-types", "The locked npm packages' type declarations, for an editor.", OpRisk.Read);
 
         // The locked NuGet packages' assemblies, for the editor's C# service: Functions.csproj + its lock in.
         endpoints.MapPost("/_functions/packages/assemblies", (DraftFiles body, Packages.PackageResolver packages, CancellationToken ct) =>
                 Run(async () => Results.Ok(await packages.AssembliesAsync(body.Files, CSharpSdkPackage.Framework, ct))))
             .RequirePluginPermission("read")
-            .SkipAudit("Reads the assemblies of packages the caller's own lock names; changes nothing.");
+            .SkipAudit("Reads the assemblies of packages the caller's own lock names; changes nothing.")
+            .Cli("package-assemblies", "The locked NuGet packages' assemblies, for an editor.", OpRisk.Read);
 
         endpoints.MapPost("/_functions/packages", (PackageChange body, Packages.PackageResolver packages, IPluginContext context, CancellationToken ct) =>
                 Run(async () =>
@@ -167,13 +188,15 @@ internal static class AdminEndpoints
                     }
                 }))
             .RequirePluginPermission("edit")
-            .AuditAs("package.changed");
+            .AuditAs("package.changed")
+            .Cli("change-package", "Adds or removes a package: answers the manifest and lock to write into your draft.", OpRisk.Read);
 
         // The editor's checks: its draft built as a deployment would be, and tried, without making one.
         endpoints.MapPost("/_functions/check", (DraftFiles body, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () => Results.Ok(await deployments.CheckAsync(body.Files, ct))))
             .RequirePluginPermission("edit")
-            .SkipAudit("Builds nothing that stays: a check of files the caller already holds.");
+            .SkipAudit("Builds nothing that stays: a check of files the caller already holds.")
+            .Cli("check", "Builds files (a draft) as a deployment would, without making one: problems, functions, permissions, sizes.", OpRisk.Read);
 
         endpoints.MapPost("/_functions/test", (DraftTest body, DeploymentService deployments, CancellationToken ct) =>
                 Run(async () =>
@@ -182,7 +205,8 @@ internal static class AdminEndpoints
                     return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs, outcome.Trace });
                 }))
             .RequirePluginPermission("deploy")
-            .AuditAs("function.tested");
+            .AuditAs("function.tested")
+            .Cli("test", "Builds files and runs one function of them now, for real, under your permissions; nothing is deployed.", OpRisk.Safe);
 
         // Runs a function now: the live deployment, or a built one tried before deploying it,
         // which needs what deploying it would. Either way it acts, so only deployers may.
@@ -193,7 +217,8 @@ internal static class AdminEndpoints
                     return Results.Ok(new { outcome.Status, outcome.Result, outcome.Error, outcome.Logs, outcome.Calls, outcome.DurationMs, outcome.Trace });
                 }))
             .RequirePluginPermission("deploy")
-            .AuditAs("function.ran");
+            .AuditAs("function.ran")
+            .Cli("run", "Runs one function of the live deployment now, for real.", OpRisk.Safe);
     }
 
     public sealed record SecretBody(string Value);

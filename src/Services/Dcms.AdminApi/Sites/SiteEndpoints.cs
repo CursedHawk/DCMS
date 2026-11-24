@@ -43,7 +43,8 @@ public static class SiteEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(sites);
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.list", "The workspace's sites, with render mode and deployment state.", CliRisk.Read);
 
         app.MapPost("/api/admin/sites", async (
             CreateSiteRequest body, SitesDbContext db, ITenantContext tenant, CancellationToken ct) =>
@@ -70,7 +71,8 @@ public static class SiteEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/sites/{site.Id}", new { id = site.Id });
         }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteCreated, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.create", "Creates a site. renderMode: StaticPrerender (pages builder), ReactBuilder (visual React builder), ReactApp (code), StaticFiles (uploaded files). Its files start empty: write a starter (sites.starter-files) into its draft.", CliRisk.Safe);
 
         app.MapGet("/api/admin/sites/{id:guid}", async (Guid id, SitesDbContext db, CancellationToken ct) =>
         {
@@ -101,7 +103,8 @@ public static class SiteEndpoints
                     uploadedAt = site.StaticBundleUploadedAt,
                 },
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.get", "One site: render mode, live build and publishing state.", CliRisk.Read);
 
         // Upload a pre-built static bundle (Mode C): one .zip and/or loose files
         // (incl. a folder upload carrying relative paths). The files are sanitized
@@ -175,7 +178,8 @@ public static class SiteEndpoints
                 name = site.StaticBundleName,
                 hasIndex = bundle.HasIndex,
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit).DisableAntiforgery().WithAudit(AuditActions.SiteUploaded, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).DisableAntiforgery().WithAudit(AuditActions.SiteUploaded, "site")
+          .Cli("sites.upload", "Stages an uploaded-files site's files (multipart 'file', a zip or single files) for its next publish.", CliRisk.Safe, files: ["file"]);
 
         // Build history for a site (status, source commit, log availability, which one is
         // live) — drives both the rollback UI and the IDE Deployments panel.
@@ -222,7 +226,8 @@ public static class SiteEndpoints
                 active = live.Contains(b.id),
                 isActive = live.Contains(b.id),
             }));
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.builds", "A site's builds, newest first: status, commit, which one is live.", CliRisk.Read);
 
         // Roll back / forward: re-activate a previously succeeded build. Its artifacts
         // still live under their own prefix, so this is a pointer switch.
@@ -264,7 +269,8 @@ public static class SiteEndpoints
             await SiteChangeNotice.PublishAsync(events, site, logs.CreateLogger("Dcms.AdminApi.Sites"), ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildActivated, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.activate-build", "Makes another build of a site the live one: a rollback, or forward again.", CliRisk.Dangerous);
 
         // Whole-map replace. Used for a full flush (publish) and as a fallback. An
         // optional `If-Match: <version>` guards against overwriting a newer draft:
@@ -294,7 +300,8 @@ public static class SiteEndpoints
 
             var files = SiteFileMap.Parse(site.DraftDefinitionJson);
             return Results.Ok(new { version = site.DefinitionVersion, hashes = SiteFileMap.HashAll(files) });
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteUpdated, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteUpdated, "site")
+          .Cli("sites.set-definition", "Replaces a legacy site definition document.", CliRisk.Dangerous, humanOnly: true);
 
         // Granular per-file save (Mode B IDE autosave). Instead of resending the whole
         // file map — which makes two people editing different files clobber each other
@@ -336,7 +343,8 @@ public static class SiteEndpoints
             // Seeded from git HEAD, or the legacy DB draft while the repo isn't ready.
             return await GitWorkspaces.LoadDraftAsync(Workspace(site, live, services, tenant), branch,
                 () => SiteFileMap.Parse(site.DraftDefinitionJson), db, git, user, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.files", "Your working draft of a site's branch: every file and its hash (opening it creates the draft). Binary files are base64.", CliRisk.Read);
 
         // Granular per-file save into the current user's working draft for a branch.
         // Merges only the named files into the stored draft; each entry carries the
@@ -351,7 +359,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             return await GitWorkspaces.SaveFilesAsync(Workspace(site, live, services, tenant), branch, body, db, user, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteFilesChanged, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteFilesChanged, "site")
+          .Cli("sites.write-files", "Writes files into your draft: put {path: {content, baseHash}} and delete [{path, baseHash}]; 409 names files changed meanwhile.", CliRisk.Safe);
 
         app.MapPost("/api/admin/sites/{id:guid}/publish", async (
             Guid id, string? branch, SitesDbContext db, CmsDbContext cms, ITenantContext tenant,
@@ -454,7 +463,8 @@ public static class SiteEndpoints
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishRequested, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.publish", "Publishes a site: merges the branch into release, which builds and goes live on its domains.", CliRisk.Dangerous);
 
         // --- Git backend (Forgejo): provision a repo for a Mode B site and seed it. ---
         // Provisioning is idempotent: ensures the tenant org + site repo exist and, on
@@ -489,7 +499,8 @@ public static class SiteEndpoints
                 httpUrl = info.HttpCloneUrl,
                 sshUrl = info.SshCloneUrl,
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitRepoProvisioned, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitRepoProvisioned, "site")
+          .Cli("sites.provision-repo", "Creates a site's git repository if it has none yet.", CliRisk.Safe);
 
         // Git status for a Mode B site. Auto-provisions the repo on first open so the
         // IDE never needs a manual provision step. Returns clone URLs for the panel.
@@ -530,7 +541,8 @@ public static class SiteEndpoints
                 sshUrl = ssh,
                 provisionedAt = site.GitProvisionedAt,
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.git", "A site's repository: clone URLs and what your own git may do there.", CliRisk.Read);
 
         app.MapGet("/api/admin/sites/{id:guid}/git/branches", async (
             Guid id, SitesDbContext db, ITenantContext tenant, SiteLiveUpdates live, IServiceProvider services,
@@ -539,7 +551,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.Ok(Array.Empty<object>());
             return await GitWorkspaces.BranchesAsync(Workspace(site, live, services, tenant), git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.branches", "A site's branches.", CliRisk.Read);
 
         app.MapGet("/api/admin/sites/{id:guid}/git/history", async (
             Guid id, string? branch, int? limit, SitesDbContext db, ITenantContext tenant, SiteLiveUpdates live,
@@ -548,7 +561,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.Ok(Array.Empty<object>());
             return await GitWorkspaces.HistoryAsync(Workspace(site, live, services, tenant), branch, limit, git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.history", "A branch's commits, newest first.", CliRisk.Read);
 
         // Source-control "changes": the current user's working draft on a branch vs that
         // branch's git HEAD. Drives the changed-files list and the per-file diff view.
@@ -561,7 +575,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.Ok(Array.Empty<object>());
             return await GitWorkspaces.ChangesAsync(Workspace(site, live, services, tenant), branch, db, user, git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.changes", "What your draft changes against the branch's head.", CliRisk.Read);
 
         // Commit the current user's working draft (on `branch`) to git — to that same
         // branch, an existing `targetBranch`, or a freshly created `newBranch`. The user
@@ -577,7 +592,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             return await GitWorkspaces.CommitAsync(Workspace(site, live, services, tenant), body, db, user, git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitCommitted, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitCommitted, "site")
+          .Cli("sites.commit", "Commits your draft to its branch (or a new one). If the branch moved, 409 lists files changed on both sides; send resolutions {path: content} for exactly those.", CliRisk.Safe);
 
         // Create a branch off another (defaults to the site's default branch).
         app.MapPost("/api/admin/sites/{id:guid}/git/branches", async (
@@ -587,7 +603,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.BadRequest(new { error = "This site has no git repository." });
             return await GitWorkspaces.CreateBranchAsync(Workspace(site, live, services, tenant), body, git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitBranchCreated, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitBranchCreated, "site")
+          .Cli("sites.create-branch", "Creates a branch from another.", CliRisk.Safe);
 
         // Pre-merge review: what merging `head` into the release branch would bring
         // (files changed + commit count).
@@ -598,7 +615,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.Ok(new { totalCommits = 0, files = Array.Empty<object>() });
             return await GitWorkspaces.CompareAsync(Workspace(site, live, services, tenant), head, @base, git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.compare", "What merging one branch into another would bring.", CliRisk.Read);
 
         // Merge `head` into `base` (defaults to release). A real 3-way merge: clean changes
         // auto-merge, only true conflicts need resolution. A clean merge into release fires a
@@ -614,7 +632,8 @@ public static class SiteEndpoints
                 return Results.BadRequest(new { error = "This site has no git repository." });
             return await GitWorkspaces.MergeAsync(Workspace(site, live, services, tenant), body, user, git, ct);
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMerged, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.merge", "Merges a branch into another (release by default, which builds); a conflict answers with the files.", CliRisk.Dangerous);
 
         // Complete a conflicted merge of `head` into `base` (defaults to release): apply the
         // caller's per-file resolutions onto the auto-merged tree and commit the two-parent
@@ -629,7 +648,8 @@ public static class SiteEndpoints
                 return Results.BadRequest(new { error = "This site has no git repository." });
             return await GitWorkspaces.ResolveMergeAsync(Workspace(site, live, services, tenant), body, user, git, ct);
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMergeResolved, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.merge-resolve", "Completes a conflicted merge with each file's resolved content.", CliRisk.Dangerous);
 
         // Restore an earlier commit's tree into the current user's working draft on a
         // branch (does not commit — the user reviews the diff and commits explicitly).
@@ -640,7 +660,8 @@ public static class SiteEndpoints
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             return await GitWorkspaces.RestoreAsync(Workspace(site, live, services, tenant), body, branch, db, user, git, ct);
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitRestored, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitRestored, "site")
+          .Cli("sites.restore", "Loads an earlier commit's files into your draft (nothing is committed).", CliRisk.Safe);
 
         // Forgejo push webhook: builds+deploys the site on a push/merge to the RELEASE
         // branch — this is what "publish" lands on. HMAC-verified (no user auth). Cross-
@@ -803,7 +824,8 @@ public static class SiteEndpoints
 
             log.LogInformation("Queued build {BuildId} from git push {Sha} to {Repo}", build.Id, afterSha, repoFull);
             return Results.Ok(new { buildId = build.Id });
-        }).AllowAnonymous().WithAudit(AuditActions.GitPushReceived, "site", AuditCategory.System);
+        }).AllowAnonymous().WithAudit(AuditActions.GitPushReceived, "site", AuditCategory.System)
+          .NotForCli("Forgejo's push webhook, signed by Forgejo: no person or agent calls it.");
 
         // Full step log (install + build output) for a build, as plain text. This is what
         // lets a user see exactly why a build failed, inside the IDE.
@@ -826,7 +848,8 @@ public static class SiteEndpoints
             {
                 return Results.Text(build.Error ?? "The build log could not be retrieved.", "text/plain");
             }
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.build-log", "One build's log, to find out why it failed.", CliRisk.Read);
 
         // Force a fresh build+deploy of the current release head, even if its tree is
         // unchanged (recovers from a failed build or a wedged queue — the tree-diff no-op
@@ -844,7 +867,8 @@ public static class SiteEndpoints
                 return Results.BadRequest(new { error = $"The branch {publishBranch} does not publish." });
             var buildId = await SiteBuilds.EnqueueBranchBuildAsync(db, cms, events, git, site, live, user.UserId, publishBranch, ct);
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildCreated, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildCreated, "site")
+          .Cli("sites.rebuild", "Builds a site's release (or a publishing branch) again.", CliRisk.Dangerous);
 
         return app;
     }

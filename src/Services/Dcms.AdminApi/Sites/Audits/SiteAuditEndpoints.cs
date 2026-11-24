@@ -103,20 +103,23 @@ public static class SiteAuditEndpoints
             audit.JobId = job.Id;
             await db.SaveChangesAsync(ct);
             return Results.Accepted($"/api/admin/sites/{id}/audits/{audit.Id}", new { auditId = audit.Id, jobId = job.Id });
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteAuditRequested, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteAuditRequested, "site")
+          .Cli("sites.run-audit", "Runs a PageSpeed audit of a site's page now.", CliRisk.Safe);
 
         app.MapGet("/api/admin/sites/{id:guid}/audits", async (Guid id, SitesDbContext db, PageSpeedClient psi, CancellationToken ct) =>
         {
             var audits = await db.Audits.AsNoTracking().Where(a => a.SiteId == id)
                 .OrderByDescending(a => a.CreatedAt).Take(20).ToListAsync(ct);
             return Results.Ok(new { configured = psi.Configured, audits = audits.Select(a => View(a, full: false)) });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.audits", "A site's PageSpeed audits, newest first.", CliRisk.Read);
 
         app.MapGet("/api/admin/sites/{id:guid}/audits/{auditId:guid}", async (Guid id, Guid auditId, SitesDbContext db, CancellationToken ct) =>
         {
             var audit = await db.Audits.AsNoTracking().FirstOrDefaultAsync(a => a.Id == auditId && a.SiteId == id, ct);
             return audit is null ? Results.NotFound() : Results.Ok(View(audit, full: true));
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.audit", "One PageSpeed audit in full.", CliRisk.Read);
 
         return app;
     }

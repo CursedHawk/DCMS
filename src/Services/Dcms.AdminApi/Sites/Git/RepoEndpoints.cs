@@ -54,33 +54,40 @@ public static class RepoEndpoints
                     // What the caller's own git may do: clone and pull, and push unless "read".
                     access = write ? "write" : "read",
                 });
-            }));
+            }))
+            .Cli("repos.git", "An app's repository: clone URLs and what your own git may do there.", CliRisk.Read);
 
         repo.MapGet("/ide", (Guid id, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
             WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct,
-                (_, ws) => GitWorkspaces.LoadDraftAsync(ws, branch, fallbackSeed: null, db, git, user, ct)));
+                (_, ws) => GitWorkspaces.LoadDraftAsync(ws, branch, fallbackSeed: null, db, git, user, ct)))
+                .Cli("repos.files", "Your working draft of an app repository's branch: every file and its hash (opening it creates the draft).", CliRisk.Read);
 
         repo.MapPatch("/ide/files", (Guid id, string? branch, SaveFilesRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
             WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.SaveFilesAsync(ws, branch, body, db, user, ct)))
-            .WithAudit(AuditActions.RepoFilesChanged, Resource);
+            .WithAudit(AuditActions.RepoFilesChanged, Resource)
+            .Cli("repos.write-files", "Writes files into your draft: put {path: {content, baseHash}} and delete [{path, baseHash}]; 409 names files changed meanwhile.", CliRisk.Safe);
 
         repo.MapGet("/git/branches", (Guid id, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.BranchesAsync(ws, git, ct)));
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.BranchesAsync(ws, git, ct)))
+            .Cli("repos.branches", "An app repository's branches.", CliRisk.Read);
 
         repo.MapGet("/git/history", (Guid id, string? branch, int? limit, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.HistoryAsync(ws, branch, limit, git, ct)));
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.HistoryAsync(ws, branch, limit, git, ct)))
+            .Cli("repos.history", "A branch's commits, newest first.", CliRisk.Read);
 
         repo.MapGet("/git/changes", (Guid id, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.ChangesAsync(ws, branch, db, user, git, ct)));
+            WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.ChangesAsync(ws, branch, db, user, git, ct)))
+            .Cli("repos.changes", "What your draft changes against the branch's head.", CliRisk.Read);
 
         repo.MapGet("/git/compare", (Guid id, string head, string? @base, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 IAuthorizationService authz, CancellationToken ct) =>
-            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.CompareAsync(ws, head, @base, git, ct)));
+            WithAsync(id, Need.Read, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.CompareAsync(ws, head, @base, git, ct)))
+            .Cli("repos.compare", "What merging one branch into another would bring.", CliRisk.Read);
 
         repo.MapPost("/git/commit", (Guid id, CommitRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
@@ -88,29 +95,34 @@ public static class RepoEndpoints
             // RefuseRelease asks for the publish permission on the branch the handler itself resolves.
             WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.CommitAsync(ws, body, db, user, git, ct)))
-            .WithAudit(AuditActions.RepoCommitted, Resource);
+            .WithAudit(AuditActions.RepoCommitted, Resource)
+            .Cli("repos.commit", "Commits your draft to its branch. If the branch moved, 409 lists files changed on both sides; send resolutions {path: content} for exactly those.", CliRisk.Safe);
 
         repo.MapPost("/git/branches", (Guid id, CreateBranchRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 IAuthorizationService authz, CancellationToken ct) =>
             WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.CreateBranchAsync(ws, body, git, ct)))
-            .WithAudit(AuditActions.RepoBranchCreated, Resource);
+            .WithAudit(AuditActions.RepoBranchCreated, Resource)
+            .Cli("repos.create-branch", "Creates a branch from another.", CliRisk.Safe);
 
         repo.MapPost("/git/merge", (Guid id, MergeRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git, CurrentUser user,
                 IAuthorizationService authz, CancellationToken ct) =>
             WithAsync(id, IsRelease(body.Base, emptyIsRelease: true) ? Need.Publish : Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.MergeAsync(ws, body, user, git, ct)))
-            .WithAudit(AuditActions.RepoMerged, Resource);
+            .WithAudit(AuditActions.RepoMerged, Resource)
+            .Cli("repos.merge", "Merges a branch into another (release by default, which builds a deployment).", CliRisk.Dangerous);
 
         repo.MapPost("/git/merge/resolve", (Guid id, ResolveMergeRequest body, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 CurrentUser user, IAuthorizationService authz, CancellationToken ct) =>
             WithAsync(id, IsRelease(body.Base, emptyIsRelease: true) ? Need.Publish : Need.Edit, http, services, tenant, db, authz, ct,
                 (_, ws) => GitWorkspaces.ResolveMergeAsync(ws, body, user, git, ct)))
-            .WithAudit(AuditActions.RepoMergeResolved, Resource);
+            .WithAudit(AuditActions.RepoMergeResolved, Resource)
+            .Cli("repos.merge-resolve", "Completes a conflicted merge with each file's resolved content.", CliRisk.Dangerous);
 
         repo.MapPost("/git/restore", (Guid id, GitRestoreRequest body, string? branch, HttpContext http, IServiceProvider services, ITenantContext tenant, SitesDbContext db, SiteGitService git,
                 CurrentUser user, IAuthorizationService authz, CancellationToken ct) =>
             WithAsync(id, Need.Edit, http, services, tenant, db, authz, ct, (_, ws) => GitWorkspaces.RestoreAsync(ws, body, branch, db, user, git, ct)))
-            .WithAudit(AuditActions.RepoRestored, Resource);
+            .WithAudit(AuditActions.RepoRestored, Resource)
+            .Cli("repos.restore", "Loads an earlier commit's files into your draft (nothing is committed).", CliRisk.Safe);
 
         return app;
     }

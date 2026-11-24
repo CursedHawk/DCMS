@@ -17,7 +17,8 @@ public static class SiteDeletionEndpoints
             var result = await deleter.DeleteAsync(id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteDeleted, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.delete", "Deletes a site for good: builds, files, repository; its domains stop serving it.", CliRisk.Dangerous);
 
         return app;
     }

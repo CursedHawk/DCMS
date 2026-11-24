@@ -1,5 +1,6 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime.Contracts;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Audit;
@@ -263,6 +264,15 @@ internal static class PluginPermissionConvention
             if (endpoint.Metadata.OfType<PluginAuditExemptMetadata>().LastOrDefault() is { } skip)
             {
                 endpoint.Metadata.Add(new AuditExemptMetadata($"Plugin '{manifest.Id}': {skip.Reason}"));
+            }
+            if (endpoint.Metadata.OfType<PluginCliMetadata>().LastOrDefault() is { } cli)
+            {
+                endpoint.Metadata.Add(new CliOperationMetadata($"{manifest.Id}.{cli.Name}", cli.Summary, cli.Risk switch
+                {
+                    OpRisk.Read => CliRisk.Read,
+                    OpRisk.Safe => CliRisk.Safe,
+                    _ => CliRisk.Dangerous,
+                }, cli.HumanOnly));
             }
         });
 }

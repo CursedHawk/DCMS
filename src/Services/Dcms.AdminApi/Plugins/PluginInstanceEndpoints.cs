@@ -25,7 +25,8 @@ public static class PluginInstanceEndpoints
         // Catalog of installed plugins (manifests) for config forms + permission UI.
         app.MapGet("/api/admin/plugins/catalog", (IPluginCatalog catalog) =>
             Results.Ok(catalog.Manifests.Select(ToManifestDto)))
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .Cli("plugins.catalog", "Every plugin this platform offers, with its settings schema and permissions.", CliRisk.Read);
 
         app.MapGet("/api/admin/plugins/instances", async (CmsDbContext db, CancellationToken ct) =>
         {
@@ -47,7 +48,8 @@ public static class PluginInstanceEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(instances);
-        }).RequirePermission(PlatformPermissions.PluginsManage);
+        }).RequirePermission(PlatformPermissions.PluginsManage)
+          .Cli("plugins.list", "The plugin instances (apps) installed in this workspace, enabled or not.", CliRisk.Read);
 
         // Install, configure, enable: PluginInstanceService, shared with dcms.plugins@1.
         app.MapPost("/api/admin/plugins/instances", (CreateInstanceRequest body, PluginInstanceService plugins, CancellationToken ct) =>
@@ -56,21 +58,24 @@ public static class PluginInstanceEndpoints
                 var instance = await plugins.CreateAsync(body.PluginId, body.Slug, body.Name, body.Description, body.Config, ct);
                 return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });
             })).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance")
-            .ManagedByDeployments("plugins");
+            .ManagedByDeployments("plugins")
+            .Cli("plugins.install", "Installs a plugin as a new app. Agents use the dcms.plugins contract, which keeps AI settings to people.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapPut("/api/admin/plugins/instances/{id:guid}", (Guid id, UpdateInstanceRequest body, PluginInstanceService plugins, CancellationToken ct) =>
             Run(async () => await plugins.UpdateAsync(id, body.Name, body.Description, body.Config, body.AiToolsEnabled, ct) is null
                 ? Results.NotFound()
                 : Results.NoContent()))
             .RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance")
-            .ManagedByDeployments("plugins");
+            .ManagedByDeployments("plugins")
+            .Cli("plugins.update", "Changes an app's name, description, settings or AI tools switch. Agents use the dcms.plugins contract, which never flips the AI switch.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", (Guid id, string action, PluginInstanceService plugins, CancellationToken ct) =>
             action is not ("enable" or "disable")
                 ? Task.FromResult(Results.NotFound())
                 : Run(async () => await plugins.SetEnabledAsync(id, action == "enable", ct) is null ? Results.NotFound() : Results.NoContent()))
             .RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance")
-            .ManagedByDeployments("plugins");
+            .ManagedByDeployments("plugins")
+            .Cli("plugins.action", "Enables or disables an app (action: enable, disable). Agents use the dcms.plugins contract.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

@@ -26,7 +26,8 @@ public enum CliRisk
 /// does, and what it can change. <paramref name="HumanOnly"/> keeps it to a person's own sign-in:
 /// an agent token never reaches it, whatever the person's permissions.
 /// </summary>
-public sealed record CliOperationMetadata(string Name, string Summary, CliRisk Risk, bool HumanOnly = false);
+/// <param name="Files">A multipart route's file fields (<c>["file"]</c>); its other form fields are named in the summary.</param>
+public sealed record CliOperationMetadata(string Name, string Summary, CliRisk Risk, bool HumanOnly = false, string[]? Files = null);
 
 /// <summary>A route deliberately not offered to the command line, and why.</summary>
 public sealed record NotForCliMetadata(string Reason);
@@ -34,10 +35,10 @@ public sealed record NotForCliMetadata(string Reason);
 public static class CliEndpointExtensions
 {
     /// <summary>Offers this route to the dcms command line and, unless <paramref name="humanOnly"/>, to desktop agents.</summary>
-    public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, CliRisk risk, bool humanOnly = false)
+    public static TBuilder Cli<TBuilder>(this TBuilder builder, string name, string summary, CliRisk risk, bool humanOnly = false, string[]? files = null)
         where TBuilder : IEndpointConventionBuilder
     {
-        builder.WithMetadata(new CliOperationMetadata(name, summary, risk, humanOnly));
+        builder.WithMetadata(new CliOperationMetadata(name, summary, risk, humanOnly, files));
         return builder;
     }
 

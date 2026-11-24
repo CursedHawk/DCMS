@@ -58,12 +58,14 @@ public static class EnvironmentEndpoints
             });
         }).RequireAuthorization().AllowNonMemberTenant(
             "A workspace member with no role in the environment named, or in production, lists the environments to find one they "
-            + "can open; the handler checks workspace membership itself.");
+            + "can open; the handler checks workspace membership itself.")
+            .Cli("environments.list", "The workspace's environments: which promote to which, whether each is ready.", CliRisk.Read);
 
         // What duplicating can copy besides configuration; the personal ones are offered with a warning.
         app.MapGet("/api/admin/environments/copy-scopes", (EnvironmentDuplicator duplicator) =>
             Results.Ok(duplicator.Scopes.Select(x => new { scope = x.Scope, personalData = x.PersonalData })))
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .Cli("environments.copy-scopes", "What a new environment can copy from another.", CliRisk.Read);
 
         // A new environment goes upstream of the current most-upstream one, which may then be
         // deployed into from it: adding staging, test and development in that order builds
@@ -164,7 +166,8 @@ public static class EnvironmentEndpoints
             }
 
             return Results.Created($"/api/admin/environments/{created.Id}", View(created, true));
-        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentCreated, "environment");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentCreated, "environment")
+          .Cli("environments.create", "Creates an environment, empty or copied from another (production by default).", CliRisk.Safe);
 
         app.MapPatch("/api/admin/environments/{id:guid}", async (
             Guid id, UpdateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, EnvironmentStore environments,
@@ -216,7 +219,8 @@ public static class EnvironmentEndpoints
             await db.SaveChangesAsync(ct);
             environments.Evict(tenantId);
             return Results.Ok(View(target, true));
-        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentUpdated, "environment");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentUpdated, "environment")
+          .Cli("environments.update", "Renames or reorders an environment, or changes which may deploy into it.", CliRisk.Safe);
 
         app.MapDelete("/api/admin/environments/{id:guid}", async (
             Guid id, ITenantContext tenant, CurrentUser me,
@@ -231,7 +235,8 @@ public static class EnvironmentEndpoints
             var result = await deleter.DeleteEnvironmentAsync(tenantId, id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         }).RequireAuthorization().PermissionExempt(ProductionGate)
-          .AuditExempt("TenantDeleter.DeleteEnvironmentAsync records environment.deleted itself, with the manifest of what went.");
+          .AuditExempt("TenantDeleter.DeleteEnvironmentAsync records environment.deleted itself, with the manifest of what went.")
+          .Cli("environments.delete", "Deletes an environment and everything in it, for good.", CliRisk.Dangerous);
 
         // Who owns each kind of configuration in an environment, or one item of it (ADR 0026).
         app.MapGet("/api/admin/environments/{id:guid}/policies", async (
@@ -244,7 +249,8 @@ public static class EnvironmentEndpoints
                 .Select(p => new { kind = p.Kind, itemKey = p.ItemKey, mode = p.Mode.ToString() })
                 .ToListAsync(ct);
             return Results.Ok(policies);
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("environments.locks", "An environment's locks: per kind of configuration, edited here or left to deployments.", CliRisk.Read);
 
         // Replaces the environment's policies with the given set; anything left out is Mixed.
         app.MapPut("/api/admin/environments/{id:guid}/policies", async (
@@ -325,7 +331,8 @@ public static class EnvironmentEndpoints
                 }
             }
             return Results.NoContent();
-        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "environment");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "environment")
+          .Cli("environments.set-locks", "Replaces an environment's locks (send the whole list back changed).", CliRisk.Dangerous);
 
         // Links (ADR 0026, 0028): this environment using another's resource, within the workspace --
         // an app's /api, sign-in, contract operations, or Dynamic Apps tables.
@@ -338,7 +345,8 @@ public static class EnvironmentEndpoints
                 .Where(l => l.TenantId == target.TenantId && l.EnvironmentId == target.Id)
                 .Select(l => new { id = l.Id, kind = l.Kind, targetEnvironmentId = l.TargetEnvironmentId, targetKey = l.TargetKey, access = l.Access.ToString(), grants = l.Grants })
                 .ToListAsync(ct));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("environments.links", "An environment's links to another's tables.", CliRisk.Read, humanOnly: true);
 
         // What another environment can use from this one through a link: every enabled app -- its
         // address (app links), operations (contracts links) and tables (tables links), as the grants
@@ -363,7 +371,8 @@ public static class EnvironmentEndpoints
                 offers.Add(new { slug = i.Slug, name = i.Name, pluginId = i.PluginId, operations, tables });
             }
             return Results.Ok(offers);
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("environments.offers", "What another environment offers to link.", CliRisk.Read, humanOnly: true);
 
         app.MapPost("/api/admin/environments/{id:guid}/links", async (
             Guid id, LinkRequest body, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db,
@@ -397,7 +406,8 @@ public static class EnvironmentEndpoints
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
             foreach (var observer in observers) await observer.LinkChangedAsync(tenantId, consumer.Id, provider.Id, row.Kind, ct);
             return Results.Created($"/api/admin/environments/{id}/links/{row.Id}", new { id = row.Id });
-        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link")
+          .Cli("environments.link", "Links another environment's tables into this one.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapDelete("/api/admin/environments/{id:guid}/links/{linkId:guid}", async (
             Guid id, Guid linkId, ITenantContext tenant, EnvironmentStore environments, TenancyDbContext db, CurrentUser me,
@@ -416,7 +426,8 @@ public static class EnvironmentEndpoints
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(consumer.Id), ct);
             foreach (var observer in observers) await observer.LinkChangedAsync(consumer.TenantId, consumer.Id, link.TargetEnvironmentId, link.Kind, ct);
             return Results.NoContent();
-        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
+        }).RequireAuthorization().PermissionExempt(ProductionGate).WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link")
+          .Cli("environments.unlink", "Removes an environment link.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

@@ -11,7 +11,7 @@ namespace Dcms.Cli;
 /// <c>run</c> send the working tree to the same build the web IDE uses, and <c>deploy</c> merges
 /// main into release on the server, as the console does.
 /// </summary>
-internal sealed class Commands(Config config, Api api, HttpClient http, TextWriter stdout, TextWriter stderr, TextReader stdin, string cwd)
+internal sealed partial class Commands(Config config, Api api, HttpClient http, TextWriter stdout, TextWriter stderr, TextReader stdin, string cwd)
 {
     public static string Version =>
         typeof(Commands).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
@@ -132,6 +132,8 @@ internal sealed class Commands(Config config, Api api, HttpClient http, TextWrit
 
         root.Subcommands.Add(Secrets());
         root.Subcommands.Add(Agents());
+        root.Subcommands.Add(OpsList());
+        root.Subcommands.Add(Op());
 
         Add(root, new Command("deploy", "Merge main into release, wait for the build, deploy it."), async (_, ct) =>
         {
@@ -351,6 +353,9 @@ internal sealed class Commands(Config config, Api api, HttpClient http, TextWrit
         stdout.WriteLine($"Updated to {server}'s build: {(await ServerVersionAsync(server, ct)) ?? "unknown version"}.");
         return 0;
     }
+
+    private void Act(Command command, Func<ParseResult, CancellationToken, Task<int>> action) =>
+        command.SetAction(async (r, ct) => await Guard(() => action(r, ct)));
 
     private void Add(Command parent, Command command, Func<ParseResult, CancellationToken, Task<int>> action)
     {

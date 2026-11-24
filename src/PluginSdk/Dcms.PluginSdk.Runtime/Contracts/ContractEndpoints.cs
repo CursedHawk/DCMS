@@ -128,7 +128,7 @@ public static class ContractEndpoints
     /// dispatcher asks about the providing instance; a plugin-wide key it still asks about (another
     /// plugin's, on an open contract) is held on any instance.
     /// </summary>
-    private static Func<string, Task<bool>> Permissions(ClaimsPrincipal user, IAuthorizationService authz) =>
+    public static Func<string, Task<bool>> Permissions(ClaimsPrincipal user, IAuthorizationService authz) =>
         async permission => (await authz.AuthorizeAsync(user, null,
             PluginPermissions.TryParse(permission, out _, out var slug, out _) && slug is null
                 ? PermissionPolicyProvider.AnyInstancePolicyName(permission)

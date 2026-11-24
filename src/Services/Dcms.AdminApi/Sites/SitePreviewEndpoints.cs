@@ -84,7 +84,8 @@ public static class SitePreviewEndpoints
                     .AnyAsync(p => p.TenantId == tenantId && p.EnvironmentId == realmId && p.Enabled && providers.Contains(p.PluginId), ct);
             }
             return Results.Ok(new { tenantId = realmId, host, signIn });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.preview-realm", "The sign-in realm a site's preview uses.", CliRisk.Read);
 
 
         return app;

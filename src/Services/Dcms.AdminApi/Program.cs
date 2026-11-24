@@ -242,6 +242,7 @@ app.MapEnvironmentMigrationEndpoints();
 app.MapTenantUsageEndpoints();
 app.MapMyAccountEndpoints();
 app.MapAgentTokenEndpoints();
+Dcms.AdminApi.Cli.CliCatalogEndpoints.MapCliCatalogEndpoints(app);
 app.MapInvitationEndpoints();
 app.MapDomainEndpoints();
 app.MapDomainCertificateEndpoints();
@@ -318,7 +319,7 @@ app.MapGet("/api/admin/me", (ClaimsPrincipal user) => Results.Ok(new
         }
         : null,
 })).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
-  .Cli("me", "Who you are, and what an agent's token reaches.", CliRisk.Read);
+  .Cli("me.who", "Who you are, and what an agent's token reaches.", CliRisk.Read);
 
 // Proves the service-to-service client-credentials flow end to end:
 // admin-api obtains a dcms.ai token and calls ai-gateway's protected ping.

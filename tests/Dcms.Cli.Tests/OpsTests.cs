@@ -1,0 +1,63 @@
+using System.Text.Json.Nodes;
+using AwesomeAssertions;
+using Dcms.Cli;
+using Xunit;
+
+namespace Dcms.Cli.Tests;
+
+/// <summary>How `dcms op call` turns a catalog entry and the given values into a request.</summary>
+public sealed class OpsTests
+{
+    private static JsonObject Route(string method, string path, JsonArray? files = null) =>
+        new() { ["kind"] = "route", ["method"] = method, ["path"] = path, ["files"] = files };
+
+    [Fact]
+    public void Path_parameters_fill_the_route_constraints_and_catch_alls_included()
+    {
+        var (verb, url, content) = Commands.Request(Route("POST", "/api/admin/sites/{id:guid}/git/commit"),
+            new() { ["id"] = "0b0e7c2e-1111-4222-8333-944445555666" }, [], """{"message":"m"}""", [], [], null);
+        verb.Method.Should().Be("POST");
+        url.Should().Be("/api/admin/sites/0b0e7c2e-1111-4222-8333-944445555666/git/commit");
+        content.Should().NotBeNull();
+
+        Commands.Request(Route("DELETE", "/api/admin/sites/{id:guid}/publish-branches/{**branch}"),
+            new() { ["id"] = "s", ["branch"] = "feature/a b" }, [], null, [], [], null).Url
+            .Should().Be("/api/admin/sites/s/publish-branches/feature/a%20b");
+        Commands.Request(Route("GET", "/api/admin/media"), [], new() { ["folderId"] = "f 1" }, null, [], [], null).Url
+            .Should().Be("/api/admin/media?folderId=f%201");
+    }
+
+    [Fact]
+    public void A_missing_path_parameter_is_named()
+    {
+        var call = () => Commands.Request(Route("GET", "/api/admin/sites/{id:guid}"), [], [], null, [], [], null);
+        call.Should().Throw<CliException>().WithMessage("*--path id=*");
+    }
+
+    [Fact]
+    public void A_contract_operation_posts_to_the_contracts_proxy_on_its_plane()
+    {
+        var op = new JsonObject { ["kind"] = "contract", ["contract"] = "users.directory@1", ["name"] = "ListUsers", ["plane"] = "ai" };
+        var (verb, url, _) = Commands.Request(op, [], [], null, [], [], "crm");
+        verb.Method.Should().Be("POST");
+        url.Should().Be("/api/admin/contracts/users.directory%401/ListUsers?plane=ai&instance=crm");
+    }
+
+    [Fact]
+    public void A_file_operation_sends_multipart_with_the_file_and_form_fields()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(file, "hello");
+            var (_, _, content) = Commands.Request(Route("POST", "/api/admin/media", new JsonArray("file")), [], [], null, [file], new() { ["folderId"] = "x" }, null);
+            content.Should().BeOfType<MultipartFormDataContent>();
+            var missing = () => Commands.Request(Route("POST", "/api/admin/media", new JsonArray("file")), [], [], null, [], [], null);
+            missing.Should().Throw<CliException>().WithMessage("*--file file=*");
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+}

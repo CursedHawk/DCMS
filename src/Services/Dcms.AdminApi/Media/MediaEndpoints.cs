@@ -80,7 +80,8 @@ public static class MediaEndpoints
                 contentType = result.ContentType,
                 status = result.Status.ToString(),
             });
-        }).RequirePermission(PlatformPermissions.MediaWrite).DisableAntiforgery().WithAudit(AuditActions.MediaUploaded, "media_asset");
+        }).RequirePermission(PlatformPermissions.MediaWrite).DisableAntiforgery().WithAudit(AuditActions.MediaUploaded, "media_asset")
+          .Cli("media.upload", "Uploads one file to the media library (multipart field 'file'; optional form field 'folderId'). Images get web renditions.", CliRisk.Safe, files: ["file"]);
 
         app.MapGet("/api/admin/media", async (Guid? folderId, MediaDbContext db, CancellationToken ct) =>
         {
@@ -115,7 +116,8 @@ public static class MediaEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(assets);
-        }).RequirePermission(PlatformPermissions.MediaRead);
+        }).RequirePermission(PlatformPermissions.MediaRead)
+          .Cli("media.list", "The media library's files, optionally in one folder.", CliRisk.Read);
 
         // Aggregate storage footprint for the whole tenant (originals + renditions),
         // with a per-category breakdown for the usage panel.
@@ -153,7 +155,8 @@ public static class MediaEndpoints
                 folderCount,
                 byCategory,
             });
-        }).RequirePermission(PlatformPermissions.MediaRead);
+        }).RequirePermission(PlatformPermissions.MediaRead)
+          .Cli("media.usage", "The media library's storage use against the workspace's quota.", CliRisk.Read);
 
         // ---- Folders ----------------------------------------------------------
 
@@ -171,7 +174,8 @@ public static class MediaEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(folders);
-        }).RequirePermission(PlatformPermissions.MediaRead);
+        }).RequirePermission(PlatformPermissions.MediaRead)
+          .Cli("media.folders", "The media library's folders: id, name, parent and how many files each holds.", CliRisk.Read);
 
         app.MapPost("/api/admin/media/folders", async (
             CreateFolderRequest body, MediaDbContext db, CurrentUser me, CancellationToken ct) =>
@@ -200,7 +204,8 @@ public static class MediaEndpoints
             db.Folders.Add(folder);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { id = folder.Id, name = folder.Name, parentId = folder.ParentId, createdAt = folder.CreatedAt, assetCount = 0 });
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderCreated, "media_folder");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderCreated, "media_folder")
+          .Cli("media.create-folder", "Creates a media folder, optionally inside another.", CliRisk.Safe);
 
         app.MapPatch("/api/admin/media/folders/{id:guid}", async (
             Guid id, UpdateFolderRequest body, MediaDbContext db, CancellationToken ct) =>
@@ -221,7 +226,8 @@ public static class MediaEndpoints
             }
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderUpdated, "media_folder");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderUpdated, "media_folder")
+          .Cli("media.rename-folder", "Renames a media folder; what is in it stays where it is.", CliRisk.Safe);
 
         // Deleting a folder keeps its assets — they fall back to "unfiled" — and
         // reparents any child folders to the root so nothing is orphaned.
@@ -246,7 +252,8 @@ public static class MediaEndpoints
             db.Folders.Remove(folder);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderDeleted, "media_folder");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderDeleted, "media_folder")
+          .Cli("media.delete-folder", "Deletes a media folder (empty it first if the server refuses).", CliRisk.Dangerous);
 
         // ---- Asset detail / edit / delete ------------------------------------
 
@@ -272,7 +279,8 @@ public static class MediaEndpoints
                         .OrderBy(v => v.SizeBytes)
                         .Select(v => new { v.Kind, v.Width, v.Height, v.SizeBytes, v.ContentType }),
                 });
-        }).RequirePermission(PlatformPermissions.MediaRead);
+        }).RequirePermission(PlatformPermissions.MediaRead)
+          .Cli("media.get", "One media file: name, type, size, renditions and where it is used.", CliRisk.Read);
 
         // Rename an asset (its display file name). Move is a separate bulk endpoint.
         app.MapPatch("/api/admin/media/{id:guid}", async (
@@ -292,7 +300,8 @@ public static class MediaEndpoints
             asset.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaUpdated, "media_asset");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaUpdated, "media_asset")
+          .Cli("media.rename", "Renames a media file.", CliRisk.Safe);
 
         // Move one or many assets into a folder (null folderId = back to unfiled).
         app.MapPost("/api/admin/media/move", async (
@@ -319,7 +328,8 @@ public static class MediaEndpoints
                 .With("folder_id", body.FolderId);
 
             return Results.Ok(new { moved });
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaMoved, "media_asset");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaMoved, "media_asset")
+          .Cli("media.move", "Moves media files into a folder, or to the top level without folderId.", CliRisk.Safe);
 
         // Delete one or many assets: their DB rows (variants cascade) and every
         // stored object (original + renditions). Storage deletes are best-effort.
@@ -355,7 +365,8 @@ public static class MediaEndpoints
             db.Assets.RemoveRange(assets);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { deleted = assets.Count });
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaDeleted, "media_asset");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaDeleted, "media_asset")
+          .Cli("media.delete", "Deletes media files for good, with every rendition; anything using them breaks.", CliRisk.Dangerous);
 
         // Delete the originals of one or many assets to free space, keeping the assets and the
         // copies the worker made of them. Only what MediaOriginals allows; the rest is skipped and
@@ -411,7 +422,8 @@ public static class MediaEndpoints
                 skipped = body.Ids.Distinct().Count() - assets.Count,
                 freedBytes,
             });
-        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaOriginalsDeleted, "media_asset");
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaOriginalsDeleted, "media_asset")
+          .Cli("media.delete-originals", "Deletes images' uploaded originals, keeping their web renditions, to free storage.", CliRisk.Dangerous);
 
         // Streams the original (or a named variant, e.g. ?variant=thumb / webp-640)
         // so the admin SPA can render previews behind the bearer token. No public
@@ -484,7 +496,8 @@ public static class MediaEndpoints
             http.Response.Headers.CacheControl = "private, max-age=86400, immutable";
             return await ObjectStreaming.WriteObjectAsync(
                 http, storage, storageOptions.Value.MediaBucket, key, contentType, ct);
-        }).RequirePermission(PlatformPermissions.MediaRead);
+        }).RequirePermission(PlatformPermissions.MediaRead)
+          .Cli("media.content", "A media file's bytes, or one of its renditions.", CliRisk.Read);
 
         return app;
     }

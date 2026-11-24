@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
@@ -120,7 +121,8 @@ public static class AnalyticsPruneEndpoints
             "the platform console owns this button; its API holds dcms.console and has already "
             + "checked the operator holds platform:ops:act. The delete stays here because a "
             + "DELETE grant on analytics.events is exactly what 04-platform-role.sh refuses "
-            + "dcms_platform.");
+            + "dcms_platform.")
+            .Cli("analytics.prune", "Deletes statistics older than a number of days (at least 7).", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

@@ -122,7 +122,6 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         return await res.Content.ReadAsByteArrayAsync(ct);
     }
 
-    /// <summary>An admin API call as the signed-in person: their bearer, the link's tenant and environment.</summary>
     /// <summary>A call in a workspace named outright, not through a clone's link: <c>--workspace</c>.</summary>
     public async Task<JsonNode?> CallInAsync(string path, string tenant, string? environment, JsonNode? body, HttpMethod? method, CancellationToken ct)
     {
@@ -130,19 +129,27 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         return res.StatusCode == HttpStatusCode.NoContent ? null : await JsonAsync(res, ct);
     }
 
-    private async Task<HttpResponseMessage> SendAsync(string path, string? tenant, string? environment, JsonNode? body, HttpMethod? method, CancellationToken ct)
+    private Task<HttpResponseMessage> SendAsync(string path, string? tenant, string? environment, JsonNode? body, HttpMethod? method, CancellationToken ct) =>
+        RawAsync(method ?? (body is null ? HttpMethod.Get : HttpMethod.Post), path, tenant, environment,
+            body is null ? null : new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), null, ct);
+
+    /// <summary>
+    /// An admin API call as the signed-in person: their bearer, the workspace and environment, an
+    /// idempotency key on writes. 401 and 403 become the person's next step, in the server's words.
+    /// </summary>
+    public async Task<HttpResponseMessage> RawAsync(HttpMethod verb, string pathAndQuery, string? tenant, string? environment,
+        HttpContent? content, string? ifNoneMatch, CancellationToken ct)
     {
         var creds = await FreshAsync(ct);
-        var verb = method ?? (body is null ? HttpMethod.Get : HttpMethod.Post);
-        var req = new HttpRequestMessage(verb, creds.Server + path);
+        var req = new HttpRequestMessage(verb, creds.Server + pathAndQuery) { Content = content };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", creds.AccessToken);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         req.Headers.Add("X-Dcms-Request-Id", Guid.NewGuid().ToString("N"));
         if (tenant is not null) req.Headers.Add("X-Dcms-Tenant", tenant);
         if (environment is not null) req.Headers.Add("X-Dcms-Environment", environment);
+        if (ifNoneMatch is not null) req.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
         // Every write carries one, as the console's do (ADR 0024): a retried request is then one action.
         if (verb != HttpMethod.Get && verb != HttpMethod.Head) req.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
-        if (body is not null) req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         var res = await http.SendAsync(req, ct);
         if (res.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -151,10 +158,24 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         }
         if (res.StatusCode == HttpStatusCode.Forbidden)
         {
+            var said = await SaidAsync(res, ct);
             res.Dispose();
-            throw new CliException($"You may not do that here ({path}).");
+            throw new CliException(said is null ? $"You may not do that here ({pathAndQuery})." : $"Refused: {said}");
         }
         return res;
+    }
+
+    private static async Task<string?> SaidAsync(HttpResponseMessage res, CancellationToken ct)
+    {
+        try
+        {
+            var body = JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
+            return Str(body?["error"]) ?? Str(body?["detail"]) ?? Str(body?["title"]);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The JSON body of a response, or the server's own words for why it failed.</summary>

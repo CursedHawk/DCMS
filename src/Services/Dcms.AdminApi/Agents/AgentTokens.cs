@@ -218,7 +218,8 @@ public static class AgentTokenEndpoints
             });
         }).RequireAuthorization()
           .PermissionExempt("Self-scoped: a member mints a token for themselves, reaching no further than their own permissions.")
-          .WithAudit(AuditActions.AgentTokenCreated, "agent_token", AuditCategory.Auth);
+          .WithAudit(AuditActions.AgentTokenCreated, "agent_token", AuditCategory.Auth)
+          .Cli("agents.mint", "Mints a desktop agent's token for this workspace (shown once).", CliRisk.Safe, humanOnly: true);
 
         app.MapGet("/api/admin/me/agent-tokens", async (HttpContext http, CurrentUser me, TenancyDbContext db, CancellationToken ct) =>
         {
@@ -245,7 +246,8 @@ public static class AgentTokenEndpoints
                 t.ExpiresAt,
                 t.LastUsedAt,
             }));
-        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .Cli("agents.list", "Your desktop agents' tokens, in every workspace.", CliRisk.Read, humanOnly: true);
 
         app.MapDelete("/api/admin/me/agent-tokens/{id:guid}", async (
             Guid id, HttpContext http, CurrentUser me, TenancyDbContext db, IMemoryCache cache, TimeProvider clock,
@@ -267,7 +269,8 @@ public static class AgentTokenEndpoints
         }).RequireAuthorization()
           .AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
           .PermissionExempt("Self-scoped: a person revokes only their own agent tokens.")
-          .WithAudit(AuditActions.AgentTokenRevoked, "agent_token", AuditCategory.Auth);
+          .WithAudit(AuditActions.AgentTokenRevoked, "agent_token", AuditCategory.Auth)
+          .Cli("agents.revoke", "Revokes one of your agents' tokens: it stops working at once.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

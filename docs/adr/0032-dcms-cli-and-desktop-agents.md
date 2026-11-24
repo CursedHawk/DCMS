@@ -1,6 +1,6 @@
 # ADR 0032: The dcms command line and desktop agents
 
-**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1 and C2 shipped, C3–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
+**Status:** accepted (2026-11-06), amended 2026-11-24 · kanban epic #616 · C1–C3 shipped, C4–C7 planned · extends [0031](0031-functions-packages-and-local-development.md)
 
 ## Context
 
@@ -82,6 +82,26 @@ How C2 enforces it (`src/Services/Dcms.AdminApi/Agents/AgentTokens.cs`):
 - **Tokens never manage tokens.** An agent cannot mint or revoke one.
 - **Edge and audit.** The edge keeps a `dcms_agt_` bearer when there is no browser session (`BffGuard.KeepsBearer`). Audit records the person and what they acted through (`HttpCurrentActor.Key`: `agent:<name>`, or `dcms-cli`).
 - **Console.** Account → Devices lists the agent tokens beside the CLI sign-ins and revokes them.
+
+## The operation catalog (C3, 2026-11-24)
+
+- **Marking routes.** A route offered to the command line says `.Cli(name, summary, risk, humanOnly, files)`; one deliberately not offered says `.NotForCli(reason)`. Both live in `Dcms.Shared.Security`. Plugins say `.Cli(name, summary, OpRisk)` from the SDK, which becomes `{pluginId}.{name}`.
+- **The catalog.** `GET /api/admin/cli/catalog` returns, for the caller only:
+  - every marked route the caller's permissions reach, with its method, path, path and query parameters, and its body's JSON Schema;
+  - the contract catalog: `plane=ai` for an agent, `plane=admin` for a person.
+
+  For agents it leaves out human-only routes, and anything but reads for read-only tokens. It is ETagged; the CLI keeps it per server, workspace and environment.
+- **Wave 1** marked the console assistant's reach and beyond:
+  - content and media;
+  - domains and certificates;
+  - API connections, jobs, audit, usage and analytics;
+  - environments, with migrations;
+  - sites (files, git, builds, publishing branches, search, audits, starter files), plugin repositories, and the Functions plugin's routes;
+  - plugin catalog and instances, contracts, `me`, the CLI catalog itself.
+
+  Human-only: plugin installs, updates and enables (agents use the `dcms.plugins` contract), environment links, own certificates, analytics deletion, account detachment, and agent tokens themselves. Not for the CLI: the git webhook and the Google Drive import.
+- **The coverage guard.** `CliCoverageTests` holds every route under a covered area to `.Cli` or `.NotForCli`. Areas join `CoveredPrefixes` wave by wave (C6).
+- **The commands.** `dcms ops [search]` lists operations, `dcms op describe <name>` describes one, and `dcms op call <name> --path k=v --query k=v --body json|@file --file field=path --form k=v --instance slug --out file` calls one. Any marked route or contract operation works, with no per-operation code.
 
 ## Consequences
 

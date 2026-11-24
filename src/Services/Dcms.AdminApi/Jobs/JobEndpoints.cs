@@ -184,7 +184,8 @@ public static class JobEndpoints
             var members = await MemberEmailsAsync(tenancy, ctx.TenantId!.Value, page.Items, ct);
             return Results.Ok(new JobPageDto(
                 page.Items.Select(j => JobDto.From(j, forOperator: false, members: members)).ToList(), page.NextCursor));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("jobs.list", "Background jobs (imports, builds, deployments), newest first.", CliRisk.Read);
 
         app.MapGet(tenantRoot + "/{id:guid}", async (
             Guid id, JobsDbContext db, TenancyDbContext tenancy, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver, CancellationToken ct) =>
@@ -200,7 +201,8 @@ public static class JobEndpoints
             var members = await MemberEmailsAsync(tenancy, ctx.TenantId!.Value, [job, .. children], ct);
             return Results.Ok(new JobDetailDto(JobDto.From(job, false, members: members),
                 children.Select(c => JobDto.From(c, false, members: members)).ToList()));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("jobs.get", "One background job in full: progress, result or error.", CliRisk.Read);
 
         app.MapPost(tenantRoot + "/{id:guid}/cancel", async (
             Guid id, JobsDbContext db, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver,
@@ -211,7 +213,8 @@ public static class JobEndpoints
             return job is null ? Results.NotFound() : CancelResult(await control.CancelAsync(job, ct));
         }).RequireAuthorization()
           .WithAudit(AuditActions.JobCanceled, "job")
-          .PermissionExempt(VisibilityGate);
+          .PermissionExempt(VisibilityGate)
+          .Cli("jobs.cancel", "Cancels a running job; what it already did stays done.", CliRisk.Dangerous);
 
         app.MapPost(tenantRoot + "/{id:guid}/retry", async (
             Guid id, JobsDbContext db, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver,
@@ -222,7 +225,8 @@ public static class JobEndpoints
             return job is null ? Results.NotFound() : RetryResult(await control.RetryAsync(job, ct));
         }).RequireAuthorization()
           .WithAudit(AuditActions.JobRetried, "job")
-          .PermissionExempt(VisibilityGate);
+          .PermissionExempt(VisibilityGate)
+          .Cli("jobs.retry", "Runs a failed job again, from the start.", CliRisk.Safe);
 
         MapPlatform(app);
     }

@@ -40,7 +40,8 @@ public static class SiteScaffoldEndpoints
             }
             var generated = GeneratedLayer.Build(api);
             return Results.Ok(new { fingerprint = generated.Fingerprint, files = SiteTemplates.Materialize(template!, generated) });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.starter-files", "A site template's files (template: blank, content, landing, visual), to write into a new site's draft.", CliRisk.Read);
 
         // Only the DCMS-owned files, for Refresh API and the editor's automatic refresh. Never a
         // file the author wrote: the layer is src/api/, src/dcms/ and openapi.json, nothing else.
@@ -53,7 +54,8 @@ public static class SiteScaffoldEndpoints
             }
             var generated = GeneratedLayer.Build(api);
             return Results.Ok(new { fingerprint = generated.Fingerprint, files = generated.Files });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.generated-files", "The site's generated API client and runtime files (src/api, src/dcms, openapi.json).", CliRisk.Read);
 
         // The Mode D component runtime as a site carries it (src/dcms/runtime/). Tenant-independent,
         // so it is the same for every site of every tenant on this deploy; the builder compares the
@@ -63,7 +65,8 @@ public static class SiteScaffoldEndpoints
         {
             var layer = SiteRuntimeLayer.Files;
             return Results.Ok(new { fingerprint = layer.Fingerprint, files = layer.Files });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.runtime", "The React builder's runtime files (src/dcms/runtime).", CliRisk.Read);
 
         // The cheap question the editor asks on open and whenever the tenant's plugins change:
         // "would regenerating write anything?" Compared with the site's manifest, it is the whole
@@ -83,7 +86,8 @@ public static class SiteScaffoldEndpoints
                 await cache.SetAsync(key, fingerprint, FingerprintTtl, ct);
             }
             return Results.Ok(new { fingerprint });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.api-fingerprint", "The fingerprint of the workspace's API; generated files carry it.", CliRisk.Read);
 
         return app;
     }

@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
@@ -54,7 +55,8 @@ public static class MyAccountEndpoints
                 // The one condition that blocks deletion. Everything else is cleanup.
                 canDelete = memberships.All(m => !m.IsSoleOwner),
             });
-        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .Cli("account.summary", "Your workspaces, and whether anything stands in the way of deleting your account.", CliRisk.Read, humanOnly: true);
 
         // `dcms link` (ADR 0031): which tenant, environment and app a clone's git remote is, for
         // a member of that tenant. What they may do there is each later call's business.
@@ -79,7 +81,8 @@ public static class MyAccountEndpoints
             var app = await cms.PluginInstances.IgnoreTenantFilter().AsNoTracking()
                 .Where(i => i.Id == binding.InstanceId).Select(i => i.Slug).FirstAsync(ct);
             return Results.Ok(new { tenant, environment, app, plugin = binding.PluginId, repo = binding.RepoFullName, repoId = binding.Id });
-        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .Cli("me.repo-of-remote", "Which workspace, environment and app a git remote belongs to (dcms link).", CliRisk.Read);
 
         // Detach the account from the platform: leave every workspace and drop the
         // per-user rows that only exist because this user was working here. The login
@@ -166,7 +169,8 @@ public static class MyAccountEndpoints
             });
         }).RequireAuthorization()
           .AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
-          .WithAudit(AuditActions.AccountDetached, category: AuditCategory.Auth);
+          .WithAudit(AuditActions.AccountDetached, category: AuditCategory.Auth)
+          .Cli("account.detach", "Leaves every workspace, ahead of deleting your account.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

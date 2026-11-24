@@ -176,7 +176,8 @@ internal static class AnalyticsDashboardEndpoints
                 byHostname = byHostname.Select(x => new { hostname = x.key, count = x.count }),
                 byCampaign,
             });
-        }).RequirePermission(PlatformPermissions.AnalyticsRead);
+        }).RequirePermission(PlatformPermissions.AnalyticsRead)
+          .Cli("analytics.summary", "Traffic over a number of days: visitors, sessions, page views, events, top pages.", CliRisk.Read);
 
         // The dimensions the SPA's filter dropdowns offer, so they list what this
         // tenant actually has rather than a hard-coded guess.
@@ -201,7 +202,8 @@ internal static class AnalyticsDashboardEndpoints
                 devices = await events.Where(e => e.Device != null)
                     .Select(e => e.Device!).Distinct().OrderBy(x => x).ToListAsync(ct),
             });
-        }).RequirePermission(PlatformPermissions.AnalyticsRead);
+        }).RequirePermission(PlatformPermissions.AnalyticsRead)
+          .Cli("analytics.dimensions", "Traffic broken down by one dimension (country, device, referrer, ...).", CliRisk.Read);
 
         // Clearing statistics. `before` deletes only what is older than that instant,
         // which is the routine use (retention); omitting it wipes the tenant's history.
@@ -241,7 +243,8 @@ internal static class AnalyticsDashboardEndpoints
                 .With("rollups_deleted", deletedRollups);
 
             return Results.Ok(new { deletedEvents, deletedRollups });
-        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.AnalyticsPurged, "analytics");
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.AnalyticsPurged, "analytics")
+          .Cli("analytics.clear", "Deletes statistics older than 'before', or all of them without it.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

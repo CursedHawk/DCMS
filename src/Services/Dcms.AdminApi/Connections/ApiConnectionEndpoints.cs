@@ -37,7 +37,8 @@ public static class ApiConnectionEndpoints
             return Results.Ok(rows.Select(c => View(c, shapes
                 .Where(s => s.ConnectionId == c.Id)
                 .Select(s => new OperationShape(s.Operation, s.ItemsPath, s.Fields, s.FetchedAt)))));
-        }).RequirePermission(PlatformPermissions.PluginsManage);
+        }).RequirePermission(PlatformPermissions.PluginsManage)
+          .Cli("connections.list", "The external APIs sites read data from: base URL, auth kind, operations, whether a key is set.", CliRisk.Read);
 
         app.MapPut("/api/admin/connections/{slug}", async (
             string slug, SaveConnection body, CmsDbContext db, ITransitEncryptor transit, ApiConnectionFetcher fetcher,
@@ -87,7 +88,8 @@ public static class ApiConnectionEndpoints
             await fetcher.RefreshAsync(row, ct);
             return Results.Ok(View(row));
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionSaved, "api_connection")
-            .ManagedByDeployments("api-connections");
+            .ManagedByDeployments("api-connections")
+            .Cli("connections.save", "Adds or changes an external API connection.", CliRisk.Safe);
 
         app.MapPost("/api/admin/connections/{slug}/refresh", async (
             string slug, CmsDbContext db, ApiConnectionFetcher fetcher, CancellationToken ct) =>
@@ -99,7 +101,8 @@ public static class ApiConnectionEndpoints
             }
             await fetcher.RefreshAsync(row, ct);
             return Results.Ok(View(row));
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionRefreshed, "api_connection");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionRefreshed, "api_connection")
+          .Cli("connections.refresh", "Fetches a connection's operations now, to see their shapes and errors.", CliRisk.Safe);
 
         // The key alone. It is each environment's own and never deploys (ADR 0028), so an
         // environment that leaves the connection itself to deployments still sets it here.
@@ -117,7 +120,8 @@ public static class ApiConnectionEndpoints
             await db.SaveChangesAsync(ct);
             await fetcher.RefreshAsync(row, ct);
             return Results.Ok(View(row));
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionKeySet, "api_connection");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionKeySet, "api_connection")
+          .Cli("connections.set-secret", "Sets or replaces a connection's API key; write-only, never read back.", CliRisk.Dangerous);
 
         app.MapDelete("/api/admin/connections/{slug}", async (string slug, CmsDbContext db, CancellationToken ct) =>
         {
@@ -130,7 +134,8 @@ public static class ApiConnectionEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionDeleted, "api_connection")
-            .ManagedByDeployments("api-connections");
+            .ManagedByDeployments("api-connections")
+            .Cli("connections.delete", "Deletes an external API connection: sites reading it get nothing.", CliRisk.Dangerous);
 
         return app;
     }

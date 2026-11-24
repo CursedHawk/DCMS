@@ -166,7 +166,8 @@ public static class ContentListEndpoints
                 nextCursor = page.NextCursor is { } next ? FormatPageCursor(next) : null,
                 total = page.Total,
             });
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("content.page", "A sorted, filtered page of content items, as the console's content list shows them.", CliRisk.Read);
 
         // How many items of each content type an instance holds.
         //
@@ -183,7 +184,8 @@ public static class ContentListEndpoints
                 .ToListAsync(ct);
 
             return Results.Ok(counts.ToDictionary(c => c.ContentType, c => c.Count));
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("content.counts", "How many content items there are, per status.", CliRisk.Read);
 
         /*
          * Everything queued to publish, across every collection in the workspace.
@@ -224,7 +226,8 @@ public static class ContentListEndpoints
                     publishAt = r.PublishAt,
                 }),
             });
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("content.scheduled", "Content items scheduled to publish, soonest first.", CliRisk.Read);
 
         return app;
     }

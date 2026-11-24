@@ -51,7 +51,8 @@ public static class SiteSearchEndpoints
                 automatic && prefix is not null ? await PagesAsync(storage, storageOptions.Value.SitesBucket, prefix, ct) : null,
                 host is not null && (automatic || settings.Include.Count > 0) ? $"https://{host}/sitemap.xml" : null,
                 site.KeyAcrossEnvironments));
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("sites.search-settings", "What search engines may see of a site: indexing, hidden paths, sitemap URLs.", CliRisk.Read);
 
         // Publishing rights: it changes what the live site answers search engines, at once.
         app.MapPut("/api/admin/sites/{id:guid}/search", async (
@@ -73,7 +74,8 @@ public static class SiteSearchEndpoints
             await SiteChangeNotice.PublishAsync(events, site, logs.CreateLogger("Dcms.AdminApi.Sites"), ct);
             return Results.Ok(SiteSearchSettings.Parse(site.SearchSettingsJson));
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteSearchChanged, "site")
-            .ManagedByDeployments("sites");
+            .ManagedByDeployments("sites")
+            .Cli("sites.set-search-settings", "Replaces what search engines may see of a site, live at once.", CliRisk.Dangerous);
 
         return app;
     }

@@ -32,14 +32,16 @@ public static class TenantUsageEndpoints
         app.MapGet("/api/admin/usage", async (
             ITenantContext tenant, TenancyDbContext db, MediaDbContext media, CancellationToken ct) =>
                 tenant.TenantId is { } id ? Results.Ok(await SnapshotAsync(id, db, media, ct)) : Results.NotFound())
-            .RequirePermission(PlatformPermissions.TenantSettings);
+            .RequirePermission(PlatformPermissions.TenantSettings)
+            .Cli("usage.get", "The workspace's data and storage use per area, against its quotas.", CliRisk.Read);
 
         app.MapPost("/api/admin/usage/recalculate", async (
             ITenantContext tenant, TenancyDbContext db, MediaDbContext media, TenantUsageMeasurer measurer,
             HttpContext http, CancellationToken ct) =>
                 tenant.TenantId is { } id ? await RecalculateAsync(id, db, media, measurer, http, ct) : Results.NotFound())
             .RequirePermission(PlatformPermissions.TenantSettings)
-            .AuditExempt(RecalculateExempt);
+            .AuditExempt(RecalculateExempt)
+            .Cli("usage.recalculate", "Counts the workspace's usage again now.", CliRisk.Safe);
 
         // Console only, like the storage limit: the tenant is named in the route, not the header.
         app.MapPost("/api/admin/tenants/{tenantId:guid}/usage/recalculate", async (

@@ -115,7 +115,8 @@ public static class AuditEndpoints
                 hasMore,
                 nextCursor = last is null ? null : new { occurredAt = last.OccurredAt, seq = last.Seq },
             });
-        }).RequirePermission(PlatformPermissions.AuditRead);
+        }).RequirePermission(PlatformPermissions.AuditRead)
+          .Cli("audit.search", "The audit log, newest first, by action, category, actor or time.", CliRisk.Read);
 
         // rls: the request's tenant -- a tenant's chain holds only its own rows.
         app.MapGet("/api/admin/audit/verify", async (
@@ -142,7 +143,8 @@ public static class AuditEndpoints
                     s.Reason,
                 }),
             });
-        }).RequirePermission(PlatformPermissions.AuditRead);
+        }).RequirePermission(PlatformPermissions.AuditRead)
+          .Cli("audit.verify", "Checks the audit log's hash chain for tampering.", CliRisk.Read);
 
         // One record in full. The list is deliberately terse — two hundred rows of diffs is
         // unreadable — so this is where the field changes and the metadata are actually looked
@@ -168,7 +170,8 @@ public static class AuditEndpoints
                 .FirstOrDefaultAsync(ct);
 
             return row is null ? Results.NotFound() : Results.Ok(Project(row, tenantId));
-        }).RequirePermission(PlatformPermissions.AuditRead);
+        }).RequirePermission(PlatformPermissions.AuditRead)
+          .Cli("audit.get", "One audit record in full.", CliRisk.Read);
 
         // Export, as newline-delimited JSON.
         //
@@ -227,7 +230,8 @@ public static class AuditEndpoints
 
             return Results.Empty;
         }).RequirePermission(PlatformPermissions.AuditExport)
-          .WithAudit(AuditActions.AuditExported, category: AuditCategory.Access);
+          .WithAudit(AuditActions.AuditExported, category: AuditCategory.Access)
+          .Cli("audit.export", "The audit log as a file, for a time range.", CliRisk.Read);
 
         return app;
     }
