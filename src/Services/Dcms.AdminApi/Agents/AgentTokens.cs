@@ -128,6 +128,12 @@ public sealed class AgentScopeMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, ITenantContext tenant)
     {
         var user = context.User;
+        // What the request came through, on its trace: the command line, or which agent (ADR 0032).
+        if (user.FindFirstValue("client_id") is AgentClaims.ClientId or "dcms-cli")
+        {
+            System.Diagnostics.Activity.Current?.SetTag("dcms.client", user.FindFirstValue("client_id"));
+            if (user.FindFirstValue(AgentClaims.Grant) is { } grant) System.Diagnostics.Activity.Current?.SetTag("dcms.agent.grant", grant);
+        }
         if (!user.IsAgent())
         {
             await next(context);

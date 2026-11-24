@@ -153,7 +153,8 @@ public static class NavigationEndpoints
             items.AddRange(Apps(enabled.Select(i => (i.PluginId, i.Slug, i.Name)), catalog.Find, May));
 
             return Results.Ok(new { items });
-        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .Cli("console.navigation", "The console's navigation for you: apps and screens you may open.", CliRisk.Read);
 
         return app;
     }

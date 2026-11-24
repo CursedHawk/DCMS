@@ -73,7 +73,8 @@ public static class MetaOAuthEndpoints
             // on an XHR would be followed by fetch without ever reaching the address bar.
             return Results.Ok(new { authorizeUrl = oauth.BuildAuthorizeUrl(metaProvider, stateToken) });
         }).RequirePermission(PlatformPermissions.PluginsManage)
-          .WithAudit(AuditActions.ConnectionStarted, "meta_connection");
+          .WithAudit(AuditActions.ConnectionStarted, "meta_connection")
+          .NotForCli("Connecting a social account is a browser sign-in with that provider.");
 
         // ---------- callback ----------
 
@@ -198,7 +199,8 @@ public static class MetaOAuthEndpoints
                 logger.LogError(ex, "Meta code exchange failed for tenant {TenantId}.", pending.TenantId);
                 return Results.Redirect($"{returnPath}?social=failed");
             }
-        }).AllowAnonymous().RequireRateLimiting(CallbackRateLimitPolicy);
+        }).AllowAnonymous().RequireRateLimiting(CallbackRateLimitPolicy)
+          .NotForCli("The social provider's sign-in callback, in the browser.");
 
         // ---------- list / disconnect ----------
 
@@ -224,7 +226,8 @@ public static class MetaOAuthEndpoints
                 lastError = c.LastError,
                 connectedAt = c.ConnectedAt,
             }));
-        }).RequirePermission(PlatformPermissions.PluginsManage);
+        }).RequirePermission(PlatformPermissions.PluginsManage)
+          .Cli("social.connections", "The workspace's connected social accounts.", CliRisk.Read);
 
         app.MapPost("/api/admin/social/connections/{id:guid}/disconnect", async (
             Guid id, SocialDbContext db, CancellationToken ct) =>
@@ -243,7 +246,8 @@ public static class MetaOAuthEndpoints
 
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.PluginsManage)
-          .WithAudit(AuditActions.ConnectionRevoked, "meta_connection");
+          .WithAudit(AuditActions.ConnectionRevoked, "meta_connection")
+          .Cli("social.disconnect", "Disconnects a social account.", CliRisk.Dangerous);
 
         // ---------- sync now ----------
 
@@ -270,7 +274,8 @@ public static class MetaOAuthEndpoints
                 })
                 : Results.BadRequest(new { error = outcome.Error });
         }).RequirePermission(PlatformPermissions.PluginsManage)
-          .WithAudit(AuditActions.SocialSyncRequested, "plugin_instance");
+          .WithAudit(AuditActions.SocialSyncRequested, "plugin_instance")
+          .Cli("social.sync", "Syncs an app's posts from its social account now.", CliRisk.Safe);
 
         return app;
     }

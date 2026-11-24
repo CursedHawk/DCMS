@@ -38,7 +38,8 @@ internal static class ChatConsoleEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(conversations);
-        }).RequirePermission(PlatformPermissions.ChatRead);
+        }).RequirePermission(PlatformPermissions.ChatRead)
+          .Cli("chat.conversations", "The sites' chat conversations.", CliRisk.Read, externalText: true);
 
         app.MapGet("/api/admin/chat/conversations/{conversationId:guid}/messages", async (
             Guid conversationId, ChatDbContext db, CancellationToken ct) =>
@@ -54,7 +55,8 @@ internal static class ChatConsoleEndpoints
                 .Select(m => new { id = m.Id, sender = m.Sender.ToString(), body = m.Body, sentAt = m.SentAt, readAt = m.ReadAt })
                 .ToListAsync(ct);
             return Results.Ok(messages);
-        }).RequirePermission(PlatformPermissions.ChatRead);
+        }).RequirePermission(PlatformPermissions.ChatRead)
+          .Cli("chat.messages", "One chat conversation's messages.", CliRisk.Read, externalText: true);
 
         return app;
     }

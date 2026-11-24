@@ -98,7 +98,8 @@ public sealed class YouTubePlugin : IPlugin
                 var (c, p, problem) = await sync.PreviewAsync(channel, playlist, ct);
                 return Results.Ok(new { channel = c, playlist = p, error = problem });
             })
-            .RequirePluginPermission("sync");
+            .RequirePluginPermission("sync")
+            .Cli("resolve", "Resolves a YouTube channel or playlist URL to what can be synced.", OpRisk.Read);
 
         // The same code path as the timer, run now, answering with what it did.
         endpoints.MapPost("/sync", async (IPluginContext context, YouTubeSync sync, CancellationToken ct) =>
@@ -109,6 +110,7 @@ public sealed class YouTubePlugin : IPlugin
                     : Results.BadRequest(new { error = outcome.Error });
             })
             .RequirePluginPermission("sync")
-            .AuditAs("sync.requested");
+            .AuditAs("sync.requested")
+            .Cli("sync", "Syncs the app's videos from YouTube now.", OpRisk.Safe);
     }
 }

@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Dcms.AdminApi.ApiClientGen;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Kernel.Abstractions;
@@ -32,7 +33,8 @@ public static class OpenApiPreviewEndpoints
 
             http.Response.Headers.ETag = $"\"{api.InputKey}\"";
             return Results.Text(json, "application/json");
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("sites.openapi", "The workspace's public API as OpenAPI: what its sites can read and call.", CliRisk.Read);
 
         return app;
     }

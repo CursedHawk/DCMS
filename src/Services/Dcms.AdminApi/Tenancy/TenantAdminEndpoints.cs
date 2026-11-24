@@ -86,7 +86,8 @@ public static class TenantAdminEndpoints
                     contentItems = await cms.ContentItems.CountAsync(ct),
                 },
             });
-        }).RequirePermission(PlatformPermissions.TenantSettings);
+        }).RequirePermission(PlatformPermissions.TenantSettings)
+          .Cli("workspace.get", "This workspace: name, plan, storage and what it holds.", CliRisk.Read);
 
         app.MapPatch("/api/admin/tenant", async (
             RenameTenantRequest body, TenancyDbContext db, ITenantContext tenant, CancellationToken ct) =>
@@ -111,7 +112,8 @@ public static class TenantAdminEndpoints
             row.Name = name;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { name = row.Name });
-        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantUpdated, "tenant");
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantUpdated, "tenant")
+          .Cli("workspace.rename", "Renames this workspace.", CliRisk.Safe);
 
         // Hand the tenant to another member. A transfer, not a co-ownership grant:
         // the target gains the Owner role and every other member loses it, so
@@ -177,7 +179,8 @@ public static class TenantAdminEndpoints
             }
 
             return Results.Ok(new { ownerMembershipId = target.Id, ownerEmail = target.Email });
-        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantTransferred, "tenant");
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantTransferred, "tenant")
+          .Cli("workspace.transfer", "Transfers ownership of this workspace.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapDelete("/api/admin/tenant", async (
             TenancyDbContext db, CurrentUser me, ITenantContext tenant,
@@ -193,7 +196,8 @@ public static class TenantAdminEndpoints
             }
             var result = await deleter.DeleteAsync(tenantId, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantPurged, "tenant");
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantPurged, "tenant")
+          .Cli("workspace.delete", "Deletes this workspace and everything in it.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

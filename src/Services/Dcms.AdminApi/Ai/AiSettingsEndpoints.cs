@@ -40,7 +40,8 @@ public static class AiSettingsEndpoints
                 p.IsDefault,
                 p.UpdatedAt,
             }));
-        }).RequirePermission(PlatformPermissions.AiSettings);
+        }).RequirePermission(PlatformPermissions.AiSettings)
+          .Cli("ai.providers", "The workspace's AI providers for the console's agents.", CliRisk.Read, humanOnly: true);
 
         app.MapPost("/api/admin/ai/providers", async (
             SaveProviderRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -53,7 +54,8 @@ public static class AiSettingsEndpoints
             }
             var row = new AiProviderConfig { TenantId = tenantId };
             return await SaveAsync(row, body, isNew: true, db, me, encryptor, config, ct);
-        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiProviderCreated, "ai_provider");
+        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiProviderCreated, "ai_provider")
+          .Cli("ai.add-provider", "Adds an AI provider for the console's agents.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapPut("/api/admin/ai/providers/{id:guid}", async (
             Guid id, SaveProviderRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -64,7 +66,8 @@ public static class AiSettingsEndpoints
             return row is null
                 ? Results.NotFound()
                 : await SaveAsync(row, body, isNew: false, db, me, encryptor, config, ct);
-        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiProviderUpdated, "ai_provider");
+        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiProviderUpdated, "ai_provider")
+          .Cli("ai.update-provider", "Changes an AI provider.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapDelete("/api/admin/ai/providers/{id:guid}", async (
             Guid id, AiDbContext db, ITenantContext tenant, IAuditRecorder audit, CancellationToken ct) =>
@@ -93,7 +96,8 @@ public static class AiSettingsEndpoints
             }
             await tx.CommitAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiProviderDeleted, "ai_provider");
+        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiProviderDeleted, "ai_provider")
+          .Cli("ai.remove-provider", "Removes an AI provider.", CliRisk.Dangerous, humanOnly: true);
 
         // What a member may pick when starting an agent: names only, never a URL or a key.
         app.MapGet("/api/admin/ai/provider-choices", async (
@@ -108,7 +112,8 @@ public static class AiSettingsEndpoints
                 .ToListAsync(ct);
             var own = await OwnSettingsAsync(db, tenantId, userId, ct);
             return Results.Ok(new { providers, own });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("ai.provider-choices", "The AI providers you may pick for a conversation.", CliRisk.Read, humanOnly: true);
 
         // Daily usage: the workspace's (for those who manage its AI) and the caller's own key's.
         app.MapGet("/api/admin/ai/usage", async (
@@ -141,7 +146,8 @@ public static class AiSettingsEndpoints
                 mine = rows.Where(r => r.Source == AiUsageSources.User),
                 own = await OwnSettingsAsync(db, tenantId, userId, ct),
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("ai.usage", "The workspace's AI usage of the console's agents.", CliRisk.Read, humanOnly: true);
 
         return app;
     }

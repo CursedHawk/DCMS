@@ -53,7 +53,8 @@ public static class InvitationEndpoints
                 r.expiresAt,
                 expired = r.expiresAt <= now,
             }));
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage)
+          .Cli("people.invitations", "Pending invitations to the workspace.", CliRisk.Read, humanOnly: true);
 
         // Create an invitation (tenant-scoped). The raw token is returned once so
         // the inviter can copy the link, and is also emailed to the invitee.
@@ -136,7 +137,8 @@ public static class InvitationEndpoints
                 expiresAt = invitation.ExpiresAt,
             });
         }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInvited, "invitation")
-            .InWorkspaceRootOnly();
+            .InWorkspaceRootOnly()
+            .Cli("people.invite", "Invites someone to the workspace.", CliRisk.Dangerous, humanOnly: true);
 
         // Resend: mint a fresh token and push the expiry out. The old link dies with
         // the old hash, which is what an admin resending after "I lost the email"
@@ -175,7 +177,8 @@ public static class InvitationEndpoints
                 link,
                 expiresAt = invitation.ExpiresAt,
             });
-        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInviteResent, "invitation");
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInviteResent, "invitation")
+          .Cli("people.resend-invitation", "Sends an invitation again.", CliRisk.Safe, humanOnly: true);
 
         // Revoke. Deleting the row is the revocation: acceptance looks the token
         // hash up, so with the row gone an outstanding link is simply invalid.
@@ -190,7 +193,8 @@ public static class InvitationEndpoints
             db.Invitations.Remove(invitation);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInviteRevoked, "invitation");
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInviteRevoked, "invitation")
+          .Cli("people.revoke-invitation", "Revokes an invitation.", CliRisk.Dangerous, humanOnly: true);
 
         // Accept an invitation. Authenticated; the caller becomes a member of the
         // invited tenant with the invitation's roles. Operates across tenants, so
@@ -301,7 +305,8 @@ public static class InvitationEndpoints
           .AllowNonMemberTenant("Accepting an invitation is how the caller becomes a member. "
                               + "The tenant comes from the invitation token, not the header, "
                               + "which this endpoint never reads.")
-          .WithAudit(AuditActions.MemberInviteAccepted, "invitation");
+          .WithAudit(AuditActions.MemberInviteAccepted, "invitation")
+          .Cli("people.accept-invitation", "Accepts an invitation addressed to you.", CliRisk.Safe, humanOnly: true);
 
         return app;
     }

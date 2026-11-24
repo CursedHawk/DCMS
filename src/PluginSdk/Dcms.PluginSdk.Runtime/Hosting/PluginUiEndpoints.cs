@@ -77,7 +77,8 @@ public static class PluginUiEndpoints
             }
             return Results.Ok(result);
         }).RequireAuthorization()
-          .PermissionExempt("Describes plugins' screens to any member; each screen states whether this caller may open it.");
+          .PermissionExempt("Describes plugins' screens to any member; each screen states whether this caller may open it.")
+          .NotForCli("The console's plugin screens: which to load, for the browser.");
 
         app.MapGet(AssetsPrefix + "/{pluginId}/{**path}", (string pluginId, string path, PluginRegistry registry) =>
         {
@@ -95,7 +96,8 @@ public static class PluginUiEndpoints
             // The URL carries the file's version (?v=), so a changed install is fetched anew.
             return Results.File(full, type, enableRangeProcessing: false);
         }).AllowAnonymous()
-          .PermissionExempt("Static UI code of operator-installed plugins: the same for every tenant, no tenant data.");
+          .PermissionExempt("Static UI code of operator-installed plugins: the same for every tenant, no tenant data.")
+          .NotForCli("The console's plugin screens' scripts and styles, for the browser.");
 
         return app;
     }

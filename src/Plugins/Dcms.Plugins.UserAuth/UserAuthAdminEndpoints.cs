@@ -45,14 +45,16 @@ internal static class UserAuthAdminEndpoints
                 await Guarded(async () => await publisher.SyncRealmAsync(await relay.RealmTenantAsync(ct), null, ct) is { } realm
                     ? Results.Ok(realm)
                     : Results.NotFound(new { error = "The plugin is not enabled for this tenant." })))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("realm", "The sign-in realm of this workspace's sites: providers, self-registration, policies.", OpRisk.Read);
 
         endpoints.MapPut("/realm", async (RealmSettings body, IPluginContext context, SiteGatePublisher publisher, RealmRelay relay, CancellationToken ct) =>
                 await relay.RealmTenantAsync(ct) != context.EnvironmentId
                     ? RealmRelay.Linked
                     : await Guarded(async () => Results.Ok(await publisher.SyncRealmAsync(context.EnvironmentId, body.PasswordEnabled, ct))))
             .RequirePluginPermission("providers-manage")
-            .AuditAs("realm.updated");
+            .AuditAs("realm.updated")
+            .Cli("set-realm", "Changes the sites' sign-in realm settings.", OpRisk.Dangerous);
 
         // ---- users, groups and providers: identity's ----
 
@@ -60,27 +62,33 @@ internal static class UserAuthAdminEndpoints
                 relay.SendAsync(HttpMethod.Get,
                     $"/users?page={page ?? 1}&pageSize={pageSize ?? 50}" + (string.IsNullOrWhiteSpace(search) ? "" : $"&search={Uri.EscapeDataString(search)}"),
                     null, ct))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("users", "The sites' signed-up users.", OpRisk.Read, externalText: true);
         endpoints.MapGet("/users/{userId:guid}", (Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Get, $"/users/{userId}", null, ct))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("user", "One site user.", OpRisk.Read, externalText: true);
         endpoints.MapPost("/users/invite", (RealmInvite body, RealmRelay relay, IPluginContext context, ILogger<RealmRelay> logger, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Post, "/users/invite", body, ct,
                     then: answer => UserEvents.InvitedAsync(context, JsonSerializer.Deserialize<RealmInviteResult>(answer, JsonSerializerOptions.Web)!.User, logger, ct)))
             .RequirePluginPermission("users-manage")
-            .AuditAs("user.invited");
+            .AuditAs("user.invited")
+            .Cli("invite-user", "Invites someone to the sites as a user.", OpRisk.Safe);
         endpoints.MapPost("/users/{userId:guid}/invite", (Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Post, $"/users/{userId}/invite", null, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("user.reinvited");
+            .AuditAs("user.reinvited")
+            .Cli("reinvite-user", "Sends a site user's invitation again.", OpRisk.Safe);
         endpoints.MapPatch("/users/{userId:guid}", (Guid userId, RealmUserPatch body, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Patch, $"/users/{userId}", body, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("user.updated");
+            .AuditAs("user.updated")
+            .Cli("update-user", "Changes a site user (name, disabled, ...).", OpRisk.Safe);
         endpoints.MapPost("/users/{userId:guid}/sign-out", (Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Post, $"/users/{userId}/sign-out", null, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("user.signed_out");
+            .AuditAs("user.signed_out")
+            .Cli("sign-out-user", "Signs a site user out everywhere.", OpRisk.Dangerous);
         // "View as" in a site builder's preview (#269): a short-lived token for this user, asked for
         // by the edge with the member's own session and kept in the edge's preview session — never
         // handed to the browser. Managing users is the bar: it is acting as one of them.
@@ -89,53 +97,64 @@ internal static class UserAuthAdminEndpoints
                     ? relay.SendAsync(HttpMethod.Post, $"/users/{userId}/preview-token", new RealmPreviewTokenRequest(me), ct)
                     : Task.FromResult(Results.Unauthorized()))
             .RequirePluginPermission("users-manage")
-            .AuditAs("user.previewed");
+            .AuditAs("user.previewed")
+            .Cli("preview-as-user", "A token to preview the sites as this user.", OpRisk.Dangerous, humanOnly: true);
         // Their direct grants go with them, once identity has let them go.
         endpoints.MapDelete("/users/{userId:guid}", (Guid userId, RealmRelay relay, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/users/{userId}", null, ct,
                     then: _ => new UserAccessAdmin(context, services).RemoveGrantsAsync(GrantSubject.User, userId, ct)))
             .RequirePluginPermission("users-manage")
-            .AuditAs("user.deleted");
+            .AuditAs("user.deleted")
+            .Cli("delete-user", "Deletes a site user.", OpRisk.Dangerous);
 
         endpoints.MapGet("/groups", (RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Get, "/groups", null, ct))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("groups", "The site users' groups.", OpRisk.Read);
         endpoints.MapPost("/groups", (RealmGroupWrite body, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Post, "/groups", body, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("group.created");
+            .AuditAs("group.created")
+            .Cli("create-group", "Creates a group of site users.", OpRisk.Safe);
         endpoints.MapPut("/groups/{groupId:guid}", (Guid groupId, RealmGroupWrite body, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Put, $"/groups/{groupId}", body, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("group.updated");
+            .AuditAs("group.updated")
+            .Cli("update-group", "Renames a group or changes its roles.", OpRisk.Safe);
         // Grants to the group go with it. A site rule naming it keeps the id and admits nobody
         // through it: closed, rather than a rule silently changing what it lets in.
         endpoints.MapDelete("/groups/{groupId:guid}", (Guid groupId, RealmRelay relay, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/groups/{groupId}", null, ct,
                     then: _ => new UserAccessAdmin(context, services).RemoveGrantsAsync(GrantSubject.Group, groupId, ct)))
             .RequirePluginPermission("users-manage")
-            .AuditAs("group.deleted");
+            .AuditAs("group.deleted")
+            .Cli("delete-group", "Deletes a group.", OpRisk.Dangerous);
         endpoints.MapPut("/groups/{groupId:guid}/members/{userId:guid}", (Guid groupId, Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Put, $"/groups/{groupId}/members/{userId}", null, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("group.member_added");
+            .AuditAs("group.member_added")
+            .Cli("add-to-group", "Adds a site user to a group.", OpRisk.Safe);
         endpoints.MapDelete("/groups/{groupId:guid}/members/{userId:guid}", (Guid groupId, Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/groups/{groupId}/members/{userId}", null, ct))
             .RequirePluginPermission("users-manage")
-            .AuditAs("group.member_removed");
+            .AuditAs("group.member_removed")
+            .Cli("remove-from-group", "Takes a site user out of a group.", OpRisk.Safe);
 
         // Client secrets are write-only at identity: never in an answer, so reading providers is a users-read matter.
         endpoints.MapGet("/providers", (RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Get, "/providers", null, ct))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("providers", "The sign-in providers (Google, ...) the sites offer; secrets are never shown.", OpRisk.Read);
         endpoints.MapPut("/providers/{key}", (string key, RealmProviderWrite body, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Put, $"/providers/{Uri.EscapeDataString(key)}", body, ct))
             .RequirePluginPermission("providers-manage")
-            .AuditAs("provider.saved");
+            .AuditAs("provider.saved")
+            .Cli("set-provider", "Sets up a sign-in provider; its client secret is write-only.", OpRisk.Dangerous);
         endpoints.MapDelete("/providers/{key}", (string key, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/providers/{Uri.EscapeDataString(key)}", null, ct))
             .RequirePluginPermission("providers-manage")
-            .AuditAs("provider.deleted");
+            .AuditAs("provider.deleted")
+            .Cli("remove-provider", "Removes a sign-in provider.", OpRisk.Dangerous);
 
         // ---- roles and grants: this plugin's (UserAccessAdmin, shared with users.roles@1) ----
 
@@ -149,7 +168,8 @@ internal static class UserAuthAdminEndpoints
                         .Select(g => new { g.Id, subjectType = UserAccessAdmin.Camel(g.SubjectType), g.SubjectId, g.CreatedAt }),
                 }));
             })
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("roles", "The site users' roles (not the workspace's) and what each grants.", OpRisk.Read);
 
         endpoints.MapPost("/roles", (RoleWrite body, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 Run(async () =>
@@ -159,7 +179,8 @@ internal static class UserAuthAdminEndpoints
                 }))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.created")
-            .ManagedByDeployments("user-auth");
+            .ManagedByDeployments("user-auth")
+            .Cli("create-role", "Creates a site users' role.", OpRisk.Safe);
 
         endpoints.MapPut("/roles/{roleId:guid}", (Guid roleId, RoleWrite body, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 Run(async () => await new UserAccessAdmin(context, services).UpdateRoleAsync(roleId, body, ct) is { } role
@@ -167,13 +188,15 @@ internal static class UserAuthAdminEndpoints
                     : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.updated")
-            .ManagedByDeployments("user-auth");
+            .ManagedByDeployments("user-auth")
+            .Cli("update-role", "Changes a site users' role.", OpRisk.Safe);
 
         endpoints.MapDelete("/roles/{roleId:guid}", (Guid roleId, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 Run(async () => await new UserAccessAdmin(context, services).DeleteRoleAsync(roleId, ct) ? Results.NoContent() : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("role.deleted")
-            .ManagedByDeployments("user-auth");
+            .ManagedByDeployments("user-auth")
+            .Cli("delete-role", "Deletes a site users' role.", OpRisk.Dangerous);
 
         endpoints.MapPost("/roles/{roleId:guid}/grants", (Guid roleId, GrantWrite body, IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 Run(async () => await new UserAccessAdmin(context, services).GrantAsync(roleId, body, ct) switch
@@ -183,31 +206,36 @@ internal static class UserAuthAdminEndpoints
                     ({ } grant, false) => Results.Ok(new { grant.Id }),
                 }))
             .RequirePluginPermission("access-manage")
-            .AuditAs("role.granted");
+            .AuditAs("role.granted")
+            .Cli("grant", "Grants a site users' role access to a resource.", OpRisk.Safe);
 
         endpoints.MapDelete("/roles/{roleId:guid}/grants/{grantId:guid}", (Guid roleId, Guid grantId, IPluginContext context, IServiceProvider services,
                 CancellationToken ct) =>
                 Run(async () => await new UserAccessAdmin(context, services).RevokeAsync(roleId, grantId, ct) ? Results.NoContent() : Results.NotFound()))
             .RequirePluginPermission("access-manage")
-            .AuditAs("role.revoked");
+            .AuditAs("role.revoked")
+            .Cli("revoke-grant", "Revokes one of a role's grants.", OpRisk.Safe);
 
         // What roles can hold: every enabled plugin's gateable resources (users.resources@1).
         endpoints.MapGet("/resources", async (IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 Results.Ok(await new UserAccessAdmin(context, services).ResourcesAsync(ct)))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("resources", "What roles can be granted: apps' tables, functions, ...", OpRisk.Read);
 
         // ---- API access: who may call each instance's /api/{slug} ----
 
         endpoints.MapGet("/api-access", async (IPluginContext context, IServiceProvider services, CancellationToken ct) =>
                 Results.Ok(await new UserAccessAdmin(context, services).ApiAccessAsync(ct)))
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("api-access", "Which apps' APIs signed-in site users may call.", OpRisk.Read);
 
         endpoints.MapPut("/api-access/{instanceId:guid}", (Guid instanceId, ApiAccessWrite body, IPluginContext context, IServiceProvider services,
                 CancellationToken ct) =>
                 Run(async () => await new UserAccessAdmin(context, services).SetApiAccessAsync(instanceId, body, ct) ? Results.NoContent() : Results.NotFound()))
             .RequirePluginPermission("access-manage")
             .AuditAs("api_access.updated")
-            .ManagedByDeployments("user-auth");
+            .ManagedByDeployments("user-auth")
+            .Cli("set-api-access", "Sets who may call one app's API from the sites.", OpRisk.Dangerous);
 
         // ---- site rules ----
 
@@ -227,7 +255,8 @@ internal static class UserAuthAdminEndpoints
                     rules = gates.Where(g => g.SiteId == s.Id).Select(g => new { prefix = g.PathPrefix, access = UserAccessAdmin.Camel(g.Access), g.Groups }),
                 }));
             })
-            .RequirePluginPermission("users-read");
+            .RequirePluginPermission("users-read")
+            .Cli("sites", "Which sites need sign-in, and their access rules.", OpRisk.Read);
 
         // A site's rules, replaced as a whole and in order: the order is the meaning. Saved either
         // way; if the edge or identity cannot be told now, the reconciler tells them within
@@ -238,7 +267,8 @@ internal static class UserAuthAdminEndpoints
                     await new UserAccessAdmin(context, services).SetSiteRulesAsync(siteId, body, ct) ? Results.NoContent() : Results.NotFound(),
                     savedAnyway: true)))
             .RequirePluginPermission("access-manage")
-            .AuditAs("site_rules.updated");
+            .AuditAs("site_rules.updated")
+            .Cli("set-site-rules", "Sets which paths of a site need sign-in, and for whom.", OpRisk.Dangerous);
     }
 
     /// <summary>The service's refusals as the console has always had them: 400 for input to fix, 409 for a clash.</summary>

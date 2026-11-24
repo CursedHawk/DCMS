@@ -13,8 +13,8 @@ namespace Dcms.IntegrationTests.Security;
 /// <para>Desktop agents reach only routes marked <c>.Cli(...)</c>, and the dcms command line and its
 /// MCP server learn every operation from those marks. A new console route nobody marks is a
 /// feature the command line and agents silently lack. So every route under an area the catalog
-/// covers must say <c>.Cli(...)</c> or <c>.NotForCli("why")</c>. Areas join
-/// <see cref="CoveredPrefixes"/> wave by wave (C3, C6) until the whole admin API is covered.</para>
+/// covers must say <c>.Cli(...)</c> or <c>.NotForCli("why")</c>. Since C6 the whole admin
+/// API is covered.</para>
 ///
 /// <para>Container-free, like the permission and audit coverage guards: it needs the endpoint table,
 /// not a database.</para>
@@ -34,26 +34,9 @@ public sealed class CliCoverageTests : IDisposable
     /// <summary>The areas every route of which has decided whether it is in the catalog.</summary>
     public static readonly string[] CoveredPrefixes =
     [
-        // C3, wave 1: the console assistant's own reach, sites and apps' code, media.
-        "/api/admin/content",
-        "/api/admin/media",
-        "/api/admin/domains",
-        "/api/admin/connections",
-        "/api/admin/jobs",
-        "/api/admin/audit",
-        "/api/admin/usage",
-        "/api/admin/analytics",
-        "/api/admin/environments",
-        "/api/admin/sites",
-        "/api/admin/site-runtime",
-        "/api/admin/api-fingerprint",
-        "/api/admin/repos",
-        "/api/admin/plugins/catalog",
-        "/api/admin/plugins/instances",
-        "/api/admin/plugins/{slug}/_functions",
-        "/api/admin/contracts",
-        "/api/admin/cli",
-        "/api/admin/me",
+        // C6, 2026-11-24: the whole admin API. A new route anywhere under it says whether the
+        // command line and agents get it, or why not.
+        "/api/admin",
     ];
 
     public void Dispose()

@@ -264,7 +264,8 @@ public static class JobEndpoints
                 page.Items.Select(j => JobDto.From(j, forOperator: true, Name(names, j.TenantId))).ToList(),
                 page.NextCursor));
         }).RequireAuthorization()
-          .AllowConsoleService("The console's jobs page lists every tenant's background work.");
+          .AllowConsoleService("The console's jobs page lists every tenant's background work.")
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapGet(root + "/overview", async (
             JobsDbContext db, TenancyDbContext tenancy, CmsDbContext cms, AuditDbContext audit, ConsoleCaller console,
@@ -304,7 +305,8 @@ public static class JobEndpoints
                 (ulong)await audit.Outbox.AsNoTracking().LongCountAsync(o => o.AppliedAt == null, ct), 0));
             return Results.Ok(new JobOverviewDto(tenants, queues));
         }).RequireAuthorization()
-          .AllowConsoleService("The console's jobs page shows backlog per tenant and per queue.");
+          .AllowConsoleService("The console's jobs page shows backlog per tenant and per queue.")
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapGet(root + "/{id:guid}", async (Guid id, JobsDbContext db, TenancyDbContext tenancy, ConsoleCaller console, CancellationToken ct) =>
         {
@@ -325,7 +327,8 @@ public static class JobEndpoints
             return Results.Ok(new JobDetailDto(JobDto.From(job, true, tenantName),
                 children.Select(c => JobDto.From(c, true, tenantName)).ToList()));
         }).RequireAuthorization()
-          .AllowConsoleService("The console's job detail.");
+          .AllowConsoleService("The console's job detail.")
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost(root + "/{id:guid}/cancel", async (Guid id, JobsDbContext db, ConsoleCaller console, JobControl control, CancellationToken ct) =>
         {
@@ -337,7 +340,8 @@ public static class JobEndpoints
             return job is null ? Results.NotFound() : CancelResult(await control.CancelAsync(job, ct));
         }).RequireAuthorization()
           .WithAudit(AuditActions.PlatformJobCanceled, "job")
-          .AllowConsoleService("An operator stopping a tenant's or the platform's background job.");
+          .AllowConsoleService("An operator stopping a tenant's or the platform's background job.")
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost(root + "/{id:guid}/retry", async (Guid id, JobsDbContext db, ConsoleCaller console, JobControl control, CancellationToken ct) =>
         {
@@ -349,7 +353,8 @@ public static class JobEndpoints
             return job is null ? Results.NotFound() : RetryResult(await control.RetryAsync(job, ct));
         }).RequireAuthorization()
           .WithAudit(AuditActions.PlatformJobRetried, "job")
-          .AllowConsoleService("An operator re-running a failed background job.");
+          .AllowConsoleService("An operator re-running a failed background job.")
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
     }
 
     /// <summary>

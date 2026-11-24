@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Microsoft.AspNetCore.SignalR;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.AdminApi.Tenancy;
@@ -76,7 +77,8 @@ public static class NotificationEndpoints
                 page.Select(x => NotificationDto.From(x.Notification, x.Recipient)).ToList(),
                 unread,
                 hasMore ? page[^1].Recipient.CreatedAt.ToString("O") : null));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("notifications.list", "Your notifications, newest first.", CliRisk.Read, externalText: true);
 
         // Split out so the badge can refresh without paying for a page of rows. Cheap: it is
         // a covering count on IX(TenantId, UserId, ReadAt, CreatedAt).
@@ -87,7 +89,8 @@ public static class NotificationEndpoints
             var unread = await db.Recipients.AsNoTracking()
                 .CountAsync(r => r.UserId == userId && r.ReadAt == null && r.DismissedAt == null, ct);
             return Results.Ok(new { unread });
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("notifications.unread-count", "How many of your notifications are unread.", CliRisk.Read);
 
         app.MapGet("/api/admin/notifications/{id:guid}", async (
             Guid id, NotificationsDbContext db, CurrentUser me, CancellationToken ct) =>
@@ -104,7 +107,8 @@ public static class NotificationEndpoints
             return row is null
                 ? Results.NotFound()
                 : Results.Ok(NotificationDto.From(row.Notification, row.Recipient));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("notifications.get", "One notification in full.", CliRisk.Read, externalText: true);
 
         app.MapPost("/api/admin/notifications/{id:guid}/read", async (
             Guid id, NotificationsDbContext db, CurrentUser me, AuditScope audit,
@@ -126,7 +130,8 @@ public static class NotificationEndpoints
             return Results.NoContent();
         }).RequireAuthorization()
           .AuditExempt("Marking one's own notification read is a per-user UI state change, "
-                     + "not a change to tenant state, and the underlying action is already audited.");
+                     + "not a change to tenant state, and the underlying action is already audited.")
+                     .Cli("notifications.read", "Marks a notification read.", CliRisk.Safe);
 
         app.MapPost("/api/admin/notifications/read-all", async (
             NotificationsDbContext db, CurrentUser me, AuditScope audit,
@@ -142,7 +147,8 @@ public static class NotificationEndpoints
             await TellOtherTabsAsync(hub, tenant, userId, updated, ct);
             return Results.Ok(new { updated });
         }).RequireAuthorization()
-          .AuditExempt("Marking one's own notifications read is a per-user UI state change.");
+          .AuditExempt("Marking one's own notifications read is a per-user UI state change.")
+          .Cli("notifications.read-all", "Marks all your notifications read.", CliRisk.Safe);
 
         app.MapPost("/api/admin/notifications/{id:guid}/dismiss", async (
             Guid id, NotificationsDbContext db, CurrentUser me, AuditScope audit,
@@ -161,7 +167,8 @@ public static class NotificationEndpoints
             await TellOtherTabsAsync(hub, tenant, userId, updated, ct);
             return Results.NoContent();
         }).RequireAuthorization()
-          .AuditExempt("Dismissing one's own notification is a per-user UI state change.");
+          .AuditExempt("Dismissing one's own notification is a per-user UI state change.")
+          .Cli("notifications.dismiss", "Dismisses a notification.", CliRisk.Safe);
     }
 
     /// <summary>

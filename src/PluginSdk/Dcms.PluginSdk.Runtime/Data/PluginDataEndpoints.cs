@@ -1,3 +1,4 @@
+using Dcms.Shared.Security.Agents;
 using Dcms.Shared.Kernel.Views;
 using System.Security.Claims;
 using System.Text.Json;
@@ -41,18 +42,26 @@ public static class PluginDataEndpoints
             .RequireAuthorization()
             .PermissionExempt("Each data set declares its own read and write permission, checked per request.");
 
-        group.MapGet("", ListSetsAsync);
-        group.MapGet("/{set}", QueryAsync);
-        group.MapGet("/{set}/row", GetRowAsync);
-        group.MapGet("/{set}/download", DownloadAsync);
+        group.MapGet("", ListSetsAsync)
+          .Cli("plugins.data-sets", "An app's data sets: the tables a plugin keeps (submissions, members, ...).", CliRisk.Read);
+        group.MapGet("/{set}", QueryAsync)
+          .Cli("plugins.data-query", "Rows of an app's data set, filtered and paged.", CliRisk.Read, externalText: true);
+        group.MapGet("/{set}/row", GetRowAsync)
+          .Cli("plugins.data-row", "One row of an app's data set.", CliRisk.Read, externalText: true);
+        group.MapGet("/{set}/download", DownloadAsync)
+          .Cli("plugins.data-download", "An app's data set as CSV.", CliRisk.Read, externalText: true);
         group.MapPost("/{set}/rows", CreateAsync)
-            .AuditExempt("Records plugin.data.created itself, naming the instance, data set and row.");
+            .AuditExempt("Records plugin.data.created itself, naming the instance, data set and row.")
+            .Cli("plugins.data-create", "Adds a row to an app's data set.", CliRisk.Safe);
         group.MapPut("/{set}/row", UpdateAsync)
-            .AuditExempt("Records plugin.data.updated itself, naming the instance, data set and row.");
+            .AuditExempt("Records plugin.data.updated itself, naming the instance, data set and row.")
+            .Cli("plugins.data-update", "Changes a row of an app's data set.", CliRisk.Safe);
         group.MapDelete("/{set}/row", DeleteAsync)
-            .AuditExempt("Records plugin.data.deleted itself, naming the instance, data set and row.");
+            .AuditExempt("Records plugin.data.deleted itself, naming the instance, data set and row.")
+            .Cli("plugins.data-delete", "Deletes a row of an app's data set.", CliRisk.Dangerous);
         group.MapPost("/{set}/actions/{action}", ActionAsync)
-            .AuditExempt("Records plugin.data.actioned itself, naming the instance, data set, action and rows.");
+            .AuditExempt("Records plugin.data.actioned itself, naming the instance, data set, action and rows.")
+            .Cli("plugins.data-action", "Runs one of a data set's actions on rows (what each does, the set's description says).", CliRisk.Dangerous);
         return app;
     }
 
@@ -236,6 +245,8 @@ public static class PluginDataEndpoints
         }
         // Enabled or not: a switched-off plugin's data stays reachable for the people who own it.
         var instance = await services.GetRequiredService<PluginContextFactory>().FindAnyInstanceAsync(tenantId, slug, ct);
+        // A desktop agent (ADR 0032) does not see an app whose AI tools are off.
+        if (instance is not null && http.User.IsAgent() && !instance.AiToolsEnabled) return null;
         return instance is not null && services.GetRequiredService<PluginRegistry>().FindPlugin(instance.PluginId) is { } plugin
             ? new FoundInstance(tenantId, instance, plugin)
             : null;

@@ -117,7 +117,8 @@ public static class AiConversationEndpoints
                 .ToListAsync(ct);
 
             return Results.Ok(rows);
-        }).RequirePermission(UsePermission);
+        }).RequirePermission(UsePermission)
+          .Cli("ai.conversations", "Your conversations with the console's assistant.", CliRisk.Read, humanOnly: true);
 
         app.MapGet("/api/admin/ai/conversations/{id:guid}", async (
             Guid id, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -189,7 +190,8 @@ public static class AiConversationEndpoints
                     r.FinishedAt,
                 }),
             });
-        }).RequirePermission(UsePermission);
+        }).RequirePermission(UsePermission)
+          .Cli("ai.conversation", "One conversation with the console's assistant.", CliRisk.Read, humanOnly: true);
 
         app.MapPost("/api/admin/ai/conversations", async (
             CreateConversationRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -221,7 +223,8 @@ public static class AiConversationEndpoints
         })
         .RequirePermission(UsePermission)
         .AuditExempt("Opening a scratch conversation changes nothing in the workspace; the turns "
-                     + "inside it are recorded by ai.request, and anything it writes by that write's own action.");
+                     + "inside it are recorded by ai.request, and anything it writes by that write's own action.")
+                     .Cli("ai.start-conversation", "Starts a conversation with the console's assistant.", CliRisk.Safe, humanOnly: true);
 
         // Recall (ADR 0034): the passages of a compacted part of a conversation that mention what an
         // agent is looking for, so detail its summary dropped can still be found. Read as the
@@ -262,7 +265,8 @@ public static class AiConversationEndpoints
                 .Select(m => new { seq = m.Seq, role = m.Role, excerpt = Excerpt(m.Text, terms) })
                 .ToList();
             return Results.Ok(new { conversationId = id, from = low, to = to, excerpts });
-        }).RequirePermission(UsePermission);
+        }).RequirePermission(UsePermission)
+          .Cli("ai.conversation-excerpts", "Parts of an archived conversation, for recall.", CliRisk.Read, humanOnly: true);
 
         app.MapPost("/api/admin/ai/conversations/{id:guid}/messages", async (
             Guid id, AppendMessagesRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -334,7 +338,8 @@ public static class AiConversationEndpoints
         })
         .RequirePermission(UsePermission)
         .AuditExempt("One record per turn would bury the log; ai.request already names every "
-                     + "model call, and each change the agent makes carries its own action.");
+                     + "model call, and each change the agent makes carries its own action.")
+                     .Cli("ai.add-messages", "Adds messages to a conversation with the console's assistant.", CliRisk.Safe, humanOnly: true);
 
         /*
          * Record a run — its start, and later its end.
@@ -469,7 +474,8 @@ public static class AiConversationEndpoints
         })
         .RequirePermission(UsePermission)
         .AuditExempt("A run record is the agent's own account of what it did; each change it "
-                     + "actually made carries its own audit action.");
+                     + "actually made carries its own audit action.")
+          .NotForCli("The lease the console's browser agents hold while they run.");
 
         app.MapPatch("/api/admin/ai/conversations/{id:guid}", async (
             Guid id, UpdateConversationRequest body, AiDbContext db, ITenantContext tenant,
@@ -507,7 +513,8 @@ public static class AiConversationEndpoints
             });
         })
         .RequirePermission(UsePermission)
-        .WithAudit(AuditActions.AiConversationUpdated, "ai_conversation");
+        .WithAudit(AuditActions.AiConversationUpdated, "ai_conversation")
+          .Cli("ai.update-conversation", "Renames a conversation or changes its mode.", CliRisk.Safe, humanOnly: true);
 
         app.MapDelete("/api/admin/ai/conversations/{id:guid}", async (
             Guid id, AiDbContext db, ITenantContext tenant, CurrentUser me, CancellationToken ct) =>
@@ -525,7 +532,8 @@ public static class AiConversationEndpoints
             return Results.NoContent();
         })
         .RequirePermission(UsePermission)
-        .WithAudit(AuditActions.AiConversationDeleted, "ai_conversation");
+        .WithAudit(AuditActions.AiConversationDeleted, "ai_conversation")
+          .Cli("ai.delete-conversation", "Deletes a conversation with the console's assistant.", CliRisk.Dangerous, humanOnly: true);
 
         return app;
     }

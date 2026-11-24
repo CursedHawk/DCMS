@@ -30,18 +30,21 @@ internal static class RecordEndpoints
                         ? new RecordSort(s[1..], SortDirection.Desc)
                         : new RecordSort(s)).ToList(),
                 }, RecordPlane.Admin, ct))))
-            .RequirePluginPermission("data-read");
+            .RequirePluginPermission("data-read")
+            .Cli("records", "A page of a table's records, filtered and sorted.", OpRisk.Read, externalText: true);
 
         endpoints.MapPost("/_records/{table}/query", (string table, RecordQuery query, RecordService records, CancellationToken ct) =>
                 Run(async () => Results.Ok(await records.QueryAsync(table, query, RecordPlane.Admin, ct))))
             .RequirePluginPermission("data-read")
-            .SkipAudit("A read: the query travels in the body because a filter does not fit a URL.");
+            .SkipAudit("A read: the query travels in the body because a filter does not fit a URL.")
+            .Cli("query-records", "Records matching a query (filters, sorting, paging).", OpRisk.Read, externalText: true);
 
         endpoints.MapGet("/_records/{table}/{id:guid}", (string table, Guid id, string? expand, RecordService records, CancellationToken ct) =>
                 Run(async () => await records.GetAsync(table, id, List(expand), RecordPlane.Admin, ct) is { } record
                     ? Results.Ok(record)
                     : NotFound(table, id)))
-            .RequirePluginPermission("data-read");
+            .RequirePluginPermission("data-read")
+            .Cli("record", "One record.", OpRisk.Read, externalText: true);
 
         endpoints.MapPost("/_records/{table}", (string table, JsonObject values, RecordService records, CancellationToken ct) =>
                 Run(async () =>
@@ -50,21 +53,24 @@ internal static class RecordEndpoints
                     return Results.Created($"_records/{table}/{record["id"]}", record);
                 }))
             .RequirePluginPermission("data-write")
-            .AuditAs("record.created");
+            .AuditAs("record.created")
+            .Cli("create-record", "Creates a record.", OpRisk.Safe);
 
         endpoints.MapPatch("/_records/{table}/{id:guid}", (string table, Guid id, JsonObject values, RecordService records, CancellationToken ct) =>
                 Run(async () => await records.UpdateAsync(table, id, values, RecordPlane.Admin, ct) is { } record
                     ? Results.Ok(record)
                     : NotFound(table, id)))
             .RequirePluginPermission("data-write")
-            .AuditAs("record.updated");
+            .AuditAs("record.updated")
+            .Cli("update-record", "Changes a record's fields.", OpRisk.Safe);
 
         endpoints.MapDelete("/_records/{table}/{id:guid}", (string table, Guid id, int? version, RecordService records, CancellationToken ct) =>
                 Run(async () => await records.DeleteAsync(table, id, version, RecordPlane.Admin, ct)
                     ? Results.NoContent()
                     : NotFound(table, id)))
             .RequirePluginPermission("data-delete")
-            .AuditAs("record.deleted");
+            .AuditAs("record.deleted")
+            .Cli("delete-record", "Deletes a record.", OpRisk.Dangerous);
 
         // Up to the request ceilings these answer at once, as they always have. Past them -- up to
         // RecordBulkJob's -- the work is queued as a tracked job (ADR 0024) and the answer is 202
@@ -76,7 +82,8 @@ internal static class RecordEndpoints
                         body.Ids.Count, "data-write", ct))
                     : Results.Ok(await records.BulkUpdateAsync(table, body, RecordPlane.Admin, ct))))
             .RequirePluginPermission("data-write")
-            .AuditAs("record.bulk_updated");
+            .AuditAs("record.bulk_updated")
+            .Cli("bulk-update", "Changes many records at once (a background job).", OpRisk.Dangerous);
 
         endpoints.MapPost("/_records/{table}/bulk-delete", (string table, BulkDeleteRequest body, RecordService records,
                 IPluginContext context, CancellationToken ct) =>
@@ -85,7 +92,8 @@ internal static class RecordEndpoints
                         body.Ids.Count, "data-delete", ct))
                     : Results.Ok(await records.BulkDeleteAsync(table, body, RecordPlane.Admin, ct))))
             .RequirePluginPermission("data-delete")
-            .AuditAs("record.bulk_deleted");
+            .AuditAs("record.bulk_deleted")
+            .Cli("bulk-delete", "Deletes many records at once (a background job).", OpRisk.Dangerous);
 
         endpoints.MapPost("/_records/{table}/import", (string table, bool? dryRun, ImportRequest body, RecordService records,
                 IPluginContext context, CancellationToken ct) =>
@@ -94,14 +102,16 @@ internal static class RecordEndpoints
                         rows, "data-import", ct))
                     : Results.Ok(await records.ImportAsync(table, body, dryRun ?? false, ct))))
             .RequirePluginPermission("data-import")
-            .AuditAs("record.imported");
+            .AuditAs("record.imported")
+            .Cli("import", "Imports records from CSV (a background job).", OpRisk.Safe);
 
         endpoints.MapGet("/_records/{table}/{id:guid}/{navigation}", (string table, Guid id, string navigation, int? page, int? pageSize,
                 RecordService records, CancellationToken ct) =>
                 Run(async () => await records.RelatedAsync(table, id, navigation, page ?? 1, pageSize ?? 50, RecordPlane.Admin, ct) is { } related
                     ? Results.Ok(related)
                     : NotFound(table, id)))
-            .RequirePluginPermission("data-read");
+            .RequirePluginPermission("data-read")
+            .Cli("related", "The records related to one through a relation.", OpRisk.Read, externalText: true);
 
         endpoints.MapPost("/_records/{table}/{id:guid}/{navigation}", (string table, Guid id, string navigation, LinkRequest body,
                 RecordService records, CancellationToken ct) =>
@@ -109,7 +119,8 @@ internal static class RecordEndpoints
                     ? Results.NoContent()
                     : Results.NotFound(new { error = "Both records must exist." })))
             .RequirePluginPermission("data-write")
-            .AuditAs("relation.linked");
+            .AuditAs("relation.linked")
+            .Cli("relate", "Relates a record to another.", OpRisk.Safe);
 
         endpoints.MapDelete("/_records/{table}/{id:guid}/{navigation}/{targetId:guid}", (string table, Guid id, string navigation, Guid targetId,
                 RecordService records, CancellationToken ct) =>
@@ -117,7 +128,8 @@ internal static class RecordEndpoints
                     ? Results.NoContent()
                     : Results.NotFound(new { error = "There is no such link." })))
             .RequirePluginPermission("data-write")
-            .AuditAs("relation.unlinked");
+            .AuditAs("relation.unlinked")
+            .Cli("unrelate", "Removes a relation between two records.", OpRisk.Safe);
     }
 
     private static IReadOnlyList<string> List(string? csv) =>

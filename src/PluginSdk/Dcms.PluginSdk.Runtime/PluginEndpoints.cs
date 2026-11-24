@@ -7,6 +7,7 @@ using Dcms.Shared.Audit;
 using Microsoft.AspNetCore.Authorization;
 using Dcms.Shared.Security.Authorization;
 using Dcms.Shared.Security;
+using Dcms.Shared.Security.Agents;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -181,6 +182,13 @@ public sealed class PluginInstanceFilter(string pluginId) : IEndpointFilter
         if (instance is null)
         {
             return Results.NotFound();
+        }
+        // A desktop agent (ADR 0032) reaches an app only where its AI tools are on, as the console's
+        // assistant reaches its contract operations only there: one switch for "AI may touch this app".
+        if (http.User.IsAgent() && !instance.AiToolsEnabled)
+        {
+            return Results.Json(new { error = "This app's AI tools are off: agents may not use it.", code = "agent_scope" },
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         // Plugin permissions are held per instance, so the route's permission is checked here, once

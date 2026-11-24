@@ -85,7 +85,8 @@ internal static class FormReviewEndpoints
             }
 
             return Results.Ok(result);
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("forms.list", "The workspace's forms and how many submissions each has.", CliRisk.Read);
 
         app.MapGet("/api/admin/forms/{instanceId:guid}/submissions", async (
             Guid instanceId, string? formName, string? handled, string? sort, string? dir, int? page, int? pageSize,
@@ -151,7 +152,8 @@ internal static class FormReviewEndpoints
                 pageSize = size,
                 totalCount = total,
             });
-        }).RequirePermission(PlatformPermissions.ContentRead);
+        }).RequirePermission(PlatformPermissions.ContentRead)
+          .Cli("forms.submissions", "A form's submissions, newest first.", CliRisk.Read, externalText: true);
 
         app.MapPost("/api/admin/forms/submissions/{id:guid}/handled", async (
             Guid id, FormsDbContext db, CancellationToken ct) =>
@@ -164,7 +166,8 @@ internal static class FormReviewEndpoints
             submission.HandledAt = submission.HandledAt is null ? DateTimeOffset.UtcNow : null;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { handledAt = submission.HandledAt });
-        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.FormSubmissionHandled, "form_submission");
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.FormSubmissionHandled, "form_submission")
+          .Cli("forms.mark-handled", "Marks a submission handled.", CliRisk.Safe);
 
         app.MapDelete("/api/admin/forms/submissions/{id:guid}", async (
             Guid id, FormsDbContext db, CancellationToken ct) =>
@@ -177,7 +180,8 @@ internal static class FormReviewEndpoints
             db.Submissions.Remove(submission);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.FormSubmissionDeleted, "form_submission");
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.FormSubmissionDeleted, "form_submission")
+          .Cli("forms.delete-submission", "Deletes a submission.", CliRisk.Dangerous);
 
         return app;
     }

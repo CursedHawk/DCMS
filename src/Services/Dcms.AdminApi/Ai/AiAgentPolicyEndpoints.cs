@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using System.Text.Json;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
@@ -54,7 +55,8 @@ public static class AiAgentPolicyEndpoints
                 compactAtTokens = settings?.CompactAtTokens ?? TenantAiSettings.DefaultCompactAtTokens,
                 prompts = Prompts(settings),
             });
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("ai.agent-policy", "The workspace's AI agent policy: turn limit and prompt overrides.", CliRisk.Read, humanOnly: true);
 
         app.MapGet("/api/admin/tenants/{tenantId:guid}/ai-agent-policy", async (
             Guid tenantId, ConsoleCaller console, AiDbContext db, CancellationToken ct) =>
@@ -85,7 +87,8 @@ public static class AiAgentPolicyEndpoints
             .RequireAuthorization()
             .AllowConsoleService(
                 "the platform console shows a tenant's AI agent policy; its API holds dcms.console and has "
-                + "already checked the operator holds platform:tenants:read.");
+                + "already checked the operator holds platform:tenants:read.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPut("/api/admin/tenants/{tenantId:guid}/ai-agent-policy", async (
             Guid tenantId, AgentPolicyRequest body, ConsoleCaller console, AiDbContext db, TenancyDbContext tenancy,
@@ -154,7 +157,8 @@ public static class AiAgentPolicyEndpoints
             .WithAudit(AuditActions.PlatformTenantAiAgentPolicyChanged, "tenant")
             .AllowConsoleService(
                 "the platform console sets a tenant's AI agent policy; its API holds dcms.console and has "
-                + "already checked the operator holds platform:tenants:write.");
+                + "already checked the operator holds platform:tenants:write.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         return app;
     }

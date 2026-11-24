@@ -48,7 +48,8 @@ public static class AiAgentEndpoints
                 baseUrl = s?.BaseUrl,
                 hasApiKey = !string.IsNullOrEmpty(s?.ApiKeyCiphertext),
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .Cli("ai.my-credentials", "Your own AI provider key settings for the console's agents (never the key).", CliRisk.Read, humanOnly: true);
 
         app.MapPut("/api/admin/ai/user-credentials", async (
             UpdateUserCredentialsRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -105,7 +106,8 @@ public static class AiAgentEndpoints
 
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiCredentialsUpdated, "ai_credentials");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiCredentialsUpdated, "ai_credentials")
+          .Cli("ai.set-my-credentials", "Sets your own AI provider key for the console's agents.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapDelete("/api/admin/ai/user-credentials", async (
             AiDbContext db, ITenantContext tenant, CurrentUser me, CancellationToken ct) =>
@@ -119,7 +121,8 @@ public static class AiAgentEndpoints
                 await db.SaveChangesAsync(ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiCredentialsDeleted, "ai_credentials");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiCredentialsDeleted, "ai_credentials")
+          .Cli("ai.remove-my-credentials", "Removes your own AI provider key.", CliRisk.Dangerous, humanOnly: true);
 
         // --- Streaming message proxy (browser agent loop -> ai-gateway) -------
 
@@ -141,7 +144,8 @@ public static class AiAgentEndpoints
          */
         app.MapPost("/api/admin/ai/messages", MessagesProxy)
             .RequirePermission(PlatformPermissions.SiteEdit)
-            .WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
+            .WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access)
+            .NotForCli("The console's own agents' model proxy; a desktop agent brings its own model.");
 
         return app;
     }

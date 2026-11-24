@@ -56,7 +56,8 @@ public static class TenantUsageEndpoints
             .AuditExempt(RecalculateExempt)
             .AllowConsoleService(
                 "the platform console's tenant page recalculates usage; its API holds dcms.console and "
-                + "has already checked the operator holds platform:tenants:write.");
+                + "has already checked the operator holds platform:tenants:write.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // Who and what a tenant has, for the console's tenant page. Here rather than an obs view
         // because the views deliberately carry no email address.
@@ -86,7 +87,8 @@ public static class TenantUsageEndpoints
             .RequireAuthorization()
             .AllowConsoleService(
                 "the platform console's tenant page lists the tenant's domains, members and plugins; its "
-                + "API holds dcms.console and has already checked the operator holds platform:tenants:read.");
+                + "API holds dcms.console and has already checked the operator holds platform:tenants:read.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         return app;
     }

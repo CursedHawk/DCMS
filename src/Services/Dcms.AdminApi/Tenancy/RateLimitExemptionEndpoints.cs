@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Contracts.Events;
@@ -41,7 +42,8 @@ public static class RateLimitExemptionEndpoints
         }).RequireAuthorization()
           .AllowConsoleService(
               "the platform console reads this page; its API holds dcms.console and has already "
-              + "checked the operator holds platform:ratelimits:manage.");
+              + "checked the operator holds platform:ratelimits:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost("/api/admin/platform/rate-limit-exemptions", async (
             Request body, EdgeDbContext edge, IEventPublisher events, ConsoleCaller console,
@@ -90,7 +92,8 @@ public static class RateLimitExemptionEndpoints
           .WithAudit(AuditActions.RateLimitExemptionAdded, "rate-limit-exemption")
           .AllowConsoleService(
               "the platform console owns this button; its API holds dcms.console and has already "
-              + "checked the operator holds platform:ratelimits:manage.");
+              + "checked the operator holds platform:ratelimits:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapDelete("/api/admin/platform/rate-limit-exemptions/{id:guid}", async (
             Guid id, EdgeDbContext edge, IEventPublisher events, ConsoleCaller console, CancellationToken ct) =>
@@ -113,7 +116,8 @@ public static class RateLimitExemptionEndpoints
           .WithAudit(AuditActions.RateLimitExemptionRemoved, "rate-limit-exemption")
           .AllowConsoleService(
               "the platform console owns this button; its API holds dcms.console and has already "
-              + "checked the operator holds platform:ratelimits:manage.");
+              + "checked the operator holds platform:ratelimits:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         return app;
     }

@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Contracts.Events;
@@ -116,7 +117,8 @@ public static class ManagedCertificateEndpoints
         }).RequireAuthorization()
           .AllowConsoleService(
               "the platform console reads this page; its API holds dcms.console and has already "
-              + "checked the operator holds platform:certificates:manage.");
+              + "checked the operator holds platform:certificates:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // The attempt history, which is also the rate-limit ledger. Worth surfacing on its own:
         // when the edge refuses to order, this is the evidence for why.
@@ -139,7 +141,8 @@ public static class ManagedCertificateEndpoints
         }).RequireAuthorization()
           .AllowConsoleService(
               "the platform console reads this page; its API holds dcms.console and has already "
-              + "checked the operator holds platform:certificates:manage.");
+              + "checked the operator holds platform:certificates:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost("/api/admin/platform/certificates", async (
             Request body, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
@@ -168,7 +171,8 @@ public static class ManagedCertificateEndpoints
           .WithAudit(AuditActions.ManagedCertificateCreated, "managed-certificate")
           .AllowConsoleService(
               "the platform console owns this button; its API holds dcms.console and has already "
-              + "checked the operator holds platform:certificates:manage.");
+              + "checked the operator holds platform:certificates:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPut("/api/admin/platform/certificates/{id:guid}", async (
             Guid id, Request body, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
@@ -203,7 +207,8 @@ public static class ManagedCertificateEndpoints
           .WithAudit(AuditActions.ManagedCertificateUpdated, "managed-certificate")
           .AllowConsoleService(
               "the platform console owns this button; its API holds dcms.console and has already "
-              + "checked the operator holds platform:certificates:manage.");
+              + "checked the operator holds platform:certificates:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapDelete("/api/admin/platform/certificates/{id:guid}", async (
             Guid id, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
@@ -239,7 +244,8 @@ public static class ManagedCertificateEndpoints
           .WithAudit(AuditActions.ManagedCertificateRemoved, "managed-certificate")
           .AllowConsoleService(
               "the platform console owns this button; its API holds dcms.console and has already "
-              + "checked the operator holds platform:certificates:manage.");
+              + "checked the operator holds platform:certificates:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // Reissue before it is due. Flag plus event, exactly as the tenant-domain button works:
         // the flag makes it certain because the hourly sweep honours it, the event makes it
@@ -290,7 +296,8 @@ public static class ManagedCertificateEndpoints
           .WithAudit(AuditActions.ManagedCertificateReissued, "managed-certificate")
           .AllowConsoleService(
               "the platform console owns this button; its API holds dcms.console and has already "
-              + "checked the operator holds platform:certificates:manage.");
+              + "checked the operator holds platform:certificates:manage.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         return app;
     }

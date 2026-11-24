@@ -95,7 +95,8 @@ public static class TenancyEndpoints
             metrics.TenantCreated();
             return Results.Created($"/api/admin/tenants/{tenant.Id}",
                 new { tenantId = tenant.TenantId, slug = tenant.Identifier, name = tenant.Name });
-        }).RequireAuthorization().WithAudit(AuditActions.TenantCreated, "tenant");
+        }).RequireAuthorization().WithAudit(AuditActions.TenantCreated, "tenant")
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapGet("/api/admin/tenants", async (CurrentUser me, TenancyDbContext db, CancellationToken ct) =>
         {
@@ -107,7 +108,8 @@ public static class TenancyEndpoints
                 .Select(t => new { tenantId = t.TenantId, slug = t.Identifier, name = t.Name, status = t.Status.ToString() })
                 .ToListAsync(ct);
             return Results.Ok(tenants);
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // ---- Cross-tenant lifecycle: suspend / resume (SuperAdmin, no ambient tenant) ----
         //
@@ -132,7 +134,8 @@ public static class TenancyEndpoints
             .AllowConsoleService(
                 "the platform console owns tenant lifecycle; its API holds dcms.console and has "
                 + "already checked the operator holds platform:tenants:lifecycle. ADR 0003 keeps "
-                + "the write here, so the console asks rather than reaching into tenancy itself.");
+                + "the write here, so the console asks rather than reaching into tenancy itself.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost("/api/admin/tenants/{tenantId:guid}/resume", async (
             Guid tenantId, ConsoleCaller console, TenancyDbContext db, TenantStore store, IAuditRecorder audit,
@@ -145,7 +148,8 @@ public static class TenancyEndpoints
             .AllowConsoleService(
                 "the platform console owns tenant lifecycle; its API holds dcms.console and has "
                 + "already checked the operator holds platform:tenants:lifecycle. ADR 0003 keeps "
-                + "the write here, so the console asks rather than reaching into tenancy itself.");
+                + "the write here, so the console asks rather than reaching into tenancy itself.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // How much the tenant's media library may hold. Console-only, like suspend: the cap is a
         // platform decision, so no tenant permission reaches it. Lowering it below what the tenant
@@ -179,7 +183,8 @@ public static class TenancyEndpoints
             .AllowConsoleService(
                 "the platform console sets tenant storage limits; its API holds dcms.console and has "
                 + "already checked the operator holds platform:tenants:write. ADR 0003 keeps the "
-                + "write here, so the console asks rather than reaching into tenancy itself.");
+                + "write here, so the console asks rather than reaching into tenancy itself.")
+                .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // ---- Tenant-scoped: roles (requires X-Dcms-Tenant) ----
         app.MapGet("/api/admin/roles", async (TenancyDbContext db, ITenantContext tenant, CancellationToken ct) =>
@@ -203,7 +208,8 @@ public static class TenancyEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(roles);
-        }).RequirePermission(PlatformPermissions.RolesManage);
+        }).RequirePermission(PlatformPermissions.RolesManage)
+          .Cli("people.roles", "The workspace's roles and their permissions.", CliRisk.Read, humanOnly: true);
 
         app.MapPost("/api/admin/roles", async (
             CreateRoleRequest body, TenancyDbContext db, ITenantContext tenant,
@@ -238,7 +244,8 @@ public static class TenancyEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/roles/{role.Id}", new { id = role.Id });
         }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleCreated, "role")
-            .ManagedByDeployments("roles");
+            .ManagedByDeployments("roles")
+            .Cli("people.create-role", "Creates a role.", CliRisk.Dangerous, humanOnly: true);
 
         // Update a role's name and replace its permission set wholesale. System
         // roles keep their name fixed but their permissions may still be tuned.
@@ -329,7 +336,8 @@ public static class TenancyEndpoints
             }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleUpdated, "role")
-            .ManagedByDeployments("roles");
+            .ManagedByDeployments("roles")
+            .Cli("people.update-role", "Changes a role's name or permissions.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapDelete("/api/admin/roles/{id:guid}", async (
             Guid id, TenancyDbContext db, CancellationToken ct) =>
@@ -351,7 +359,8 @@ public static class TenancyEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleDeleted, "role")
-            .ManagedByDeployments("roles");
+            .ManagedByDeployments("roles")
+            .Cli("people.delete-role", "Deletes a role.", CliRisk.Dangerous, humanOnly: true);
 
         // ---- Tenant-scoped: members ----
         app.MapGet("/api/admin/members", async (TenancyDbContext db, CancellationToken ct) =>
@@ -366,7 +375,8 @@ public static class TenancyEndpoints
                 })
                 .ToListAsync(ct);
             return Results.Ok(members);
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage)
+          .Cli("people.members", "The workspace's members and their roles.", CliRisk.Read, humanOnly: true);
 
         app.MapPost("/api/admin/members/{membershipId:guid}/roles", async (
             Guid membershipId, AssignRoleRequest body, TenancyDbContext db, ITenantContext tenant,
@@ -425,7 +435,8 @@ public static class TenancyEndpoints
                     tenantId, membership, body.RoleId, granted: true, actor: me.UserId), ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleGranted, "membership");
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleGranted, "membership")
+          .Cli("people.assign-role", "Gives a member a role.", CliRisk.Dangerous, humanOnly: true);
 
         app.MapDelete("/api/admin/members/{membershipId:guid}/roles/{roleId:guid}", async (
             Guid membershipId, Guid roleId, TenancyDbContext db, ITenantContext tenant,
@@ -481,7 +492,8 @@ public static class TenancyEndpoints
                     tenantId, membership, roleId, granted: false, actor: me.UserId), ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleRevoked, "membership");
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleRevoked, "membership")
+          .Cli("people.unassign-role", "Takes a role from a member.", CliRisk.Dangerous, humanOnly: true);
 
         // MISS-01: remove a member from the workspace entirely (off-boarding). Without this, a
         // former member kept a membership — and with it access to every bare-RequireAuthorization
@@ -540,7 +552,8 @@ public static class TenancyEndpoints
 
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRemoved, "membership")
-            .InWorkspaceRootOnly();
+            .InWorkspaceRootOnly()
+            .Cli("people.remove-member", "Removes a member from the workspace.", CliRisk.Dangerous, humanOnly: true);
 
         // Effective permission catalog: platform keys ∪ each plugin instance's
         // permissions ∪ per-site git repo permissions, each with a display name and
@@ -596,7 +609,8 @@ public static class TenancyEndpoints
             });
 
             return Results.Ok(platform.Concat(plugin).Concat(repo));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("people.permission-catalog", "Every permission there is, with what it allows.", CliRisk.Read);
 
         return app;
     }

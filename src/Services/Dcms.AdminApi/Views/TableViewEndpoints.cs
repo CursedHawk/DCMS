@@ -54,7 +54,8 @@ public static partial class TableViewEndpoints
                 views = views.Select(v => Shape(v, me, emails.GetValueOrDefault(v.OwnerUserId))),
                 defaultView = fallback,
             });
-        });
+        })
+          .Cli("views.list", "Saved table views for a table, yours and shared with you.", CliRisk.Read);
 
         group.MapPost("", async (SaveViewRequest body, ViewContext ctx, AuditScope audit, CancellationToken ct) =>
         {
@@ -73,7 +74,8 @@ public static partial class TableViewEndpoints
             audit.Declared?.For("view", view.Id, view.Name).With("table", view.TableKey);
             await ctx.Db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/views/{view.Id}", Shape(view, ctx.UserId, null));
-        }).WithAudit(AuditActions.TableViewCreated, "view");
+        }).WithAudit(AuditActions.TableViewCreated, "view")
+          .Cli("views.create", "Saves a table view.", CliRisk.Safe);
 
         group.MapPut("/{id:guid}", async (Guid id, SaveViewRequest body, ViewContext ctx, AuditScope audit, CancellationToken ct) =>
         {
@@ -86,7 +88,8 @@ public static partial class TableViewEndpoints
             audit.Declared?.For("view", view.Id, view.Name).With("table", view.TableKey);
             await ctx.Db.SaveChangesAsync(ct);
             return Results.Ok(Shape(view, ctx.UserId, null));
-        }).WithAudit(AuditActions.TableViewUpdated, "view");
+        }).WithAudit(AuditActions.TableViewUpdated, "view")
+          .Cli("views.update", "Changes a saved table view.", CliRisk.Safe);
 
         group.MapDelete("/{id:guid}", async (Guid id, ViewContext ctx, AuditScope audit, CancellationToken ct) =>
         {
@@ -99,7 +102,8 @@ public static partial class TableViewEndpoints
             audit.Declared?.For("view", view.Id, view.Name).With("table", view.TableKey);
             await ctx.Db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).WithAudit(AuditActions.TableViewDeleted, "view");
+        }).WithAudit(AuditActions.TableViewDeleted, "view")
+          .Cli("views.delete", "Deletes a saved table view.", CliRisk.Dangerous);
 
         // Who else sees it: everyone in the workspace, or the members and roles named. Replaces
         // the whole list; shared views are read-only to everyone but the owner.
@@ -135,7 +139,8 @@ public static partial class TableViewEndpoints
             await ctx.Db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(Shape(view, ctx.UserId, null));
-        }).WithAudit(AuditActions.TableViewShared, "view");
+        }).WithAudit(AuditActions.TableViewShared, "view")
+          .Cli("views.share", "Shares a table view with members or roles.", CliRisk.Safe);
 
         // Who a view can be shared with: the workspace's members and roles. Listing members takes
         // members:manage elsewhere; sharing a view is open to every member, so it gets this —
@@ -151,7 +156,8 @@ public static partial class TableViewEndpoints
             var roles = await ctx.Db.TenantRoles.AsNoTracking().Where(r => r.TenantId == tenantId)
                 .OrderBy(r => r.Name).Select(r => new { id = r.Id, label = r.Name }).ToListAsync(ct);
             return Results.Ok(new { people, roles });
-        });
+        })
+          .Cli("views.audience", "Who a view can be shared with.", CliRisk.Read);
 
         // The view this member opens the table with: a view they can see, a table's own built-in
         // view (system:…), or null for the table's default.
@@ -186,7 +192,8 @@ public static partial class TableViewEndpoints
             }
             await ctx.Db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).AuditExempt("A member's own preference for which view opens first.");
+        }).AuditExempt("A member's own preference for which view opens first.")
+          .Cli("views.set-default", "Sets the default view of a table.", CliRisk.Safe);
 
         return app;
     }

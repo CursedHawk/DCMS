@@ -80,7 +80,8 @@ public static partial class AiKnowledgeEndpoints
                 .Order(StringComparer.Ordinal)
                 .ToList();
             return Results.Ok(new { folder = root, folders, entries });
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("knowledge.list", "The workspace's knowledge store: notes the team and its agents keep, by folder path, searchable.", CliRisk.Read, externalText: true);
 
         app.MapGet("/api/admin/ai/knowledge/entry", async (
             string path, string? siteId, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -99,7 +100,8 @@ public static partial class AiKnowledgeEndpoints
             return entry is null || !await MayReadAsync(entry, db, permissions, me, tenantId, ct)
                 ? Results.NotFound(new { error = $"Nothing is saved at {key}. List or search to find the right path." })
                 : Results.Ok(Full(entry));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("knowledge.get", "One knowledge entry in full.", CliRisk.Read, externalText: true);
 
         app.MapPut("/api/admin/ai/knowledge/entry", async (
             SaveKnowledgeRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
@@ -162,7 +164,8 @@ public static partial class AiKnowledgeEndpoints
             return Results.Ok(new KnowledgeSummary(entry.Id, entry.SiteId, entry.Path, entry.Title, entry.Description, entry.Source, entry.UpdatedAt));
         })
             .RequirePermission(PlatformPermissions.AiKnowledge)
-            .WithAudit(AuditActions.AiKnowledgeSaved, "ai_knowledge");
+            .WithAudit(AuditActions.AiKnowledgeSaved, "ai_knowledge")
+            .Cli("knowledge.save", "Saves a knowledge entry at a path (needs ai:knowledge).", CliRisk.Safe);
 
         app.MapDelete("/api/admin/ai/knowledge/{id:guid}", async (
             Guid id, AiDbContext db, ITenantContext tenant, CurrentUser me, IPermissionResolver permissions,
@@ -179,7 +182,8 @@ public static partial class AiKnowledgeEndpoints
             return Results.NoContent();
         })
             .RequirePermission(PlatformPermissions.AiKnowledge)
-            .WithAudit(AuditActions.AiKnowledgeDeleted, "ai_knowledge");
+            .WithAudit(AuditActions.AiKnowledgeDeleted, "ai_knowledge")
+            .Cli("knowledge.delete", "Deletes a knowledge entry.", CliRisk.Dangerous);
 
         return app;
     }

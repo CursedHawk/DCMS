@@ -108,10 +108,25 @@ builder.Services.AddSingleton<DnsTxtLookup>();
 // container; email-worker is deliberately the only thing that speaks to the relay.
 builder.Services.Configure<Dcms.AdminApi.Observability.AlertingOptions>(
     builder.Configuration.GetSection("Alerting"));
-// Named rate-limit policies only (plugins add theirs -- the Meta OAuth callback). No global
-// limiter: admin-api has never had one, and quietly throttling the whole admin SPA would be a
-// surprising way to find that out.
-builder.Services.AddRateLimiter(limiter => limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests);
+// Named rate-limit policies (plugins add theirs -- the Meta OAuth callback), and one global limit
+// for desktop agents' tokens only (ADR 0032): an agent in a loop is held to so many requests a
+// minute per token. People and the console are never throttled here; quietly throttling the admin
+// SPA would be a surprising way to find out there was a limiter.
+var agentRequestsPerMinute = builder.Configuration.GetValue("Agents:RequestsPerMinute", 300);
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    limiter.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
+        http.User.FindFirstValue(AgentClaims.Grant) is { } grant
+            ? System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter("agent:" + grant, _ =>
+                new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = agentRequestsPerMinute,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                })
+            : System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("people"));
+});
 
 // Prod safety: the git push webhook (/api/internal/git/webhook) is anonymous and
 // gated only by an HMAC over Forgejo__WebhookSecret. An empty or well-known default
@@ -334,7 +349,8 @@ app.MapGet("/api/admin/ai/ping", async (
     var response = await client.GetAsync("/internal/ping", ct);
     var body = await response.Content.ReadAsStringAsync(ct);
     return Results.Content(body, "application/json", statusCode: (int)response.StatusCode);
-}).RequireAuthorization();
+}).RequireAuthorization()
+          .NotForCli("A service-to-service self check of the AI gateway token.");
 
 app.Run();
 

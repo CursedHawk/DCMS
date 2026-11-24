@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
@@ -105,7 +106,8 @@ public static class PlatformNotificationEndpoints
         }).RequireAuthorization()
           .AllowConsoleService(
               "the platform console owns this bell; its API holds dcms.console and has already "
-              + "checked the operator holds platform:notifications:read.");
+              + "checked the operator holds platform:notifications:read.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         // Split out so the badge can refresh without paying for a page of rows.
         app.MapGet("/api/admin/platform/notifications/unread-count", async (
@@ -120,7 +122,8 @@ public static class PlatformNotificationEndpoints
         }).RequireAuthorization()
           .AllowConsoleService(
               "the platform console owns this bell; its API holds dcms.console and has already "
-              + "checked the operator holds platform:notifications:read.");
+              + "checked the operator holds platform:notifications:read.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost("/api/admin/platform/notifications/{id:guid}/read", async (
             Guid id, NotificationsDbContext db, ConsoleCaller console, CancellationToken ct) =>
@@ -137,7 +140,8 @@ public static class PlatformNotificationEndpoints
                      + "to platform state; what the notification describes is audited where it happened.")
           .AllowConsoleService(
               "the platform console owns this bell; its API holds dcms.console and has already "
-              + "checked the operator holds platform:notifications:read.");
+              + "checked the operator holds platform:notifications:read.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost("/api/admin/platform/notifications/read-all", async (
             NotificationsDbContext db, ConsoleCaller console, AuditScope audit, CancellationToken ct) =>
@@ -184,7 +188,8 @@ public static class PlatformNotificationEndpoints
           .AuditExempt("Per-user UI state; see the single-notification read endpoint.")
           .AllowConsoleService(
               "the platform console owns this bell; its API holds dcms.console and has already "
-              + "checked the operator holds platform:notifications:read.");
+              + "checked the operator holds platform:notifications:read.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         app.MapPost("/api/admin/platform/notifications/{id:guid}/dismiss", async (
             Guid id, NotificationsDbContext db, ConsoleCaller console, CancellationToken ct) =>
@@ -202,7 +207,8 @@ public static class PlatformNotificationEndpoints
           .AuditExempt("Per-user UI state; dismissing hides one operator's copy and deletes nothing.")
           .AllowConsoleService(
               "the platform console owns this bell; its API holds dcms.console and has already "
-              + "checked the operator holds platform:notifications:read.");
+              + "checked the operator holds platform:notifications:read.")
+              .NotForCli("A platform operator route, for the platform console: not a workspace operation.");
 
         return app;
     }

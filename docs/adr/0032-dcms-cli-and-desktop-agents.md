@@ -141,6 +141,19 @@ How C2 enforces it (`src/Services/Dcms.AdminApi/Agents/AgentTokens.cs`):
 - **What an agent may touch on this machine.** Any path an agent names, a sync folder or a file to upload, must be inside the folder `dcms mcp` was started in (the project), reached through no symbolic link, and in no hidden folder. That keeps out this machine's dcms sign-in and agent tokens, `~/.ssh` and `.env`. (Security review of C4.)
 - **Untrusted text.** Routes whose answers carry text someone outside wrote say `.Cli(..., externalText: true)`: build logs, PageSpeed audits, an API connection's answer, the audit log and function runs. Like visitor-text contract operations, their results come back inside a fence made for that one answer, which the text cannot close.
 
+## The whole admin API, and hardening (C6, C7, 2026-11-24)
+
+- **Every `/api/admin` route decides.** `CliCoverageTests` now covers the whole admin API: a route either says `.Cli(...)` or `.NotForCli(reason)`, or the build fails. These are `NotForCli`:
+  - platform-operator routes (jobs, notifications, certificates, rate-limit exemptions, tenant usage recalculation);
+  - browser-only flows (OAuth connects and callbacks, plugin screens' bundles, the preview proxy, run leases).
+
+  Plugin routes are named `<plugin>.<name>`: Dynamic Apps' model and records, User Auth's realm, users, groups, providers, roles and site rules, and YouTube. Plugin data sets are `plugins.data-*`. A site user's preview token is `humanOnly`.
+- **The AI switch holds on plugin routes too.** An agent reaches a plugin's own routes, and its data sets, only on apps whose AI tools are on, the same switch the contracts' `plane=ai` honours.
+- **Rate limit.** Each agent token gets `Agents:RequestsPerMinute` (default 300) a minute. People and the console stay unthrottled.
+- **Telemetry.** Requests made with the command line or an agent token carry `dcms.client` and `dcms.agent.grant` on their trace.
+- **End to end.** `DesktopAgentEndToEndTests` links agents with `link-agent` and drives the same tool handlers `dcms mcp` serves against admin-api and Forgejo. It pulls a Functions app, edits it, commits and releases it. It also checks the refusals: a person's operation, an app with AI tools off, a folder outside the project, a read-only write, and an environment outside the token. The MCP stdio framing is the SDK's and is not exercised again.
+- **User guide:** `docs/dcms-cli.md`.
+
 ## Consequences
 
 - **Installing needs nothing but a shell**, and the CLI cannot drift from its console. The binaries are unsigned (beyond macOS's ad-hoc signature). A browser download may meet SmartScreen or Gatekeeper; the installers avoid both. Notarization and code signing come when someone asks.

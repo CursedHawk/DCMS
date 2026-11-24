@@ -1,3 +1,5 @@
+using Dcms.Shared.Security;
+
 namespace Dcms.AdminApi.ApiClientGen;
 
 /// <summary>
@@ -18,7 +20,8 @@ public static class ApiClientEndpoints
             }
             var zip = ClientPackageBuilder.Build(api.Document, api.Instances);
             return Results.File(zip, "application/zip", $"{Slugify(api.TenantSlug)}-api-client.zip");
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("sites.api-client-zip", "The workspace's generated TypeScript API client, as a zip.", CliRisk.Read);
 
         app.MapGet("/api/admin/site-starter.zip", async (TenantApiResolver resolver, CancellationToken ct) =>
         {
@@ -28,7 +31,8 @@ public static class ApiClientEndpoints
             }
             var zip = SiteTemplates.BuildDownload(api, GeneratedLayer.Build(api));
             return Results.File(zip, "application/zip", $"{Slugify(api.TenantSlug)}-site-starter.zip");
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Cli("sites.starter-zip", "A React site starter with the API client, as a zip.", CliRisk.Read);
 
         return app;
     }
