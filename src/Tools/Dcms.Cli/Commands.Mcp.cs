@@ -173,15 +173,25 @@ internal sealed partial class Commands
 
     internal static string ToolName(string operation) => operation.Replace('.', '_');
 
-    private static JsonObject? EnvironmentProperty(AgentLink agent) =>
-        agent.Environments.Length > 1
-            ? new JsonObject
-            {
-                ["type"] = "string",
-                ["enum"] = new JsonArray([.. agent.Environments.Select(e => (JsonNode?)JsonValue.Create(e))]),
-                ["description"] = $"The environment to act in; {agent.Environments[0]} when omitted.",
-            }
-            : null;
+    /// <summary>
+    /// Every tool's <c>environment</c> argument: one of the token's environments, or, for a token
+    /// not limited to any, any environment by name. A token for exactly one needs none.
+    /// </summary>
+    internal static JsonObject? EnvironmentProperty(AgentLink agent) => agent.Environments.Length switch
+    {
+        1 => null,
+        0 => new JsonObject
+        {
+            ["type"] = "string",
+            ["description"] = "The environment to act in, by name (dcms_whoami lists them); production when omitted.",
+        },
+        _ => new JsonObject
+        {
+            ["type"] = "string",
+            ["enum"] = new JsonArray([.. agent.Environments.Select(e => (JsonNode?)JsonValue.Create(e))]),
+            ["description"] = $"The environment to act in; {agent.Environments[0]} when omitted.",
+        },
+    };
 
     private static Tool Generic(string name, string description, JsonObject properties, IEnumerable<string> required, CliRisk? risk, JsonObject? environment)
     {
@@ -215,6 +225,7 @@ internal sealed partial class Commands
                     var me = (await Api.JsonAsync(res, ct))?.AsObject() ?? [];
                     me["workspace"] = agent.Workspace;
                     me["environment"] = environment ?? "production";
+                    me["environments"] = new JsonArray([.. (await ReachableEnvironmentsAsync(agent, environment, ct)).Select(e => (JsonNode?)e)]);
                     // Where to start: how much there is to call, by area; dcms_find searches it.
                     var catalog = await CatalogAsync(agent.Workspace, environment, ct);
                     me["operations"] = Entries(catalog).Count();
@@ -274,6 +285,23 @@ internal sealed partial class Commands
         catch (Exception e) when (e is CliException or HttpRequestException or JsonException or InvalidOperationException)
         {
             return new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = e.Message }] };
+        }
+    }
+
+    /// <summary>The environments this agent may pass as <c>environment</c>: its token's, else every one its person is in.</summary>
+    private async Task<List<string>> ReachableEnvironmentsAsync(AgentLink agent, string? environment, CancellationToken ct)
+    {
+        if (agent.Environments.Length > 0) return [.. agent.Environments];
+        try
+        {
+            using var res = await api.RawAsync(HttpMethod.Get, "/api/admin/environments", agent.Workspace, environment, null, null, ct);
+            var list = await Api.JsonAsync(res, ct);
+            return [.. (list?["environments"]?.AsArray() ?? []).Where(e => e?["isMember"]?.GetValue<bool>() != false)
+                .Select(e => Api.Str(e?["name"])).OfType<string>()];
+        }
+        catch (CliException)
+        {
+            return []; // may not read the list: the tools still take any name
         }
     }
 

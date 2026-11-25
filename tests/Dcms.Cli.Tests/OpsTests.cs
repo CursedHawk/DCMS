@@ -35,6 +35,15 @@ public sealed class OpsTests
     }
 
     [Fact]
+    public void An_agent_not_limited_to_environments_chooses_one_on_every_tool()
+    {
+        static AgentLink Agent(params string[] envs) => new("id", "a", "https://x", "t", "w", envs, false, "claude-code", null, DateTimeOffset.MaxValue);
+        Commands.EnvironmentProperty(Agent())!["enum"].Should().BeNull("any environment, by name");
+        Commands.EnvironmentProperty(Agent("staging")).Should().BeNull("its one environment needs no choosing");
+        Commands.EnvironmentProperty(Agent("staging", "development"))!["enum"]!.AsArray().Select(e => (string)e!).Should().Equal("staging", "development");
+    }
+
+    [Fact]
     public void Search_matches_words_in_any_order_best_first()
     {
         (string, string, string)[] entries =

@@ -13,6 +13,8 @@ environments, perhaps read-only). Anything you are refused, say so plainly: do n
 
 - `dcms_whoami` — who you act as, your workspace, your environments, whether you may only read,
   and the **areas** you may call (`sites`, `content`, `plugins.forms`, …). Start here when unsure.
+- **Environments:** every tool takes `environment` (by name; `production` when omitted) unless your
+  token is for one environment only. To work in `development` or `staging`, pass it on each call.
 - `dcms_find` — search every operation you may call by words, in any order ("form submissions",
   "publish site"), or list an area by its name ("content"). Nothing found: it lists the areas.
 - `dcms_describe` — one operation's parameters and body schema. **Describe before you call** anything you have not called before.

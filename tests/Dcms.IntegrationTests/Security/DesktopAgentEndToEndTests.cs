@@ -94,6 +94,12 @@ public sealed class DesktopAgentEndToEndTests(AdminApiFixture fixture) : IAsyncL
             var whoami = await Call(agent, "dcms_whoami");
             whoami.Error.Should().BeFalse(whoami.Text);
             whoami.Text.Should().Contain("Claude Code on test");
+            whoami.Text.Should().Contain("\"staging\"", "a token for every environment lists the ones it may choose");
+            // Not limited to environments: every tool takes one, so the agent can work outside production.
+            (await commands.ToolsAsync(agent, ct)).Single(t => t.Name == "sites_list").InputSchema
+                .GetProperty("properties").TryGetProperty("environment", out _).Should().BeTrue();
+            var inStaging = await Call(agent, "dcms_whoami", new { environment = "staging" });
+            inStaging.Text.Should().Contain("\"environment\": \"staging\"");
 
             // Pull, edit, commit, release: all as the agent.
             var pulled = await Call(agent, "dcms_pull", new { target = "fn", dir = "app" });
