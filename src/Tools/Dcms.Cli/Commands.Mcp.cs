@@ -113,8 +113,8 @@ internal sealed partial class Commands
         {
             Generic("dcms_whoami", "Who you act as, in which workspace, which environments you reach and whether you may only read.",
                 new JsonObject(), [], CliRisk.Read, environment),
-            Generic("dcms_find", "Search every operation you may call in this workspace: name, risk and summary. Without a query, lists them all.",
-                new JsonObject { ["query"] = new JsonObject { ["type"] = "string", ["description"] = "Words in the operation's name or summary." } },
+            Generic("dcms_find", "Search every operation you may call in this workspace (name, risk, summary) by words in any order, best matches first: \"form submissions\", \"publish site\", or an area such as \"content\". Without a query, lists them all.",
+                new JsonObject { ["query"] = new JsonObject { ["type"] = "string", ["description"] = "Words to look for in names and summaries, or an area's name." } },
                 [], CliRisk.Read, environment),
             Generic("dcms_describe", "One operation's method, path, parameters, body schema and risk. Describe before you call an operation for the first time.",
                 new JsonObject { ["name"] = new JsonObject { ["type"] = "string", ["description"] = "The operation's name, e.g. sites.commit." } },
@@ -215,15 +215,22 @@ internal sealed partial class Commands
                     var me = (await Api.JsonAsync(res, ct))?.AsObject() ?? [];
                     me["workspace"] = agent.Workspace;
                     me["environment"] = environment ?? "production";
+                    // Where to start: how much there is to call, by area; dcms_find searches it.
+                    var catalog = await CatalogAsync(agent.Workspace, environment, ct);
+                    me["operations"] = Entries(catalog).Count();
+                    me["areas"] = new JsonArray([.. Areas(catalog).Select(a => (JsonNode?)a)]);
+                    me["next"] = "dcms_find searches the operations by words (an area's name lists it); dcms_describe says what one takes; dcms_call calls it.";
                     return Text(Clone.Pretty(me));
                 }
                 case "dcms_find":
                 {
                     var query = Api.Str(args["query"]);
                     var catalog = await CatalogAsync(agent.Workspace, environment, ct);
-                    var found = Entries(catalog).Where(e => query is null || e.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                                                             || e.Summary.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
-                    return Text(found.Count == 0 ? "Nothing matches." : string.Join('\n', found.Select(e => $"{e.Name} [{e.Risk}] {e.Summary}")));
+                    var found = Search(Entries(catalog), query);
+                    const int most = 50;
+                    return Text(found.Count == 0 ? NothingMatches(catalog, query)
+                        : string.Join('\n', found.Take(query is null ? found.Count : most).Select(e => $"{e.Name} [{e.Risk}] {e.Summary}"))
+                          + (query is not null && found.Count > most ? $"\n… and {found.Count - most} weaker matches: add words to narrow it." : ""));
                 }
                 case "dcms_describe":
                     return Text(Clone.Pretty(Find(await CatalogAsync(agent.Workspace, environment, ct), Api.Str(args["name"]) ?? "")));

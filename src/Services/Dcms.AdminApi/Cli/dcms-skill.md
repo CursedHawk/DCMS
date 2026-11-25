@@ -11,8 +11,10 @@ environments, perhaps read-only). Anything you are refused, say so plainly: do n
 
 ## Find, describe, then call
 
-- `dcms_whoami` — who you act as, your workspace, your environments, whether you may only read.
-- `dcms_find` — search every operation you may call (name, risk, summary).
+- `dcms_whoami` — who you act as, your workspace, your environments, whether you may only read,
+  and the **areas** you may call (`sites`, `content`, `plugins.forms`, …). Start here when unsure.
+- `dcms_find` — search every operation you may call by words, in any order ("form submissions",
+  "publish site"), or list an area by its name ("content"). Nothing found: it lists the areas.
 - `dcms_describe` — one operation's parameters and body schema. **Describe before you call** anything you have not called before.
 - `dcms_call` — call any operation by name.
 - The tools named after operations are the common ones, ready to call: an operation's name with `_` for `.` (`sites.list` is the tool `sites_list`). Every other operation goes through `dcms_call` by its dotted name.

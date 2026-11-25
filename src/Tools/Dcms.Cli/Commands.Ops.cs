@@ -36,18 +36,15 @@ internal sealed partial class Commands
 
     private Command OpsList()
     {
-        var search = new Argument<string?>("search") { Description = "Only operations whose name or summary contains this.", Arity = ArgumentArity.ZeroOrOne };
+        var search = new Argument<string?>("search") { Description = "Words to look for in names and summaries, in any order; best matches first.", Arity = ArgumentArity.ZeroOrOne };
         var ops = new Command("ops", "What you may call here: every operation, by name, with its risk.") { search, WorkspaceOption, EnvironmentOption };
         Act(ops, async (r, ct) =>
         {
             var (tenant, environment) = Scope(r);
             var catalog = await CatalogAsync(tenant, environment, ct);
-            var text = r.GetValue(search);
-            foreach (var (name, risk, summary) in Entries(catalog).Where(e => text is null
-                         || e.Name.Contains(text, StringComparison.OrdinalIgnoreCase) || e.Summary.Contains(text, StringComparison.OrdinalIgnoreCase)))
-            {
-                stdout.WriteLine($"{name,-42} {risk,-9} {summary}");
-            }
+            var found = Search(Entries(catalog), r.GetValue(search));
+            foreach (var (name, risk, summary) in found) stdout.WriteLine($"{name,-42} {risk,-9} {summary}");
+            if (found.Count == 0) stdout.WriteLine(NothingMatches(catalog, r.GetValue(search)));
             return 0;
         });
         return ops;
@@ -126,6 +123,34 @@ internal sealed partial class Commands
             }
         }
     }
+
+    /// <summary>
+    /// Operations matching any of the query's words (in name, summary or apps), those matching
+    /// more first: "form submissions" finds <c>plugins.forms.submissions@1.List</c>. No query: all.
+    /// </summary>
+    internal static List<(string Name, string Risk, string Summary)> Search(IEnumerable<(string Name, string Risk, string Summary)> entries, string? query)
+    {
+        var words = (query ?? "").ToLowerInvariant().Split(Separators, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2 && !Filler.Contains(w)).Select(w => w.Length > 3 && w.EndsWith('s') ? w[..^1] : w).Distinct().ToList();
+        if (words.Count == 0) return [.. entries];
+        return [.. entries
+            .Select(e => (Entry: e, Score: words.Count(w => $"{e.Name} {e.Summary}".Contains(w, StringComparison.OrdinalIgnoreCase))))
+            .Where(m => m.Score > 0)
+            .OrderByDescending(m => m.Score)
+            .Select(m => m.Entry)];
+    }
+
+    private static readonly HashSet<string> Filler = ["the", "and", "for", "with", "from", "into", "how", "what", "can", "all", "any", "you", "our", "my", "this", "that"];
+
+    private static readonly char[] Separators = [' ', '.', ',', '-', '_', '/', ':', '@', '?', '!', '"', '\''];
+
+    /// <summary>What there is to search, by area (<c>sites</c>, <c>plugins.forms</c>, …): said when a search finds nothing.</summary>
+    internal static List<string> Areas(JsonNode catalog) =>
+        [.. Entries(catalog).Select(e => e.Name.Split('.') is var p && e.Name.Contains('@') ? $"plugins.{p[1]}" : p[0]).Distinct().Order()];
+
+    internal static string NothingMatches(JsonNode catalog, string? query) =>
+        $"Nothing matches \"{query}\". The areas you may call: {string.Join(", ", Areas(catalog))}. "
+        + "Search with an area's name to list its operations, or with no query for all of them.";
 
     private static string RiskName(JsonNode? risk) => risk is JsonValue v && v.TryGetValue<int>(out var n)
         ? n switch { 0 => "Read", 1 => "Safe", _ => "Dangerous" }

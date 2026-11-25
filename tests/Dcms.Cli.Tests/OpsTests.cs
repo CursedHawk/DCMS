@@ -35,6 +35,22 @@ public sealed class OpsTests
     }
 
     [Fact]
+    public void Search_matches_words_in_any_order_best_first()
+    {
+        (string, string, string)[] entries =
+        [
+            ("sites.publish", "Dangerous", "Publishes a site: merges the branch into release."),
+            ("forms.list", "Read", "The workspace's forms."),
+            ("plugins.forms.submissions@1.List", "Read", "Newest-first page of submissions. [apps: form-1]"),
+        ];
+        Commands.Search(entries, "form submissions").Select(e => e.Item1)
+            .Should().Equal(["plugins.forms.submissions@1.List", "forms.list"], "both words beat one");
+        Commands.Search(entries, "publish the site").Select(e => e.Item1).Should().Equal("sites.publish");
+        Commands.Search(entries, "blog").Should().BeEmpty();
+        Commands.Search(entries, null).Should().HaveCount(3);
+    }
+
+    [Fact]
     public void A_path_parameter_the_route_does_not_have_is_refused()
     {
         var none = () => Commands.Request(Route("POST", "/api/admin/media/delete"), new() { ["id"] = "x" }, [], "{}", [], [], null);
