@@ -204,7 +204,12 @@ internal sealed class Api(Config config, HttpClient http, TextWriter output)
         }
         if (!res.IsSuccessStatusCode)
         {
-            var said = Str(body?["error_description"]) ?? Str(body?["error"]) ?? Str(body?["title"]) ?? Str(body?["detail"]);
+            var said = Str(body?["error_description"]) ?? Str(body?["error"]) ?? Str(body?["detail"]) ?? Str(body?["title"]);
+            // A validation problem names its fields: say which, not just "Bad Request".
+            if (body?["errors"] is JsonObject fields && fields.Count > 0)
+            {
+                said = $"{said ?? "Invalid request"}: {string.Join("; ", fields.Select(f => $"{f.Key}: {string.Join(" ", f.Value is JsonArray a ? a.Select(x => Str(x)) : [Str(f.Value)])}"))}";
+            }
             throw new CliException(said ?? $"{(int)res.StatusCode} {res.ReasonPhrase}");
         }
         return body;

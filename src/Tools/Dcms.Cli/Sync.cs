@@ -11,8 +11,9 @@ namespace Dcms.Cli;
 /// <param name="Workspace">Where its routes are: <c>sites/{id}</c> or <c>repos/{bindingId}</c>.</param>
 /// <param name="Hashes">The server's hash of every file as last pulled or pushed: the base a change is measured against.</param>
 /// <param name="Conflicts">Files holding conflict markers from a commit, to send as resolutions once edited.</param>
+/// <param name="Publishing">What the last publish started (its commit, or its build's id): <c>builds --watch</c> waits for it.</param>
 internal sealed record SyncState(string Server, string Tenant, string? Environment, string Workspace, string Name, string Branch,
-    string? BaseSha, Dictionary<string, string> Hashes, string[]? Conflicts = null);
+    string? BaseSha, Dictionary<string, string> Hashes, string[]? Conflicts = null, string? Publishing = null);
 
 internal static class Sync
 {
@@ -116,10 +117,77 @@ internal static class Sync
     public const string Split = "=======";
     public const string Theirs = ">>>>>>> server";
 
-    /// <summary>Both sides of a conflicted text file, marked the way git marks them.</summary>
-    public static string Marked(string? yours, string? theirs) =>
-        $"{Ours}\n{yours ?? ""}{(yours is { Length: > 0 } && !yours.EndsWith('\n') ? "\n" : "")}{Split}\n{theirs ?? ""}"
-        + $"{(theirs is { Length: > 0 } && !theirs.EndsWith('\n') ? "\n" : "")}{Theirs}\n";
+    /// <summary>
+    /// Both sides of a conflicted text file, marked the way git marks them: the lines both share
+    /// once, markers only around the runs that differ.
+    /// </summary>
+    public static string Marked(string? yours, string? theirs)
+    {
+        var a = Lines(yours);
+        var b = Lines(theirs);
+        var head = 0;
+        while (head < a.Length && head < b.Length && a[head] == b[head]) head++;
+        var tail = 0;
+        while (tail < a.Length - head && tail < b.Length - head && a[^(tail + 1)] == b[^(tail + 1)]) tail++;
+        var (ma, mb) = (a[head..^tail], b[head..^tail]);
+
+        var text = new StringBuilder();
+        foreach (var line in a[..head]) text.Append(line);
+        var ours = new List<string>();
+        var others = new List<string>();
+        // ponytail: an LCS table over what differs, up to 4M cells (16 MB); past that, one block.
+        if ((long)ma.Length * mb.Length <= 4_000_000)
+        {
+            var lcs = new int[ma.Length + 1, mb.Length + 1];
+            for (var i = ma.Length - 1; i >= 0; i--)
+                for (var j = mb.Length - 1; j >= 0; j--)
+                    lcs[i, j] = ma[i] == mb[j] ? lcs[i + 1, j + 1] + 1 : Math.Max(lcs[i + 1, j], lcs[i, j + 1]);
+            int x = 0, y = 0;
+            while (x < ma.Length && y < mb.Length)
+            {
+                if (ma[x] == mb[y])
+                {
+                    Block();
+                    text.Append(ma[x++]);
+                    y++;
+                }
+                else if (lcs[x + 1, y] >= lcs[x, y + 1]) ours.Add(ma[x++]);
+                else others.Add(mb[y++]);
+            }
+            ours.AddRange(ma[x..]);
+            others.AddRange(mb[y..]);
+        }
+        else
+        {
+            ours.AddRange(ma);
+            others.AddRange(mb);
+        }
+        Block();
+        foreach (var line in a[^tail..]) text.Append(line);
+        return text.ToString();
+
+        void Block()
+        {
+            if (ours.Count + others.Count == 0) return;
+            text.Append(Ours).Append('\n');
+            foreach (var line in ours) text.Append(line.EndsWith('\n') ? line : line + "\n");
+            text.Append(Split).Append('\n');
+            foreach (var line in others) text.Append(line.EndsWith('\n') ? line : line + "\n");
+            text.Append(Theirs).Append('\n');
+            ours.Clear();
+            others.Clear();
+        }
+    }
+
+    /// <summary>A text's lines, each with its own line ending (the last may have none).</summary>
+    private static string[] Lines(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return [];
+        var parts = text.Split('\n');
+        var lines = parts[..^1].Select(l => l + "\n").ToList();
+        if (parts[^1].Length > 0) lines.Add(parts[^1]);
+        return [.. lines];
+    }
 
     public static bool HasMarkers(string text) =>
         text.Split('\n').Any(l => l.StartsWith("<<<<<<< ", StringComparison.Ordinal) || l == Split || l.StartsWith(">>>>>>> ", StringComparison.Ordinal));

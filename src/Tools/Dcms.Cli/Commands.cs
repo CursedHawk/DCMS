@@ -331,6 +331,11 @@ internal sealed partial class Commands(Config config, Api api, HttpClient http, 
         // Through Origin either way: a sign-in file is plain JSON on disk, and an update is code this machine runs.
         var server = Api.Origin(serverOption ?? config.ReadCredentials()?.Server
             ?? throw new CliException("From which console? dcms update --server https://admin.example.com"));
+        if (await ServerVersionAsync(server, ct) is { } current && current == Version)
+        {
+            stdout.WriteLine($"dcms {Version} is already {server}'s build: nothing to update.");
+            return 0;
+        }
         var name = BuildName();
         var sums = await http.GetStringAsync($"{server}/downloads/SHA256SUMS", ct);
         var expected = sums.Split('\n').Select(l => l.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))

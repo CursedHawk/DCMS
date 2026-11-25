@@ -38,6 +38,17 @@ public sealed class SyncTests
     }
 
     [Fact]
+    public void Markers_wrap_only_the_lines_that_differ()
+    {
+        Sync.Marked("a\nb\nmine\nc\n", "a\nb\ntheirs\nc\n")
+            .Should().Be("a\nb\n<<<<<<< yours\nmine\n=======\ntheirs\n>>>>>>> server\nc\n");
+        Sync.Marked("1\nx\n2\ny\n3", "1\nX\n2\nY\n3").Should().Be(
+            "1\n<<<<<<< yours\nx\n=======\nX\n>>>>>>> server\n2\n<<<<<<< yours\ny\n=======\nY\n>>>>>>> server\n3",
+            "two changes are two blocks, and the line between them stays once");
+        Sync.Marked(null, "kept\n").Should().Be("<<<<<<< yours\n=======\nkept\n>>>>>>> server\n", "deleted here, changed there");
+    }
+
+    [Fact]
     public void Only_relative_paths_inside_the_folder_are_taken_from_the_server()
     {
         foreach (var good in new[] { "a.ts", "src/pages/index.tsx", "dcms/home.json" }) Sync.IsSafePath(good).Should().BeTrue(good);

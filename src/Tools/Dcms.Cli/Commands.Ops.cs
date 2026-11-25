@@ -190,6 +190,12 @@ internal sealed partial class Commands
             return m.Value;
         });
         if (missing.Count > 0) throw new CliException($"Give --path {string.Join(" --path ", missing.Select(m => m + "=…"))}.");
+        var known = RouteParameter().Matches(Api.Str(op["path"])!).Select(m => m.Groups[1].Value).ToHashSet();
+        if (path.Keys.Where(k => !known.Contains(k)).ToList() is { Count: > 0 } unknown)
+        {
+            throw new CliException($"{Api.Str(op["name"])} has no path parameter {string.Join(", ", unknown)}"
+                + (known.Count > 0 ? $"; it takes {string.Join(", ", known)}." : $". `dcms op describe {Api.Str(op["name"])}` says what it takes."));
+        }
         if (query.Count > 0) target += "?" + string.Join('&', query.Select(q => $"{Uri.EscapeDataString(q.Key)}={Uri.EscapeDataString(q.Value)}"));
         var verb = new HttpMethod(Api.Str(op["method"]) ?? "GET");
 

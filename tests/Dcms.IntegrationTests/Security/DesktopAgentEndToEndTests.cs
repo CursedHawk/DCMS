@@ -111,7 +111,13 @@ public sealed class DesktopAgentEndToEndTests(AdminApiFixture fixture) : IAsyncL
 
             // A person's operation is not in its catalog; an app whose AI tools are off is out of reach.
             (await Call(agent, "dcms_call", new { name = "people.roles" })).Error.Should().BeTrue();
-            (await Call(agent, "dcms_pull", new { target = "fn-off", dir = "off" })).Error.Should().BeTrue();
+            var off = await Call(agent, "dcms_pull", new { target = "fn-off", dir = "off" });
+            off.Error.Should().BeTrue();
+            off.Text.Should().Contain("AI tools are off", "the refusal says why, not that there is no such app");
+            var listed = JsonDocument.Parse((await Call(agent, "plugins_list")).Text).RootElement.EnumerateArray()
+                .ToDictionary(a => a.GetProperty("slug").GetString()!, a => a.GetProperty("config").ValueKind);
+            listed.Should().ContainKey("fn");
+            listed["fn-off"].Should().Be(JsonValueKind.Null, "an app's settings reach an agent only where its AI tools are on");
             // A folder outside the project is out of reach on this machine too.
             (await Call(agent, "dcms_pull", new { target = "fn", dir = "../outside" })).Error.Should().BeTrue();
 

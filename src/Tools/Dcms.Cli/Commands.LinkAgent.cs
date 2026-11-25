@@ -53,6 +53,7 @@ internal sealed partial class Commands
 
             var skill = await api.RawAsync(HttpMethod.Get, "/api/admin/cli/skill", workspace, null, null, null, ct);
             var skillPath = skill.IsSuccessStatusCode ? WriteSkill(client, r.GetValue(user), await skill.Content.ReadAsStringAsync(ct)) : null;
+            if (skillPath is not null) config.WriteAgent(agent = agent with { SkillPath = skillPath });
 
             stdout.WriteLine($"Linked {label} to {workspace}{(agent.Environments.Length > 0 ? $" ({string.Join(", ", agent.Environments)})" : "")}"
                 + $"{(agent.ReadOnly ? ", read only" : "")}, until {agent.ExpiresAt:yyyy-MM-dd}.");
@@ -81,7 +82,16 @@ internal sealed partial class Commands
             }
             RemoveAgentConfig(agent);
             File.Delete(config.AgentPath(agent.Id));
-            stdout.WriteLine($"Unlinked {agent.Name}: its token is revoked and its configuration removed.");
+            // The skill too, unless another agent linked here still reads it.
+            var skill = agent.SkillPath is { } path && File.Exists(path) && new FileInfo(path).LinkTarget is null
+                && !config.ReadAgents().Any(a => a.SkillPath == path) ? path : null;
+            if (skill is not null)
+            {
+                File.Delete(skill);
+                var folder = Path.GetDirectoryName(skill)!;
+                if (Path.GetFileName(folder) == "dcms" && !Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder);
+            }
+            stdout.WriteLine($"Unlinked {agent.Name}: its token is revoked and its configuration{(skill is null ? "" : " and skill")} removed.");
             return 0;
         });
         return unlink;

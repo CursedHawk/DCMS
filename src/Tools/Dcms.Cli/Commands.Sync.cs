@@ -51,9 +51,9 @@ internal sealed partial class Commands
             var repo = await api.CallInAsync($"/api/admin/plugins/{Uri.EscapeDataString(target)}/_functions/repo", tenant, environment, null, null, ct);
             if (Api.Str(repo?["id"]) is { } id) return ($"repos/{id}", target);
         }
-        catch (CliException)
+        catch (CliException e) when (!e.Message.StartsWith("Refused: ", StringComparison.Ordinal))
         {
-            // no such app
+            // no such app; a refusal (an app whose AI tools are off, to an agent) says so itself
         }
         throw new CliException($"No site or app called {target} here. `dcms op call sites.list` and `dcms op call plugins.list` list them.");
     }
@@ -296,8 +296,10 @@ internal sealed partial class Commands
             w.WriteLine("release already has everything: nothing to publish.");
             return 0;
         }
+        var started = Api.Str(answer?["sha"]) ?? Api.Str(answer?["buildId"]);
+        if (site && started is not null) WriteState(root, state with { Publishing = started });
         w.WriteLine(site
-            ? $"Publishing {state.Name}: {Api.Str(answer?["sha"])?[..Math.Min(7, Api.Str(answer?["sha"])?.Length ?? 0)]} is building. `dcms builds --watch` follows it."
+            ? $"Publishing {state.Name}: {started?[..Math.Min(7, started.Length)]} is building. `dcms builds --watch` follows it."
             : $"Merged {state.Branch} into release: a deployment is building. `dcms op call functions.deployments` lists it; deploy it with functions.deploy.");
         return 0;
     }
@@ -313,9 +315,13 @@ internal sealed partial class Commands
         {
             using var res = await In(state, HttpMethod.Get, "/builds?limit=5", null, ct);
             var builds = (await Api.JsonAsync(res, ct))?.AsArray() ?? [];
-            var newest = builds.FirstOrDefault();
+            // After a publish, its own build: the server may not have recorded it yet, and the
+            // newest one then is an older, finished build.
+            var published = state.Publishing;
+            var newest = published is null || !watch ? builds.FirstOrDefault()
+                : builds.FirstOrDefault(b => Api.Str(b?["id"]) == published || Api.Str(b?["gitCommitSha"]) == published);
             var status = Api.Str(newest?["status"]);
-            var line = newest is null ? "No builds yet."
+            var line = newest is null ? published is null ? "No builds yet." : $"Waiting for {published[..Math.Min(7, published.Length)]}'s build to start…"
                 : $"{Api.Str(newest["shortSha"]) ?? "-"}  {status,-10} {Api.Str(newest["branch"])}  {Api.Str(newest["createdAt"])}"
                   + $"{(newest["active"]?.GetValue<bool>() == true ? "  (live)" : "")}{(Api.Str(newest["error"]) is { } e ? $"  {e}" : "")}";
             if (!watch)
@@ -329,7 +335,12 @@ internal sealed partial class Commands
             }
             if (line != last) w.WriteLine(line);
             last = line;
-            if (status is not ("Queued" or "Building")) return status == "Failed" ? 1 : 0;
+            if (newest is null && published is null) return 0;
+            if (newest is not null && status is not ("Queued" or "Building"))
+            {
+                if (published is not null) WriteState(root, ReadState(root) with { Publishing = null });
+                return status == "Failed" ? 1 : 0;
+            }
             if (DateTime.UtcNow > until) throw new CliException("Still building after 15 minutes. `dcms builds` shows it later.");
             await Task.Delay(3000, ct);
         }
@@ -413,7 +424,7 @@ internal sealed partial class Commands
         Act(publish, async (r, ct) => await PublishAsync(r.GetValue(DirOption)!, stdout, ct));
         root.Subcommands.Add(publish);
 
-        var watch = new Option<bool>("--watch") { Description = "Follow the newest build until it is done." };
+        var watch = new Option<bool>("--watch") { Description = "Follow the newest build (after `dcms publish`, its build) until it is done." };
         var builds = new Command("builds", "A pulled site's builds, newest first.") { watch, DirOption };
         Act(builds, async (r, ct) => await BuildsAsync(r.GetValue(DirOption)!, r.GetValue(watch), stdout, ct));
         root.Subcommands.Add(builds);

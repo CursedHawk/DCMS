@@ -13,6 +13,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
+using Dcms.Shared.Security.Agents;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,8 +29,10 @@ public static class PluginInstanceEndpoints
             .RequireAuthorization()
             .Cli("plugins.catalog", "Every plugin this platform offers, with its settings schema and permissions.", CliRisk.Read);
 
-        app.MapGet("/api/admin/plugins/instances", async (CmsDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/admin/plugins/instances", async (CmsDbContext db, System.Security.Claims.ClaimsPrincipal user, CancellationToken ct) =>
         {
+            // An agent reads an app's settings only where its AI tools are on, as the assistant does (dcms.plugins@1).
+            var agent = user.IsAgent();
             var instances = await db.PluginInstances
                 .OrderBy(p => p.Slug)
                 .Select(p => new
@@ -44,7 +47,7 @@ public static class PluginInstanceEndpoints
                     // The config drives more than its own edit form: a content type
                     // with admin-defined fields keeps their definitions here, and
                     // Events resolves its Roster instance through rosterSlug.
-                    config = p.ConfigJson,
+                    config = agent && !p.AiToolsEnabled ? null : p.ConfigJson,
                 })
                 .ToListAsync(ct);
             return Results.Ok(instances);

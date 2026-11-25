@@ -35,6 +35,15 @@ public sealed class OpsTests
     }
 
     [Fact]
+    public void A_path_parameter_the_route_does_not_have_is_refused()
+    {
+        var none = () => Commands.Request(Route("POST", "/api/admin/media/delete"), new() { ["id"] = "x" }, [], "{}", [], [], null);
+        none.Should().Throw<CliException>().WithMessage("*no path parameter id*describe*");
+        var other = () => Commands.Request(Route("GET", "/api/admin/sites/{id:guid}"), new() { ["id"] = "1", ["site"] = "x" }, [], null, [], [], null);
+        other.Should().Throw<CliException>().WithMessage("*no path parameter site; it takes id.");
+    }
+
+    [Fact]
     public void A_contract_operation_posts_to_the_contracts_proxy_on_its_plane()
     {
         var op = new JsonObject { ["kind"] = "contract", ["contract"] = "users.directory@1", ["name"] = "ListUsers", ["plane"] = "ai" };

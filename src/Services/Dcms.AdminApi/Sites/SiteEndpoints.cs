@@ -786,6 +786,10 @@ public static class SiteEndpoints
             if (inFlight) return Results.Ok(new { skipped = "build in flight" });
 
             var files = await git.ReadFilesAsync(repoFull, afterSha ?? branch, ct);
+            // A new repo's release is Forgejo's auto-init README alone, and its creation push can
+            // arrive after the hook exists: nothing to build, so no failed build on every new site.
+            if (files.Keys.All(p => string.Equals(p, "README.md", StringComparison.OrdinalIgnoreCase)))
+                return Results.Ok(new { ignored = "nothing to build" });
             var build = new SiteBuild
             {
                 Id = Guid.NewGuid(),

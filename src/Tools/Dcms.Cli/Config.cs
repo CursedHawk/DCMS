@@ -17,7 +17,7 @@ internal sealed record Link(string Tenant, string Environment, string App, strin
 /// was set up, so <c>dcms unlink-agent</c> can take it down again.
 /// </summary>
 internal sealed record AgentLink(string Id, string Name, string Server, string Token, string Workspace, string[] Environments, bool ReadOnly,
-    string Client, string? ConfigPath, DateTimeOffset ExpiresAt);
+    string Client, string? ConfigPath, DateTimeOffset ExpiresAt, string? SkillPath = null);
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]
 [JsonSerializable(typeof(Credentials))]

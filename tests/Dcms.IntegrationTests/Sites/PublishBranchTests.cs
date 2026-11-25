@@ -29,6 +29,7 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
 {
     private const string Secret = "test-webhook-secret";
     private const string DevHead = "dddddddddddddddddddddddddddddddddddddddd";
+    private const string AutoInitHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [DockerFact]
     public async Task A_publishing_branch_builds_on_push_and_serves_only_its_own_domains()
@@ -116,6 +117,20 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
             .Which.EnvironmentId.Should().Be(environmentId, "the webhook names no environment; the site does");
     }
 
+    [DockerFact]
+    public async Task A_new_repos_auto_init_release_does_not_build()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var host = await StartAsync(ct);
+        var client = host.CreateClient();
+        var (_, tenantId) = await CreateTenantAsync(client, ct);
+        var repo = $"tenant-x/site-{Guid.NewGuid():N}";
+        var siteId = await SeedSiteAsync(host, tenantId, repo, ct);
+
+        (await PushAsync(client, repo, "release", ct, AutoInitHead)).Should().Contain("nothing to build");
+        (await BuildsAsync(host, siteId, ct)).Should().BeEmpty("Forgejo's README alone is no site: a build of it can only fail");
+    }
+
     private async Task<WebApplicationFactory<AdminApiApp::Program>> StartAsync(CancellationToken ct)
     {
         var host = fixture.Factory.WithWebHostBuilder(builder =>
@@ -179,12 +194,12 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
     }
 
     /// <summary>What Forgejo posts on a push: signed with the shared secret.</summary>
-    private static async Task<string> PushAsync(HttpClient client, string repo, string branch, CancellationToken ct)
+    private static async Task<string> PushAsync(HttpClient client, string repo, string branch, CancellationToken ct, string after = DevHead)
     {
         var body = JsonSerializer.Serialize(new
         {
             @ref = $"refs/heads/{branch}",
-            after = DevHead,
+            after,
             repository = new { full_name = repo },
         });
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/internal/git/webhook")
@@ -219,7 +234,7 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
                 .SetProperty(b => b.CompletedAt, DateTimeOffset.UtcNow), ct);
     }
 
-    /// <summary>A repository with release and dev; any other branch does not exist.</summary>
+    /// <summary>A repository with release and dev; any other branch does not exist. <see cref="AutoInitHead"/> holds only a README.</summary>
     private sealed class ForgejoStub : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -230,6 +245,8 @@ public sealed class PublishBranchTests(AdminApiFixture fixture)
                     ? new { name = "dev", commit = new { id = DevHead } }
                 : path.EndsWith("/branches/release", StringComparison.Ordinal)
                     ? new { name = "release", commit = new { id = "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr" } }
+                : path.EndsWith($"/git/trees/{AutoInitHead}", StringComparison.Ordinal)
+                    ? new { tree = new[] { new { path = "README.md", type = "blob", sha = "blob1" } }, truncated = false }
                 : path.Contains("/git/trees/", StringComparison.Ordinal)
                     ? new { tree = new[] { new { path = "src/main.tsx", type = "blob", sha = "blob1" } }, truncated = false }
                 : path.EndsWith("/git/blobs/blob1", StringComparison.Ordinal)
