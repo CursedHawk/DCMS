@@ -1125,6 +1125,12 @@
       "methods": "Methods",
       "methodsHint": "GET and DELETE take the input from the query string, the others from the JSON body.",
       "noMethods": "Pick at least one method."
+    },
+    "channels": {
+      "title": "Channels",
+      "none": "No WebSockets app is enabled in this environment.",
+      "editTitle": "{{name}}: channels.json",
+      "editHint": "The app's realtime channels and their payload JSON Schemas. Saving regenerates the site client's types and the Functions SDK."
     }
   },
   "openapi": {

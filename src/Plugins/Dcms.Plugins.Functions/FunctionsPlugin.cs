@@ -99,6 +99,8 @@ public sealed class FunctionsPlugin : IPlugin
             // Triggers: other plugins' events (on.event), and what form submissions carried.
             ContractRequirement.Of<IFormSubmissions>(optional: true),
             ContractRequirement.Of<IVisitorProfiles>(optional: true),
+            // on.websocket: the registry admits a subscription only to an event of a consumed contract.
+            ContractRequirement.Of<Dcms.Plugins.WebSockets.Api.IWebSocketChannels>(optional: true),
             ContractRequirement.Of<IUserDirectory>(optional: true),
             // HTTP: who the signed-in site user is, whether a role grants them a function, and the throttle.
             ContractRequirement.Of<IUserIdentity>(optional: true),

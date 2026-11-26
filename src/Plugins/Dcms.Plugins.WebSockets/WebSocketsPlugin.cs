@@ -39,6 +39,7 @@ public sealed class WebSocketsPlugin : IPlugin
             "channels": {
               "type": "array",
               "title": "Channels",
+              "format": "websocket-channels",
               "description": "What browsers can subscribe to. Each channel's payload type flows into the site's generated client and the Functions SDK.",
               "maxItems": 100,
               "items": {
@@ -125,6 +126,7 @@ public sealed class WebSocketsPlugin : IPlugin
         provides:
         [
             ContractProvision.Of<IWebSocketChannels, ChannelSender>(),
+            ContractProvision.Of<IWebSocketChannelAdmin, ChannelAdmin>(),
             ContractProvision.Of<IUserResources, ChannelUserResources>(),
         ],
         consumes:
@@ -134,6 +136,8 @@ public sealed class WebSocketsPlugin : IPlugin
             // which channel permissions their roles grant; anonymous without them.
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
             ContractRequirement.Of<IUserAccess>(optional: true),
+            // Channel edits save the instance's settings the way the console does (admin plane).
+            ContractRequirement.Of<IPluginInstances>(optional: true),
         ],
         adminScreens: [AdminScreen.Settings]);
 
@@ -248,6 +252,9 @@ public sealed class WebSocketsPlugin : IPlugin
             });
         }
     }
+
+    /// <summary><c>/api/admin/plugins/{slug}/channels</c>: what the web IDE and <c>dcms channels</c> read and write.</summary>
+    public void MapAdminEndpoints(IPluginEndpointBuilder endpoints) => ChannelAdmin.Map(endpoints);
 
     public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)
     {

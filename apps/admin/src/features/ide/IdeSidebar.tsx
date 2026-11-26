@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Files, Gauge, GitBranch, Globe, History, Package, Rocket, Search, Zap } from 'lucide-react';
+import { Files, Gauge, GitBranch, Globe, History, Package, RadioTower, Rocket, Search, Zap } from 'lucide-react';
 import { AgentRailIcon } from '../agent/AgentRailIcon';
 import { useAgentFocus } from '../agent/hostStore';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { AuditView, DeploymentsView, FileTree, SearchEnginesView, SearchView, SourceControlView, gitApi, isRepoWorkspace } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
+import { ChannelsView } from './ChannelsView';
 import { FunctionsView } from './functions/FunctionsView';
 import { PackagesView } from './functions/PackagesView';
 import { RunsView, type Replay } from './functions/RunsView';
 import { NewFunctionDialog } from './functions/NewFunctionDialog';
 
-export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'searchEngines' | 'audit' | 'functions' | 'packages' | 'runs';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy' | 'searchEngines' | 'audit' | 'functions' | 'packages' | 'runs' | 'channels';
 
 /**
  * The left sidebar: a slim activity rail plus the active view.
@@ -159,6 +160,10 @@ export function IdeSidebar({
             <History className="h-5 w-5" />
           </RailButton>
         )}
+        {/* Realtime channels (ADR 0037): their types are in the site client and the Functions SDK alike. */}
+        <RailButton active={view === 'channels'} label={t('ide.channels.title')} onClick={() => onViewChange('channels')}>
+          <RadioTower className="h-5 w-5" />
+        </RailButton>
         {/* The site agent's tools speak to a site; a repository has one only where its plugin brings tools. */}
         {repo && !functionsApi ? null : (
         <RailButton
@@ -192,6 +197,7 @@ export function IdeSidebar({
         {view === 'audit' && <AuditView siteId={siteId} branch={branch} />}
         {view === 'functions' && functionsApi && <FunctionsView functionsApi={functionsApi} onNew={onNewFunction} />}
         {view === 'packages' && functionsApi && <PackagesView functionsApi={functionsApi} />}
+        {view === 'channels' && <ChannelsView />}
         {view === 'runs' && functionsApi && (
           <RunsView functionsApi={functionsApi} initialFunction={runsFunction} onReplay={(r) => onReplay?.(r)} />
         )}

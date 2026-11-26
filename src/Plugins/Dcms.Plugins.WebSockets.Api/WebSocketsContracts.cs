@@ -170,7 +170,10 @@ public interface IWebSocketChannelAdmin
     Task<ChannelList> ListAsync(ChannelListQuery input, CancellationToken ct);
 
     [Operation(OpRisk.Safe, Permission = WebSocketsPermissions.Manage, Expose = OpExposure.Ai,
-        Description = "Add a channel, or replace the one of the same name. The schema must use the supported JSON Schema subset.")]
+        Description = "Add a channel, or replace the one of the same name. subscribe: public, signedIn, permission or self (keyed by the " +
+                      "user's id); publish: none, subscribers or permission. The payload schema may use only type (one of object, array, " +
+                      "string, number, integer, boolean), properties, required, additionalProperties (true/false), items, enum, const, " +
+                      "description, format (date-time, date, email, uri, uuid) and min/max length, value and item bounds; leave it out for any JSON.")]
     Task<ChannelDefinition> PutAsync(ChannelDefinition input, CancellationToken ct);
 
     [Operation(OpRisk.Dangerous, Permission = WebSocketsPermissions.Manage, Expose = OpExposure.Ai,

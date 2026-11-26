@@ -1,1 +1,52 @@
-{ "websockets": {} }
+{
+  "websockets": {
+    "empty": "No channels yet. Add one, give it a payload type, and it is in the site's generated client and the Functions SDK.",
+    "name": "Channel name",
+    "description": "What it carries",
+    "removeChannel": "Remove channel",
+    "addChannel": "Add channel",
+    "subscribe": "Who may subscribe",
+    "publish": "Who may publish from a browser",
+    "keyed": "Keyed (room, order, user)",
+    "raiseEvent": "Run functions on browser messages",
+    "permissionHint": "Grant it to site users with a site role (Users → Roles): {{key}}",
+    "access": {
+      "public": "Anyone",
+      "signedIn": "Signed-in users",
+      "permission": "Users with the permission",
+      "self": "Each user, their own key",
+      "none": "Nobody (server only)",
+      "subscribers": "Whoever may subscribe"
+    },
+    "typedPayload": "Typed payload",
+    "anyJson": "Any JSON. Give it a type to have it checked on every message and typed in the clients.",
+    "fields": "Fields",
+    "invalidJson": "Not valid JSON yet: the last valid schema is kept.",
+    "fieldName": "Field name",
+    "fieldDescription": "Description",
+    "required": "Required",
+    "removeField": "Remove field",
+    "addField": "Add field",
+    "listOf": "List of",
+    "choices": "Allowed values",
+    "format": "Format",
+    "kind": "Type",
+    "kinds": {
+      "string": "Text",
+      "number": "Number",
+      "integer": "Whole number",
+      "boolean": "Yes / no",
+      "object": "Object",
+      "array": "List",
+      "choice": "Choice"
+    },
+    "formats": {
+      "text": "Any text",
+      "date-time": "Date and time",
+      "date": "Date",
+      "email": "Email",
+      "uri": "URL",
+      "uuid": "Id (UUID)"
+    }
+  }
+}

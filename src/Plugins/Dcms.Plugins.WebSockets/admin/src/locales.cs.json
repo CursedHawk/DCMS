@@ -1,1 +1,52 @@
-{ "websockets": {} }
+{
+  "websockets": {
+    "empty": "Zatím žádné kanály. Přidejte kanál a typ jeho zprávy, a objeví se v generovaném klientu webu i v SDK funkcí.",
+    "name": "Název kanálu",
+    "description": "Co přenáší",
+    "removeChannel": "Odebrat kanál",
+    "addChannel": "Přidat kanál",
+    "subscribe": "Kdo se může přihlásit k odběru",
+    "publish": "Kdo může publikovat z prohlížeče",
+    "keyed": "S klíčem (místnost, objednávka, uživatel)",
+    "raiseEvent": "Spouštět funkce na zprávy z prohlížeče",
+    "permissionHint": "Udělte ho uživatelům webu rolí (Uživatelé → Role): {{key}}",
+    "access": {
+      "public": "Kdokoli",
+      "signedIn": "Přihlášení uživatelé",
+      "permission": "Uživatelé s oprávněním",
+      "self": "Každý uživatel svůj klíč",
+      "none": "Nikdo (jen server)",
+      "subscribers": "Kdo může odebírat"
+    },
+    "typedPayload": "Typovaná zpráva",
+    "anyJson": "Libovolný JSON. Dejte mu typ, aby se kontroloval u každé zprávy a byl typovaný v klientech.",
+    "fields": "Pole",
+    "invalidJson": "Zatím neplatný JSON: platí poslední platné schéma.",
+    "fieldName": "Název pole",
+    "fieldDescription": "Popis",
+    "required": "Povinné",
+    "removeField": "Odebrat pole",
+    "addField": "Přidat pole",
+    "listOf": "Seznam položek typu",
+    "choices": "Povolené hodnoty",
+    "format": "Formát",
+    "kind": "Typ",
+    "kinds": {
+      "string": "Text",
+      "number": "Číslo",
+      "integer": "Celé číslo",
+      "boolean": "Ano / ne",
+      "object": "Objekt",
+      "array": "Seznam",
+      "choice": "Výběr"
+    },
+    "formats": {
+      "text": "Libovolný text",
+      "date-time": "Datum a čas",
+      "date": "Datum",
+      "email": "E-mail",
+      "uri": "URL",
+      "uuid": "Id (UUID)"
+    }
+  }
+}

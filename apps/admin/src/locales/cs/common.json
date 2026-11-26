@@ -1155,6 +1155,12 @@
       "methods": "Metody",
       "methodsHint": "GET a DELETE berou vstup z query stringu, ostatní z JSON těla.",
       "noMethods": "Vyberte aspoň jednu metodu."
+    },
+    "channels": {
+      "title": "Kanály",
+      "none": "V tomto prostředí není zapnutá žádná aplikace WebSockets.",
+      "editTitle": "{{name}}: channels.json",
+      "editHint": "Realtime kanály aplikace a JSON Schémata jejich zpráv. Uložení přegeneruje typy klienta webu i SDK funkcí."
     }
   },
   "openapi": {
