@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Its own closed-type backplane (prefix dcms-ws, ADR 0037), never AddStackExchangeRedis. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <!-- GHSA-qhrr-8q5h-9q3h: see Directory.Packages.props. -->
+    <PackageReference Include="MessagePack" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.WebSockets.Api\Dcms.Plugins.WebSockets.Api.csproj" />
+    <!-- First-party: the hub resolves enabled instances and publishes events itself (hubs skip
+         endpoint filters), and validates payloads with the runtime's JSON Schema library. -->
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Runtime\Dcms.PluginSdk.Runtime.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
+  </ItemGroup>
+
+</Project>

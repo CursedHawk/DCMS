@@ -20,6 +20,7 @@ using Dcms.Plugins.Search;
 using Dcms.Plugins.VideoGallery;
 using Dcms.Plugins.VideoStreaming;
 using Dcms.Plugins.VisitorAuth;
+using Dcms.Plugins.WebSockets;
 using Dcms.Plugins.YouTube;
 using Dcms.PluginSdk.Runtime;
 
@@ -51,5 +52,6 @@ public static class DcmsPluginSet
         .Add<VideoGalleryPlugin>()
         .Add<VideoStreamingPlugin>()
         .Add<VisitorAuthPlugin>()
+        .Add<WebSocketsPlugin>()
         .Add<YouTubePlugin>();
 }

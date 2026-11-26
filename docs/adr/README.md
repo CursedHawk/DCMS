@@ -42,3 +42,4 @@ as their implementation phase lands.
 - [0034](0034-compaction-and-knowledge.md) — Whole-conversation compaction (summary, append-only after, cache-friendly) and the AI knowledge store agents read on demand, archiving each compacted part
 - [0035](0035-workspace-ai-providers-and-usage.md) — Several AI providers per workspace (picked when a conversation starts) and a daily usage ledger charted per provider
 - [0036](0036-jobs-worker-service.md) — jobs-worker is its own service and image; admin-api serves admin requests only; one shared admin-plane composition
+- [0037](0037-websockets-plugin.md) — WebSockets plugin: a site hub with its own backplane, channels with JSON-Schema payloads typing the site client, the Functions SDK and validation
