@@ -48,7 +48,10 @@ public static class SdkPruning
             .Where(g => g.Identifier.Text == "Table")
             .SelectMany(g => g.TypeArgumentList.Arguments.Select(a => a.ToString()))
             .ToHashSet(StringComparer.Ordinal);
-        var unused = root.DescendantNodes().OfType<RecordDeclarationSyntax>().Where(r => !rows.Contains(r.Identifier.Text)).ToList();
+        // Only row records (": Row"): contract inputs/results and channel payloads (ADR 0037) stay.
+        // ponytail: an undeclared contract's records are kept too; drop by reference if Sdk.g.cs size bites.
+        var unused = root.DescendantNodes().OfType<RecordDeclarationSyntax>()
+            .Where(r => r.BaseList?.Types.Any(t => t.Type.ToString() == "Row") == true && !rows.Contains(r.Identifier.Text)).ToList();
         root = root.RemoveNodes(unused, SyntaxRemoveOptions.KeepNoTrivia)!;
         while (true)
         {
