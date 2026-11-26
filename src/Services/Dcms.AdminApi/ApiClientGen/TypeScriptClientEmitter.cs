@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Runtime.Typing;
 using Dcms.PluginSdk.Abstractions;
 using System.Text;
 using System.Text.Json;
@@ -463,7 +464,13 @@ public static class TypeScriptClientEmitter
 
         // ---- schema → TypeScript ----------------------------------------------------------
 
-        private string TsType(JsonObject schema)
+        private JsonSchemaTs? typer;
+
+        /// <summary>The shared converter, with this client's own shapes answered first: named component
+        /// types, content items and pages, and the branded media and content references.</summary>
+        private string TsType(JsonObject schema) => (typer ??= new JsonSchemaTs("unknown", Special)).Type(schema);
+
+        private string? Special(JsonObject schema)
         {
             if (RefName(schema) is { } name)
             {
@@ -480,50 +487,15 @@ public static class TypeScriptClientEmitter
                 referenced.Add(name);
                 return Pascal(name);
             }
-
-            var nullable = schema["nullable"] is JsonValue n && n.GetValue<bool>();
-            var type = schema["type"] switch
-            {
-                JsonValue v => v.GetValue<string>(),
-                JsonArray a => a.Select(x => (x as JsonValue)?.GetValue<string>()).FirstOrDefault(t => t != "null"),
-                _ => null,
-            };
-            if (schema["type"] is JsonArray types && types.Any(t => (t as JsonValue)?.GetValue<string>() == "null"))
-            {
-                nullable = true;
-            }
-
-            var ts = type switch
-            {
-                "string" when schema.ContainsKey("x-dcms-media-category") => Runtime("MediaRef"),
-                "string" when schema.ContainsKey("x-dcms-content-ref") => Runtime("ContentRef"),
-                "string" when schema["enum"] is JsonArray values && values.Count > 0 =>
-                    string.Join(" | ", values.OfType<JsonNode>().Select(v => v is JsonValue sv && sv.TryGetValue<string>(out var s) ? Lit(s) : "string").Distinct()),
-                "string" => "string",
-                "integer" or "number" => "number",
-                "boolean" => "boolean",
-                "array" => ArrayOf(TsType(schema["items"] as JsonObject ?? [])),
-                "object" or null when schema["properties"] is JsonObject props => InlineObject(schema, props),
-                "object" when schema["additionalProperties"] is JsonObject extra => $"Record<string, {TsType(extra)}>",
-                "object" => "Record<string, unknown>",
-                _ => "unknown",
-            };
-            return nullable && ts != "unknown" ? $"{ts} | null" : ts;
+            return schema.ContainsKey("x-dcms-media-category") ? Runtime("MediaRef")
+                : schema.ContainsKey("x-dcms-content-ref") ? Runtime("ContentRef")
+                : null;
         }
 
         private string Runtime(string name)
         {
             runtimeTypes.Add(name);
             return name;
-        }
-
-        private static string ArrayOf(string element) => element.Contains(' ') ? $"({element})[]" : $"{element}[]";
-
-        private string InlineObject(JsonObject schema, JsonObject props)
-        {
-            var required = RequiredSet(schema);
-            var members = props.Select(p => $"{PropertyKey(p.Key)}{(required.Contains(p.Key) ? "" : "?")}: {TsType(p.Value as JsonObject ?? [])}");
-            return $"{{ {string.Join("; ", members)} }}";
         }
 
         private static HashSet<string> RequiredSet(JsonObject? schema) =>

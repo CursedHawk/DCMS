@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Runtime.Typing;
 using Dcms.PluginSdk.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
@@ -64,12 +65,16 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
                 .OrderBy(d => d.Id, StringComparer.Ordinal)
                 .ToList();
             var visible = new List<(ContractDescriptor Contract, List<OperationDescriptor> Operations)>();
+            // The instance's own narrower schemas (a WebSockets instance's channels, ADR 0037).
+            var refined = registry.FindPlugin(instance.PluginId)?.OperationInputSchemas(instance)
+                ?? new Dictionary<string, JsonNode>();
             foreach (var contract in contracts)
             {
                 var operations = new List<OperationDescriptor>();
                 foreach (var op in contract.Operations.Where(o => o.Expose.HasFlag(OpExposure.Admin)))
                 {
-                    if (may is null || op.Permission is null || await may(PluginPermissions.Resolve(instance.PluginId, instance.Slug, op.Permission))) operations.Add(op);
+                    if (may is not null && op.Permission is not null && !await may(PluginPermissions.Resolve(instance.PluginId, instance.Slug, op.Permission))) continue;
+                    operations.Add(refined.TryGetValue($"{contract.Name}.{op.Name}", out var input) ? op with { InputSchema = input } : op);
                 }
                 if (operations.Count > 0) visible.Add((contract, operations));
             }
@@ -119,7 +124,7 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
     /// Sdk.g.cs, the workspace's half of the C# SDK (ADR 0030): <c>ctx.Db.&lt;App&gt;.&lt;Table&gt;</c> over
     /// typed row records and <c>ctx.Plugins.&lt;App&gt;.&lt;Contract&gt;.&lt;Operation&gt;()</c>, as C# 14
     /// extension properties on the static half's <c>Context</c>. Contract operations take and give
-    /// JSON; their schema is in the comment.
+    /// generated records (and, as before, plain JSON).
     /// </summary>
     public static string CSharp(Model model)
     {
@@ -179,13 +184,34 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
                 types.Append($"    public {contractType} {Unique(members, Pascal(contract.Name))} => new(ctx);\n");
                 var ops = new StringBuilder($"public sealed class {contractType}(Context ctx)\n{{\n");
                 var opNames = new HashSet<string>(StringComparer.Ordinal);
+                var records = new JsonSchemaCs(names, types);
                 foreach (var op in operations)
                 {
-                    ops.Append($"    /// <summary>{Xml(op.Description ?? op.Name)}{(op.Permission is null ? "" : $" Needs {Xml(op.Permission)}.")}</summary>\n");
+                    var method = Unique(opNames, Pascal(op.Name));
+                    var summary = $"    /// <summary>{Xml(op.Description ?? op.Name)}{(op.Permission is null ? "" : $" Needs {Xml(op.Permission)}.")}</summary>\n";
+                    var call = $"ctx.Contract<§>({Literal(instance.Slug)}, {Literal(contract.Name)}, {Literal(op.Name)}, input)";
+
+                    // Typed (ADR 0037): the input and the result as records, one overload per
+                    // variant of a union input (a WebSockets instance's channels).
+                    var hint = Pascal(instance.Slug) + Pascal(contract.Name) + Pascal(op.Name);
+                    var output = op.OutputSchema is null ? null : records.Type(op.OutputSchema, hint + "Result");
+                    IReadOnlyList<string> inputs = op.InputSchema is not JsonObject { Count: > 0 } ? []
+                        : records.Branches(op.InputSchema, hint) ?? [records.Type(op.InputSchema, hint + "Input")];
+                    foreach (var input in inputs.Where(i => i != "JsonNode"))
+                    {
+                        ops.Append(summary);
+                        ops.Append(output is null
+                            ? $"    public async Task {method}({input} input) => await {call.Replace("§", "JsonNode")};\n"
+                            // TOut? of an unconstrained T is no Nullable<T>: name the nullable type itself.
+                            : $"    public Task<{output}?> {method}({input} input) => {call.Replace("§", output + "?")};\n");
+                    }
+
+                    // Untyped, as before: what code written against JSON keeps calling.
+                    ops.Append(summary);
                     if (op.InputSchema is JsonObject { Count: > 0 }) ops.Append($"    /// <param name=\"input\">{Xml(Ts(op.InputSchema))}</param>\n");
                     if (op.OutputSchema is not null) ops.Append($"    /// <returns>{Xml(Ts(op.OutputSchema))}</returns>\n");
-                    ops.Append($"    public Task<JsonNode?> {Unique(opNames, Pascal(op.Name))}(object? input = null) =>\n");
-                    ops.Append($"        ctx.Contract<JsonNode>({Literal(instance.Slug)}, {Literal(contract.Name)}, {Literal(op.Name)}, input);\n");
+                    ops.Append($"    public Task<JsonNode?> {method}(object? input = null) =>\n");
+                    ops.Append($"        {call.Replace("§", "JsonNode")};\n");
                 }
                 types.Insert(0, ops.Append("}\n\n").ToString());
             }
@@ -269,31 +295,10 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
         return text.Append("}\n\n").ToString();
     }
 
+    private static readonly JsonSchemaTs Typer = new("Json");
+
     /// <summary>A TypeScript type for a contract's JSON Schema: enough to guide, never to check.</summary>
-    private static string Ts(JsonNode? schema, int depth = 0)
-    {
-        if (schema is not JsonObject s || depth > 6) return "Json";
-        if (s["enum"] is JsonArray values) return string.Join(" | ", values.Select(v => v?.ToJsonString() ?? "null"));
-        if ((s["anyOf"] ?? s["oneOf"]) is JsonArray any) return string.Join(" | ", any.Select(a => Ts(a, depth + 1)).Distinct());
-        var types = s["type"] switch
-        {
-            JsonArray many => many.Select(t => t?.GetValue<string>() ?? "").ToList(),
-            JsonValue one => [one.GetValue<string>()],
-            _ => [],
-        };
-        if (types.Count == 0) return "Json";
-        return string.Join(" | ", types.Distinct().Select(type => type switch
-        {
-            "null" => "null",
-            "string" => "string",
-            "integer" or "number" => "number",
-            "boolean" => "boolean",
-            "array" => $"Array<{Ts(s["items"], depth + 1)}>",
-            "object" when s["properties"] is JsonObject props && props.Count > 0 => "{ " + string.Join(" ", props.Select(p =>
-                $"{Key(p.Key)}{((s["required"] as JsonArray)?.Any(r => r?.GetValue<string>() == p.Key) == true ? "" : "?")}: {Ts(p.Value, depth + 1)};")) + " }",
-            _ => "{ [key: string]: Json }",
-        }));
-    }
+    private static string Ts(JsonNode? schema) => Typer.Type(schema);
 
     private static string Unique(HashSet<string> taken, string name)
     {

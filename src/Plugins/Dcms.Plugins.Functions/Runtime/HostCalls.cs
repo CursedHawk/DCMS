@@ -26,6 +26,7 @@ public sealed class RunBudget
     public int Emits { get; set; }
     public int Emails { get; set; }
     public int Notifications { get; set; }
+    public int ContractCalls { get; set; }
 }
 
 /// <summary>
@@ -60,6 +61,9 @@ public sealed partial class HostCalls(
     public const int MaxMessageChars = 256 * 1024;
     public const int MaxEmails = 20;
     public const int MaxNotifications = 20;
+    // Contract calls are each bounded by their owners, but not their number: a loop of
+    // websockets sends was capped only by the runner's call limit.
+    public const int MaxContractCalls = 500;
 
     /// <summary>A job that enqueues a job that enqueues…: how long such a chain may grow.</summary>
     public const int MaxGenerations = 10;
@@ -213,6 +217,11 @@ public sealed partial class HostCalls(
         }
         var operation = contract.Operations.FirstOrDefault(o => Loose(o.Name) == Loose(path[2]))
             ?? throw new HostCallException($"{contract.Id} has no operation '{path[2]}'.");
+
+        if (++budget.ContractCalls > MaxContractCalls)
+        {
+            throw new HostCallException($"A run, with the functions it invokes, makes at most {MaxContractCalls} plugin calls.");
+        }
 
         // The admin plane, as a member would call it, with the deployer's vouched permissions.
         var input = a.Count > 0 && a[0] is { } given ? JsonSerializer.SerializeToElement(given) : (JsonElement?)null;

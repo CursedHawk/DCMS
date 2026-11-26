@@ -1,4 +1,16 @@
+using Dcms.Plugins.UserAuth.Api;
+using Dcms.Plugins.VisitorAuth.Api;
+using Dcms.Plugins.WebSockets.Api;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json.Nodes;
 
 namespace Dcms.Plugins.WebSockets;
 
@@ -44,16 +56,14 @@ public sealed class WebSocketsPlugin : IPlugin
                   },
                   "subscribe": {
                     "type": "string", "title": "Who may subscribe", "default": "public",
-                    "enum": ["public", "signedIn", "roles", "self"],
-                    "description": "public: anyone. signedIn: a signed-in site user or visitor. roles: a user holding one of the roles below. self: a keyed channel whose key is the caller's own id."
+                    "enum": ["public", "signedIn", "permission", "self"],
+                    "description": "public: anyone. signedIn: a signed-in site user or visitor. permission: a site user whose role grants this channel's subscribe permission. self: a keyed channel whose key is the caller's own id."
                   },
-                  "subscribeRoles": { "type": "array", "title": "Subscriber roles", "items": { "type": "string", "minLength": 1 } },
                   "publish": {
                     "type": "string", "title": "Who may publish from a browser", "default": "none",
-                    "enum": ["none", "subscribers", "roles"],
-                    "description": "Functions and plugins can always send. none: only they can. subscribers: whoever may subscribe. roles: a user holding one of the roles below."
+                    "enum": ["none", "subscribers", "permission"],
+                    "description": "Functions and plugins can always send. none: only they can. subscribers: whoever may subscribe. permission: a site user whose role grants this channel's publish permission."
                   },
-                  "publishRoles": { "type": "array", "title": "Publisher roles", "items": { "type": "string", "minLength": 1 } },
                   "raiseEvent": {
                     "type": "boolean", "title": "Raise an event", "default": false,
                     "description": "Also raise websockets.message.received for what browsers publish, so functions (on.websocket) and plugins can act on it."
@@ -111,5 +121,110 @@ public sealed class WebSocketsPlugin : IPlugin
         category: "Engagement",
         summary: "Typed realtime channels: notifications, chat and live updates.",
         iconName: "RadioTower",
+        // Channels whose access is "permission" are granted to site users with the site roles.
+        provides:
+        [
+            ContractProvision.Of<IWebSocketChannels, ChannelSender>(),
+            ContractProvision.Of<IUserResources, ChannelUserResources>(),
+        ],
+        consumes:
+        [
+            ContractRequirement.Of<IPluginEvents>(),
+            // Who the caller is (VisitorAuth visitors and User Authentication users alike) and
+            // which channel permissions their roles grant; anonymous without them.
+            ContractRequirement.Of<IVisitorIdentity>(optional: true),
+            ContractRequirement.Of<IUserAccess>(optional: true),
+        ],
         adminScreens: [AdminScreen.Settings]);
+
+    /// <summary>
+    /// <c>send</c> and <c>sendToUser</c> as unions over this instance's channels, each with its own
+    /// payload type, so the Functions SDK types <c>send({ channel: "chat", key, payload })</c> per
+    /// channel (TypeScript) and gives one overload per channel (C#). The implementation still
+    /// validates every payload against the channel's schema.
+    /// </summary>
+    public IReadOnlyDictionary<string, JsonNode> OperationInputSchemas(PluginInstanceContext instance)
+    {
+        var channels = Channels.Read(instance.Config.RootElement);
+        if (channels.Count == 0)
+        {
+            return new Dictionary<string, JsonNode>();
+        }
+        return new Dictionary<string, JsonNode>
+        {
+            ["websockets.channels.Send"] = Union(channels, c =>
+            {
+                var (props, required) = Common(c);
+                if (c.Keyed)
+                {
+                    props["key"] = new JsonObject { ["type"] = "string", ["description"] = "Which " + c.Name + " to send to." };
+                    required.Add("key");
+                }
+                return (props, required);
+            }),
+            ["websockets.channels.SendToUser"] = Union(channels, c =>
+            {
+                var (props, required) = Common(c);
+                props["to"] = new JsonObject { ["type"] = "string", ["format"] = "uuid", ["description"] = "The site user's or visitor's id." };
+                required.Add("to");
+                return (props, required);
+            }),
+        };
+
+        static (JsonObject Props, JsonArray Required) Common(ChannelDefinition c) => (
+            new JsonObject
+            {
+                ["channel"] = new JsonObject { ["const"] = c.Name },
+                ["payload"] = c.Schema is { } schema ? JsonNode.Parse(schema.GetRawText())! : new JsonObject(),
+            },
+            new JsonArray("channel", "payload"));
+
+        static JsonNode Union(IEnumerable<ChannelDefinition> channels, Func<ChannelDefinition, (JsonObject Props, JsonArray Required)> branch) =>
+            new JsonObject
+            {
+                ["oneOf"] = new JsonArray(channels.Select(c =>
+                {
+                    var (props, required) = branch(c);
+                    return (JsonNode)new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["description"] = c.Description ?? $"The {c.Name} channel.",
+                        ["properties"] = props,
+                        ["required"] = required,
+                        ["additionalProperties"] = false,
+                    };
+                }).ToArray()),
+            };
+    }
+
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
+    {
+        services.Configure<WebSocketsOptions>(host.SettingsFor(PluginId));
+        // Every plane: the site plane serves the hub, the admin plane sends through IHubContext.
+        WebSocketsBackplane.Register(services, host.Configuration);
+        if (host.IsSite)
+        {
+            services.AddSignalR().AddHubOptions<WebSocketsHub>(o =>
+            {
+                // A browser frame; a server send is capped at Channels.MaxPayloadBytes.
+                o.MaximumReceiveMessageSize = 16 * 1024;
+                // Below YARP's 100 s activity timeout on the edge and site-host hops.
+                o.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                o.EnableDetailedErrors = false;
+            });
+        }
+    }
+
+    public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)
+    {
+        if (!host.IsSite)
+        {
+            return;
+        }
+        // WebSockets only: the identity and permission contracts read the upgrade request, which
+        // stays open for the connection's life only on this transport.
+        app.MapHub<WebSocketsHub>(HubPath, o => o.Transports = HttpTransportType.WebSockets)
+            .PermissionExempt("Each hub method checks the channel's own access rule (public, signed in, a site permission, self).")
+            .AuditExempt("Realtime transport, not an action. Channel changes are audited where they are made; messages are not recorded.");
+    }
 }

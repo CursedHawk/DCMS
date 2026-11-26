@@ -35,13 +35,15 @@ generation for React sites; never mixed with admin-api's SignalR.
    the instance is enabled, because endpoint filters do not run for hubs.
 
 3. **Channels are declared in the instance config.** Each channel has a name, `keyed` (subscribe to
-   `name/key`), who may subscribe (`public`, `signedIn`, `{roles}`, `self` = key is the caller's
-   id), who may publish from a browser (`none`, `subscribers`, `{roles}`), whether a browser publish
+   `name/key`), who may subscribe (`public`, `signedIn`, `permission`, `self` = key is the caller's
+   id), who may publish from a browser (`none`, `subscribers`, `permission`), whether a browser publish
    raises `websockets.message.received`, and an optional payload **JSON Schema** in a restricted
    subset (`type`, `properties`, `required`, `items`, `enum`, `const`, `description`, `format`,
    length and range bounds; depth ≤ 6). The subset is what the visual builder, the TypeScript and
    the C# generators can all express. Config is validated on save; every payload is validated on
-   send. Config lives in the instance's jsonb, so environment deployments promote it: no tables,
+   send. `permission` is a site permission `websockets:{instance}:channel:{name}:subscribe|publish`
+   that the plugin declares through `users.resources@1` and checks through `users.access@1`, so
+   tenants grant it with the site roles they already have. Config lives in the instance's jsonb, so environment deployments promote it: no tables,
    no migration, no RLS change.
 
 4. **Contracts.** `websockets.channels@1` (`Send`, `SendToUser`; exposed on the admin plane, so

@@ -4,7 +4,7 @@
  * This package is hand-written and stable. The typed, per-tenant surface
  * (`api.blog.posts.list()` etc.) is produced by the server-side emitter from the
  * tenant's OpenAPI document and layered on top of the primitives exported here —
- * see the generated `resolvers.ts` / `index.ts` in a downloaded client or starter.
+ * see the generated `index.ts` in a downloaded client or starter.
  *
  * Used directly, `createTenantClient(options)` returns those primitives, so it is
  * usable without any generation:
@@ -15,11 +15,15 @@
 import type {
   AnalyticsEvent,
   CallOptions,
+  ChannelSpec,
   ChatMessage,
   ContentItem,
   ListParams,
   MediaVariant,
   PagedResult,
+  RealtimeChannels,
+  RealtimeMessage,
+  RealtimeState,
   SearchParams,
   SearchResult,
   SiteAccess,
@@ -118,6 +122,11 @@ export interface HttpCore {
    * server still decides every real request. All "allow" when the site has no rules.
    */
   siteAccess(paths: string[]): Promise<Record<string, SiteAccess>>;
+  /**
+   * Connects to a WebSockets instance's channels (`/hub/ws` on the site's domain). The generated
+   * client types it per channel as `api.<instance>.realtime.connect()`.
+   */
+  realtime<C extends Record<string, ChannelSpec> = Record<string, ChannelSpec>>(slug: string): RealtimeChannels<C>;
 }
 
 export interface VisitorAuthApi {
@@ -287,9 +296,166 @@ export function createHttpCore(options: TenantClientOptions = {}): HttpCore {
     listTags(params?: { contentType?: string; field?: string }): Promise<TagIndex> {
       return request<TagIndex>(withQuery('/api/tags', params));
     },
+    realtime<C extends Record<string, ChannelSpec>>(slug: string): RealtimeChannels<C> {
+      const socket = options.webSocket ?? (typeof WebSocket === 'undefined' ? undefined : WebSocket);
+      const origin = base || (typeof location === 'undefined' ? '' : location.origin);
+      const address = () => {
+        const token = options.visitorToken?.();
+        const query = `instance=${encodeURIComponent(slug)}${token ? `&access_token=${encodeURIComponent(token)}` : ''}`;
+        return `${origin.replace(/^http/, 'ws')}/hub/ws?${query}`;
+      };
+      return openRealtime(socket && origin ? socket : undefined, address) as unknown as RealtimeChannels<C>;
+    },
     call,
     request,
   };
+}
+
+/** The record separator ending every SignalR JSON-protocol frame. */
+const RS = '\u001e';
+
+/**
+ * A SignalR JSON-protocol client over the native WebSocket, enough for `/hub/ws`: the handshake,
+ * invocations with completions, the server's `message` calls, pings and close. Reconnects with
+ * backoff and subscribes again to everything it held.
+ *
+ * ponytail: no negotiate, no other transports, no MessagePack — the hub accepts WebSockets only
+ * (ADR 0037). Switch to `@microsoft/signalr` if that ever changes.
+ */
+function openRealtime(socketType: typeof WebSocket | undefined, address: () => string): RealtimeChannels {
+  type Handler = (payload: unknown, message: RealtimeMessage) => void;
+  const subscriptions = new Map<string, { channel: string; key: string | null; handlers: Set<Handler> }>();
+  const pending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+  const stateHandlers = new Set<(state: RealtimeState) => void>();
+  const errorHandlers = new Set<(error: Error) => void>();
+  let state: RealtimeState = socketType ? 'connecting' : 'closed';
+  let ws: WebSocket | undefined;
+  let ready: Promise<void> = Promise.resolve();
+  let nextId = 1;
+  let attempt = 0;
+  let closed = !socketType;
+  let ping: ReturnType<typeof setInterval> | undefined;
+
+  const setState = (next: RealtimeState) => {
+    if (state === next) return;
+    state = next;
+    for (const handler of stateHandlers) handler(next);
+  };
+  const fail = (error: Error) => {
+    if (errorHandlers.size === 0) console.warn('[dcms realtime]', error.message);
+    for (const handler of errorHandlers) handler(error);
+  };
+  const id = (channel: string, key: string | null) => (key == null ? channel : `${channel}/${key}`);
+
+  function invoke(target: string, args: unknown[]): Promise<void> {
+    return ready.then(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          if (!ws || ws.readyState !== 1) return reject(new Error('The realtime connection is not open.'));
+          const invocationId = String(nextId++);
+          pending.set(invocationId, { resolve, reject });
+          ws.send(JSON.stringify({ type: 1, invocationId, target, arguments: args }) + RS);
+        }),
+    );
+  }
+
+  function connect() {
+    if (closed || !socketType) return;
+    let handshaken = false;
+    let opened!: () => void;
+    ready = new Promise<void>((resolve) => (opened = resolve));
+    const socket = new socketType(address());
+    ws = socket;
+    socket.onopen = () => socket.send(JSON.stringify({ protocol: 'json', version: 1 }) + RS);
+    socket.onmessage = (event) => {
+      for (const frame of String(event.data).split(RS)) {
+        if (!frame) continue;
+        const message = JSON.parse(frame) as {
+          type?: number;
+          error?: string;
+          target?: string;
+          arguments?: unknown[];
+          invocationId?: string;
+          allowReconnect?: boolean;
+        };
+        if (!handshaken) {
+          // The handshake answer is `{}`, or `{ error }` for a refused protocol.
+          if (message.error) return fail(new Error(message.error));
+          handshaken = true;
+          attempt = 0;
+          setState('open');
+          ping = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ type: 6 }) + RS), 15_000);
+          opened();
+          // Everything held before a reconnect is subscribed again.
+          for (const sub of subscriptions.values()) invoke('Subscribe', [sub.channel, sub.key]).catch(fail);
+          continue;
+        }
+        if (message.type === 1 && message.target === 'message') {
+          const [channel, key, payload, sender] = (message.arguments ?? []) as [string, string | null, unknown, string | null];
+          const sub = subscriptions.get(id(channel, key ?? null));
+          for (const handler of sub?.handlers ?? []) handler(payload, { channel, key: key ?? null, payload, sender: sender ?? null });
+        } else if (message.type === 3 && message.invocationId) {
+          const call = pending.get(message.invocationId);
+          pending.delete(message.invocationId);
+          if (message.error) call?.reject(new Error(message.error));
+          else call?.resolve();
+        } else if (message.type === 7) {
+          if (message.error) fail(new Error(message.error));
+          if (message.allowReconnect === false) closed = true;
+        }
+      }
+    };
+    socket.onclose = () => {
+      clearInterval(ping);
+      for (const call of pending.values()) call.reject(new Error('The realtime connection closed.'));
+      pending.clear();
+      if (closed) return setState('closed');
+      setState('reconnecting');
+      const delay = [0, 2_000, 5_000, 10_000, 30_000][Math.min(attempt++, 4)] + Math.random() * 1_000;
+      setTimeout(connect, delay);
+    };
+  }
+
+  connect();
+
+  return {
+    get state() {
+      return state;
+    },
+    subscribe(channel: string, handler: Handler, key?: string) {
+      const name = id(channel, key ?? null);
+      let sub = subscriptions.get(name);
+      if (!sub) {
+        sub = { channel, key: key ?? null, handlers: new Set() };
+        subscriptions.set(name, sub);
+        invoke('Subscribe', [channel, key ?? null]).catch(fail);
+      }
+      sub.handlers.add(handler);
+      return () => {
+        sub.handlers.delete(handler);
+        if (sub.handlers.size === 0 && subscriptions.get(name) === sub) {
+          subscriptions.delete(name);
+          invoke('Unsubscribe', [channel, key ?? null]).catch(() => undefined);
+        }
+      };
+    },
+    publish(channel: string, payload: unknown, key?: string) {
+      return invoke('Publish', [channel, key ?? null, payload]);
+    },
+    onState(handler: (state: RealtimeState) => void) {
+      stateHandlers.add(handler);
+      return () => stateHandlers.delete(handler);
+    },
+    onError(handler: (error: Error) => void) {
+      errorHandlers.add(handler);
+      return () => errorHandlers.delete(handler);
+    },
+    close() {
+      closed = true;
+      ws?.close();
+      setState('closed');
+    },
+  } as unknown as RealtimeChannels;
 }
 
 /**

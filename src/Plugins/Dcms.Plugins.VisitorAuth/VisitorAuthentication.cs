@@ -31,11 +31,18 @@ public sealed class VisitorAuthenticationHandler(
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var header = Request.Headers.Authorization.ToString();
-        if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) || tenant.TenantId is not { } tenantId)
+        string? token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? header["Bearer ".Length..].Trim() : null;
+        // A browser cannot set headers on a WebSocket, so a site hub's connection carries the token
+        // as SignalR's access_token query parameter — accepted there only, never on /api routes.
+        if (token is null && Request.Path.StartsWithSegments("/hub")
+            && Request.Query.TryGetValue("access_token", out var query) && query.Count == 1)
+        {
+            token = query[0];
+        }
+        if (string.IsNullOrEmpty(token) || tenant.TenantId is not { } tenantId)
         {
             return AuthenticateResult.NoResult();
         }
-        var token = header["Bearer ".Length..].Trim();
         var visitorId = await tokens.ValidateAccessTokenAsync(token, tenantId);
         if (visitorId is not { } id)
         {

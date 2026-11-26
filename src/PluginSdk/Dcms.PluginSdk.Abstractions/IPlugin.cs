@@ -76,4 +76,15 @@ public interface IPlugin
     /// </summary>
     Task<string?> ApiVersionAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct)
         => Task.FromResult<string?>(null);
+
+    /// <summary>
+    /// Narrower input schemas for this instance's contract operations, for the generated SDKs: the
+    /// reflected schema of an operation taking "a channel and a payload" says nothing about which
+    /// channels exist or what each carries, and an instance's config does (ADR 0037). Keyed by
+    /// <c>{contract name}.{operation name}</c>; a schema given here replaces the reflected one in
+    /// the typings only — the dispatcher still binds and the implementation still validates.
+    /// Empty (the default) keeps every reflected schema.
+    /// </summary>
+    IReadOnlyDictionary<string, System.Text.Json.Nodes.JsonNode> OperationInputSchemas(PluginInstanceContext instance)
+        => new Dictionary<string, System.Text.Json.Nodes.JsonNode>();
 }
