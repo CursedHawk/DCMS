@@ -125,6 +125,7 @@ public sealed class FunctionsPlugin : IPlugin
             EventSubscription.Of<FormSubmitted, PlatformEventRuns>(),
             EventSubscription.Of<UserInvited, PlatformEventRuns>(),
             EventSubscription.Of<UserActivated, PlatformEventRuns>(),
+            EventSubscription.Of<Dcms.Plugins.WebSockets.Api.WebSocketMessageReceived, WebSocketMessageRuns>(),
         ],
         adminScreens:
         [

@@ -35,7 +35,7 @@ public sealed record RunPage(IReadOnlyList<RunSummary> Items, int Page, bool Mor
 /// </summary>
 public sealed record RunSimulation(JsonObject? Trigger = null, JsonObject? Request = null, JsonObject? User = null)
 {
-    private static readonly HashSet<string> Kinds = ["manual", "http", "row", "relation", "app", "message", "schedule", "every", "event", "job"];
+    private static readonly HashSet<string> Kinds = ["manual", "http", "row", "relation", "app", "message", "schedule", "every", "event", "websocket", "job"];
 
     public RunSimulation Checked() =>
         Trigger is not null && !(Trigger["kind"] is JsonValue kind && kind.TryGetValue<string>(out var k) && Kinds.Contains(k))

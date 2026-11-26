@@ -15,6 +15,55 @@ export interface TenantClientOptions {
   fetch?: typeof globalThis.fetch;
   /** Supplies the current visitor JWT for visitor-auth'd endpoints (e.g. `/me`). */
   visitorToken?: () => string | null | undefined;
+  /** Custom WebSocket constructor for realtime channels (tests). Defaults to the global `WebSocket`. */
+  webSocket?: typeof WebSocket;
+}
+
+/** A realtime connection's state; `closed` after `close()`, or where there is no WebSocket (SSR). */
+export type RealtimeState = 'connecting' | 'open' | 'reconnecting' | 'closed';
+
+/** One message on a channel, as every subscriber receives it. */
+export interface RealtimeMessage<T = unknown> {
+  channel: string;
+  /** The key, on a keyed channel. */
+  key: string | null;
+  payload: T;
+  /** The signed-in site user or visitor who published it from a browser; null for the server or an anonymous browser. */
+  sender: string | null;
+}
+
+/** What one channel of a WebSockets instance carries, as the generated client describes it. */
+export interface ChannelSpec {
+  payload: unknown;
+  /** Subscribed to by key (`channel/key`): a room, an order, a user. */
+  keyed: boolean;
+  /** Whether browsers may publish on it at all (the server still checks who). */
+  publish: boolean;
+}
+
+type ChannelKey<S extends ChannelSpec> = S['keyed'] extends true ? [key: string] : [];
+
+/**
+ * A WebSockets instance's channels, typed (ADR 0037). Subscriptions survive reconnects; each
+ * `subscribe` returns its own unsubscribe. The generated client returns one of these from
+ * `api.<instance>.realtime.connect()`.
+ */
+export interface RealtimeChannels<C extends Record<string, ChannelSpec> = Record<string, ChannelSpec>> {
+  subscribe<K extends keyof C & string>(
+    channel: K,
+    handler: (payload: C[K]['payload'], message: RealtimeMessage<C[K]['payload']>) => void,
+    ...key: ChannelKey<C[K]>
+  ): () => void;
+  publish<K extends { [N in keyof C & string]: C[N]['publish'] extends true ? N : never }[keyof C & string]>(
+    channel: K,
+    payload: C[K]['payload'],
+    ...key: ChannelKey<C[K]>
+  ): Promise<void>;
+  readonly state: RealtimeState;
+  onState(handler: (state: RealtimeState) => void): () => void;
+  /** Problems the server reported for a subscription (no access, unknown channel). */
+  onError(handler: (error: Error) => void): () => void;
+  close(): void;
 }
 
 /** A published content item — mirrors ContentItemDto from the delivery API. */

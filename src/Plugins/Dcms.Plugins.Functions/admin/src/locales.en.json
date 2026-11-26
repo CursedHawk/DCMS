@@ -21,6 +21,7 @@
     "schedule": "On schedule {{cron}}",
     "every": "Every {{interval}}",
     "event": "On {{name}}",
+    "websocket": "On a {{channel}} message in {{instance}}",
     "events": {
       "created": "created",
       "updated": "updated",

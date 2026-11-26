@@ -206,6 +206,9 @@ public static partial class FunctionManifest
             "visitor.registered" => Dcms.Plugins.VisitorAuth.Api.VisitorPermissions.Read,
             _ => null,
         },
+        // What browsers publish on that instance's channels (ADR 0037).
+        "websocket" => PluginPermissions.ForInstance(Dcms.Plugins.WebSockets.Api.WebSocketsPermissions.Read,
+            trigger["instance"]?.GetValue<string>() ?? ""),
         _ => null,
     };
 
@@ -460,8 +463,15 @@ public static partial class FunctionManifest
                 if (!Events.Contains(Text(trigger["name"], 64, "on.event", problems)))
                     problems.Add($"on.event: one of {string.Join(", ", Events)}.");
                 break;
+            case "websocket":
+                Known(trigger, problems, "on.websocket: ", "kind", "instance", "channel");
+                if (!AppName().IsMatch(Text(trigger["instance"], 63, "on.websocket instance", problems) ?? ""))
+                    problems.Add("on.websocket: the instance is a WebSockets app's address, such as realtime.");
+                if (!Dcms.Plugins.WebSockets.Api.ChannelConfig.NamePattern().IsMatch(Text(trigger["channel"], 63, "on.websocket channel", problems) ?? ""))
+                    problems.Add("on.websocket: the channel is one of that app's channel names, such as chat.");
+                break;
             default:
-                problems.Add($"'{kind}' is not a trigger: use on.row, on.relation, on.app, on.message, on.schedule, on.every or on.event.");
+                problems.Add($"'{kind}' is not a trigger: use on.row, on.relation, on.app, on.message, on.schedule, on.every, on.event or on.websocket.");
                 break;
         }
         return problems.Count == count;

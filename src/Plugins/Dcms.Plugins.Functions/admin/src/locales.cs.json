@@ -21,6 +21,7 @@
     "schedule": "Podle plánu {{cron}}",
     "every": "Každých {{interval}}",
     "event": "Při {{name}}",
+    "websocket": "Při zprávě v kanálu {{channel}} ({{instance}})",
     "events": {
       "created": "vytvořen",
       "updated": "změněn",

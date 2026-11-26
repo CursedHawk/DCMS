@@ -32,9 +32,10 @@ public sealed class VisitorAuthenticationHandler(
     {
         var header = Request.Headers.Authorization.ToString();
         string? token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? header["Bearer ".Length..].Trim() : null;
-        // A browser cannot set headers on a WebSocket, so a site hub's connection carries the token
-        // as SignalR's access_token query parameter — accepted there only, never on /api routes.
-        if (token is null && Request.Path.StartsWithSegments("/hub")
+        // A browser cannot set headers on a WebSocket, so the site hub's connection carries the token
+        // as SignalR's access_token query parameter — accepted on that upgrade only, never on /api
+        // routes. (Request URLs are not logged: Microsoft.AspNetCore and Yarp log at Warning.)
+        if (token is null && Context.WebSockets.IsWebSocketRequest && Request.Path.Equals("/hub/ws", StringComparison.Ordinal)
             && Request.Query.TryGetValue("access_token", out var query) && query.Count == 1)
         {
             token = query[0];

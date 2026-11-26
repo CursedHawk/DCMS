@@ -1,3 +1,4 @@
+using Dcms.Plugins.WebSockets.Api;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Plugins.DynamicApps.Api;
@@ -84,6 +85,43 @@ internal sealed class AppEventSink(IServiceProvider services, IPluginContext con
 /// deployment of the environment it happened in. The event id is derived from the platform event,
 /// so a redelivery starts nothing twice.
 /// </summary>
+/// <summary>
+/// What browsers publish on a WebSockets instance's channels that raise events (ADR 0037): runs the
+/// functions with <c>on.websocket(instance, channel)</c>. Through the run queue like every event,
+/// so about a second or more after the message: for moderation, storing, notifying — not for
+/// answering the browser, which HTTP functions do.
+/// </summary>
+internal sealed class WebSocketMessageRuns(FunctionsDbContext db) : IPluginEventHandler<WebSocketMessageReceived>
+{
+    public async Task HandleAsync(WebSocketMessageReceived e, IPluginContext context, CancellationToken ct)
+    {
+        using var rls = RlsScope.Environment(context.TenantId, RlsScope.EnvironmentFor(context.TenantId) ?? context.TenantId);
+        var queue = new RunQueue(db);
+        var on = await queue.OnAsync(t => t["kind"]?.GetValue<string>() == "websocket"
+            && t["instance"]?.GetValue<string>() == e.Instance && t["channel"]?.GetValue<string>() == e.Channel, ct);
+        if (on.Count == 0)
+        {
+            return;
+        }
+        var input = new JsonObject
+        {
+            ["instance"] = e.Instance,
+            ["channel"] = e.Channel,
+            ["key"] = e.Key,
+            ["payload"] = JsonNode.Parse(e.Payload.GetRawText()),
+            ["sender"] = e.Sender?.ToString(),
+        };
+        foreach (var (live, functions) in on)
+        {
+            foreach (var function in functions)
+            {
+                await queue.EnqueueAsync(live, function.Name, "websocket", RunQueue.EventId($"websocket:{e.MessageId:N}:{live.InstanceId:N}"),
+                    input.DeepClone(), new JsonObject { ["instance"] = e.Instance, ["channel"] = e.Channel }, RunOrigin.New(), ct);
+            }
+        }
+    }
+}
+
 internal sealed class PlatformEventRuns(FunctionsDbContext db) :
     IPluginEventHandler<VisitorRegistered>,
     IPluginEventHandler<FormSubmitted>,

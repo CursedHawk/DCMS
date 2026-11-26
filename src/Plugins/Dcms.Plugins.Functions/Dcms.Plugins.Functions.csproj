@@ -30,6 +30,8 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Forms.Api\Dcms.Plugins.Forms.Api.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth.Api\Dcms.Plugins.UserAuth.Api.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
+    <!-- on.websocket and the channel types: the API assembly only (ADR 0037). -->
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.WebSockets.Api\Dcms.Plugins.WebSockets.Api.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
     <!-- Only as the file the C# SDK package carries; nothing here calls into it. -->
     <ProjectReference Include="$(DcmsSrcRoot)Functions\Dcms.Functions\Dcms.Functions.csproj" />

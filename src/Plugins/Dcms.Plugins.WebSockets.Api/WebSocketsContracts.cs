@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 
@@ -75,6 +76,38 @@ public sealed record ChannelDefinition(
     bool RaiseEvent = false,
     JsonElement? Schema = null);
 
+/// <summary>Reads an instance's channels from its config: what the plugin serves and what the Functions SDK types.</summary>
+public static partial class ChannelConfig
+{
+    /// <summary>A channel name, as the config schema allows it.</summary>
+    [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
+    public static partial Regex NamePattern();
+
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
+    /// <summary>The config's channels in order; a repeated name keeps its first definition.</summary>
+    public static IReadOnlyList<ChannelDefinition> Read(JsonElement config)
+    {
+        if (config.ValueKind != JsonValueKind.Object
+            || !config.TryGetProperty("channels", out var list)
+            || list.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var channels = new List<ChannelDefinition>();
+        foreach (var item in list.EnumerateArray())
+        {
+            var channel = item.ValueKind == JsonValueKind.Object ? item.Deserialize<ChannelDefinition>(Web) : null;
+            if (channel is not null && NamePattern().IsMatch(channel.Name) && seen.Add(channel.Name))
+            {
+                channels.Add(channel);
+            }
+        }
+        return channels;
+    }
+}
+
 /// <summary>Send a payload to every subscriber of a channel.</summary>
 /// <param name="Channel">The channel's name.</param>
 /// <param name="Payload">The message; validated against the channel's schema.</param>
@@ -89,11 +122,12 @@ public sealed record DirectMessage(Guid To, string Channel, JsonElement Payload)
 
 /// <summary>
 /// A browser published on a channel that raises events. Carries the payload, which the channel's
-/// schema already validated; the sender is absent for an anonymous connection.
+/// schema already validated; the sender is absent for an anonymous connection. The message id is
+/// what makes a redelivered event the same event to its handlers.
 /// </summary>
 [ContractEvent("websockets.message.received")]
 public sealed record WebSocketMessageReceived(
-    Guid InstanceId, string Instance, string Channel, string? Key, JsonElement Payload, Guid? Sender) : IPluginEvent;
+    Guid MessageId, Guid InstanceId, string Instance, string Channel, string? Key, JsonElement Payload, Guid? Sender) : IPluginEvent;
 
 /// <summary>
 /// Realtime delivery to a site's browsers. Nothing is stored: a message reaches the connections

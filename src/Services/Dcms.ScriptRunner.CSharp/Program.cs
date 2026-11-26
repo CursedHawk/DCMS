@@ -217,6 +217,9 @@ static JsonObject Definition(INamedTypeSymbol type, AttributeData function)
             case "Dcms.Functions.OnEventAttribute":
                 triggers.Add(new JsonObject { ["kind"] = "event", ["name"] = (string?)args[0].Value });
                 break;
+            case "Dcms.Functions.OnWebSocketAttribute":
+                triggers.Add(new JsonObject { ["kind"] = "websocket", ["instance"] = (string?)args[0].Value, ["channel"] = (string?)args[1].Value });
+                break;
             case "Dcms.Functions.UsesTableAttribute":
                 var granted = tables[(string?)args[0].Value ?? ""] as JsonArray ?? [];
                 foreach (var verb in Strings(args[1])) granted.Add(verb);

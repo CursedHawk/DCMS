@@ -94,4 +94,5 @@ export const on = Object.freeze({
   schedule: (cron) => ({ kind: "schedule", cron }),
   every: (interval) => ({ kind: "every", interval }),
   event: (name) => ({ kind: "event", name }),
+  websocket: (instance, channel) => ({ kind: "websocket", instance, channel }),
 });

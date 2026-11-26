@@ -17,8 +17,7 @@ namespace Dcms.Plugins.WebSockets;
 public static partial class Channels
 {
     /// <summary>A channel name: what config allows, also checked on every hub call.</summary>
-    [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
-    public static partial Regex NamePattern();
+    public static Regex NamePattern() => ChannelConfig.NamePattern();
 
     /// <summary>A channel key: URL-safe and short, so group names stay bounded.</summary>
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")]
@@ -29,27 +28,8 @@ public static partial class Channels
 
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    /// <summary>The config's channels in order; a repeated name keeps its first definition.</summary>
-    public static IReadOnlyList<ChannelDefinition> Read(JsonElement config)
-    {
-        if (config.ValueKind != JsonValueKind.Object
-            || !config.TryGetProperty("channels", out var list)
-            || list.ValueKind != JsonValueKind.Array)
-        {
-            return [];
-        }
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var channels = new List<ChannelDefinition>();
-        foreach (var item in list.EnumerateArray())
-        {
-            var channel = item.Deserialize<ChannelDefinition>(Web);
-            if (channel is not null && NamePattern().IsMatch(channel.Name) && seen.Add(channel.Name))
-            {
-                channels.Add(channel);
-            }
-        }
-        return channels;
-    }
+    /// <inheritdoc cref="ChannelConfig.Read"/>
+    public static IReadOnlyList<ChannelDefinition> Read(JsonElement config) => ChannelConfig.Read(config);
 
     public static ChannelDefinition? Find(JsonElement config, string name) =>
         Read(config).FirstOrDefault(c => c.Name == name);

@@ -10,6 +10,7 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Data.Rls;
+using Dcms.Plugins.WebSockets.Api;
 
 namespace Dcms.Plugins.Functions.Build;
 
@@ -28,8 +29,11 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
     /// <summary>An instance's contracts, with the admin operations shown.</summary>
     public sealed record Instance(string Slug, string Name, IReadOnlyList<(ContractDescriptor Contract, List<OperationDescriptor> Operations)> Contracts);
 
-    /// <summary>What both halves of the SDK are generated from (ADR 0029, 0030).</summary>
-    public sealed record Model(IReadOnlyList<App> Apps, IReadOnlyList<Instance> Instances);
+    /// <summary>A WebSockets app's channels, typed in <c>Channels</c> and for <c>on.websocket</c> (ADR 0037).</summary>
+    public sealed record ChannelSet(string Slug, string Name, IReadOnlyList<ChannelDefinition> Channels);
+
+    /// <summary>What both halves of the SDK are generated from (ADR 0029, 0030, 0037).</summary>
+    public sealed record Model(IReadOnlyList<App> Apps, IReadOnlyList<Instance> Instances, IReadOnlyList<ChannelSet>? ChannelSets = null);
 
     /// <param name="may">For a person reading it: whether they hold a permission. Tables need
     /// Dynamic Apps' model-read, an operation its own permission; null (a build) shows everything,
@@ -80,7 +84,14 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
             }
             if (visible.Count > 0) shown.Add(new Instance(instance.Slug, instance.Name, visible));
         }
-        return new Model(apps, shown);
+        var channelSets = new List<ChannelSet>();
+        foreach (var ws in enabled.Where(i => i.PluginId == "websockets"))
+        {
+            if (may is not null && !await may(PluginPermissions.ForInstance(WebSocketsPermissions.Read, ws.Slug))) continue;
+            var channels = ChannelConfig.Read(ws.Config.RootElement);
+            if (channels.Count > 0) channelSets.Add(new ChannelSet(ws.Slug, ws.Name, channels));
+        }
+        return new Model(apps, shown, channelSets);
     }
 
     /// <summary><c>@dcms/functions</c>'s declarations for a TypeScript function.</summary>
@@ -117,7 +128,18 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
             }
             plugins.Append("};\n");
         }
-        return FunctionTypings.Generate(database.ToString().TrimEnd(), plugins.ToString().TrimEnd(), rows.ToString());
+        var channels = new StringBuilder();
+        foreach (var set in model.ChannelSets ?? [])
+        {
+            channels.Append($"/** {Comment(set.Name)} */\n{Key(set.Slug)}: {{\n");
+            foreach (var channel in set.Channels)
+            {
+                if (channel.Description is { Length: > 0 } d) channels.Append($"  /** {Comment(d)} */\n");
+                channels.Append($"  {Key(channel.Name)}: {Ts(channel.Schema is { } s ? JsonNode.Parse(s.GetRawText()) : null)};\n");
+            }
+            channels.Append("};\n");
+        }
+        return FunctionTypings.Generate(database.ToString().TrimEnd(), plugins.ToString().TrimEnd(), rows.ToString(), channels.ToString().TrimEnd());
     }
 
     /// <summary>
@@ -133,7 +155,7 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
         {
             "Context", "Function", "Table", "Query", "Filter", "Sort", "Page", "Row", "Logger", "Access", "Database", "Plugins", "WorkspaceSdk",
             "HttpRequest", "HttpResponse", "HttpResult", "HttpResultBody", "User", "TriggerInfo", "RunInfo", "HostException",
-            "EmailMessage", "Notification", "ContentPage", "RowEvent", "RelationEvent", "PlatformEvents",
+            "EmailMessage", "Notification", "ContentPage", "RowEvent", "RelationEvent", "PlatformEvents", "WebSocketMessage",
         };
         var text = new StringBuilder("""
             // Sdk.g.cs: generated for this workspace's environment. Do not edit: it is rebuilt.
@@ -216,6 +238,15 @@ public sealed class SdkTypings(IPluginContext context, PluginRegistry registry, 
                 types.Insert(0, ops.Append("}\n\n").ToString());
             }
             types.Append("}\n\n");
+        }
+        // Each channel's payload as a record, for WebSocketMessage<TPayload> (ADR 0037).
+        var payloads = new JsonSchemaCs(names, types);
+        foreach (var set in model.ChannelSets ?? [])
+        {
+            foreach (var channel in set.Channels.Where(c => c.Schema is not null))
+            {
+                payloads.Type(JsonNode.Parse(channel.Schema!.Value.GetRawText()), Pascal(set.Slug) + Pascal(channel.Name) + "Payload");
+            }
         }
         return text.Append("}\n\n").Append(types).ToString();
     }

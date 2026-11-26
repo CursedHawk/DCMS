@@ -17,6 +17,14 @@ public sealed record OpenApiFragment(
 {
     public static readonly OpenApiFragment Empty = new(string.Empty, string.Empty, [], new Dictionary<string, JsonNode>());
 
+    /// <summary>
+    /// A realtime surface that is not an HTTP operation (ADR 0037): <c>{ "hub": path, "channels": {
+    /// name: { keyed, subscribe, publish, description, payload } } }</c>, payloads as <c>$ref</c>s
+    /// into <see cref="Schemas"/>. Emitted under the document's <c>x-dcms-realtime</c>, keyed by
+    /// instance slug, and typed by the generated client as <c>api.{slug}.realtime</c>.
+    /// </summary>
+    public JsonObject? Realtime { get; init; }
+
     /// <summary>Concatenates paths and schemas; the tag is the first fragment's.</summary>
     public static OpenApiFragment Merge(IReadOnlyList<OpenApiFragment> fragments)
     {
@@ -29,7 +37,10 @@ public sealed record OpenApiFragment(
             }
         }
         return new OpenApiFragment(
-            fragments[0].TagName, fragments[0].TagDescription, fragments.SelectMany(f => f.Paths).ToList(), schemas);
+            fragments[0].TagName, fragments[0].TagDescription, fragments.SelectMany(f => f.Paths).ToList(), schemas)
+        {
+            Realtime = fragments.Select(f => f.Realtime).FirstOrDefault(r => r is not null),
+        };
     }
 }
 

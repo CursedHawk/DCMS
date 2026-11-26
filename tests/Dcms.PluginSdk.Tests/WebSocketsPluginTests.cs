@@ -158,4 +158,15 @@ public class WebSocketsPluginTests
         Channels.Read(updated).Select(c => c.Name).Should().Equal("news");
         updated.GetProperty("channels")[0].TryGetProperty("description", out _).Should().BeFalse("nulls are not stored");
     }
+
+    [Theory]
+    [InlineData("https://shop.example", "shop.example", true)]
+    [InlineData("https://SHOP.example", "shop.example", true)]
+    [InlineData("", "shop.example", true)]
+    [InlineData("https://other.example", "shop.example", false)]
+    [InlineData("https://evil.shop.example", "shop.example", false)]
+    [InlineData("null", "shop.example", false)]
+    [InlineData("https://shop.example", "", false)]
+    public void Browsers_connect_only_from_the_sites_own_pages(string origin, string siteHost, bool allowed) =>
+        WebSocketsHub.SameSite(origin, siteHost).Should().Be(allowed);
 }

@@ -12,7 +12,8 @@ public static class FunctionTypings
     /// <param name="database">The members of <c>Database</c>; empty until the workspace's tables are generated in.</param>
     /// <param name="plugins">The members of <c>Plugins</c>, likewise.</param>
     /// <param name="declarations">Top-level declarations those members use: each table's record interface.</param>
-    public static string Generate(string database = "", string plugins = "", string declarations = "") => $$"""
+    /// <param name="channels">The members of <c>Channels</c>: each WebSockets app's channels and their payload types.</param>
+    public static string Generate(string database = "", string plugins = "", string declarations = "", string channels = "") => $$"""
         // @dcms/functions — generated for this workspace's environment. Do not edit: it is rebuilt.
 
         export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -38,7 +39,32 @@ public static class FunctionTypings
           /** An interval such as "15m", "1h" or "1d", between 5 minutes and 7 days. */
           every(interval: string): Trigger;
           event(name: "form.submitted" | "visitor.registered" | "user.invited" | "user.activated"): Trigger;
+          /**
+           * What browsers publish on a WebSockets app's channel that raises events. The input is a
+           * WebSocketMessage; type it as ChannelMessage<"app", "channel">. Runs through the queue, about a
+           * second after the message: for moderating, storing and notifying, not for answering the browser.
+           */
+          websocket<A extends keyof Channels & string, C extends keyof Channels[A] & string>(app: A, channel: C): Trigger;
         };
+
+        /** This workspace's WebSockets apps: Channels["app"]["channel"] is that channel's payload type. */
+        export interface Channels {
+        {{Indent(channels)}}
+        }
+
+        /** What on.websocket gives a function. */
+        export interface WebSocketMessage<P = Json> {
+          instance: string;
+          channel: string;
+          /** The key, on a keyed channel. */
+          key: string | null;
+          payload: P;
+          /** The signed-in site user or visitor who published it; null when anonymous. */
+          sender: string | null;
+        }
+
+        /** The input of a function triggered by on.websocket(app, channel). */
+        export type ChannelMessage<A extends keyof Channels, C extends keyof Channels[A]> = WebSocketMessage<Channels[A][C]>;
 
         /**
          * Who may call it over HTTP, at /api/{app}/fn/{name}. Without it, it is not callable over HTTP.

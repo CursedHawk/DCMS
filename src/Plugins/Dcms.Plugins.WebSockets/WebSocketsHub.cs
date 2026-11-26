@@ -39,6 +39,7 @@ public sealed class WebSocketsHub(
 
     private const string StateKey = "dcms.ws";
     private const string SiteHeader = "X-Dcms-Site";
+    private const string SiteHostHeader = "X-Dcms-Site-Host";
 
     public const int MaxSubscriptions = 50;
     public const int PublishesPerWindow = 20;
@@ -55,6 +56,7 @@ public sealed class WebSocketsHub(
         var http = Context.GetHttpContext();
         var slug = http?.Request.Query["instance"].ToString();
         if (http is null || string.IsNullOrEmpty(slug) || !http.Request.Headers.ContainsKey(SiteHeader)
+            || !SameSite(http.Request.Headers.Origin.ToString(), http.Request.Headers[SiteHostHeader].ToString())
             || http.RequestServices.GetRequiredService<ITenantContext>().TenantId is not { } tenantId)
         {
             Context.Abort();
@@ -106,6 +108,19 @@ public sealed class WebSocketsHub(
         }
         await base.OnConnectedAsync();
     }
+
+    /// <summary>
+    /// Whether a browser's connection comes from the site's own pages. The edge turns the site's
+    /// session cookie into the realm token on any request to the host, and tenant sites can share a
+    /// registrable domain, so without this a page on another site could connect as its visitor
+    /// (cross-site WebSocket hijacking). A client with no Origin is not a browser: it carries no
+    /// ambient cookie, only credentials of its own.
+    /// </summary>
+    public static bool SameSite(string origin, string siteHost) =>
+        string.IsNullOrEmpty(origin)
+        || (Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && siteHost.Length > 0
+            && string.Equals(uri.Host, siteHost, StringComparison.OrdinalIgnoreCase));
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
@@ -176,7 +191,7 @@ public sealed class WebSocketsHub(
 
         if (definition.RaiseEvent)
         {
-            await RaiseAsync(state, new WebSocketMessageReceived(state.InstanceId, state.Slug, channel, key, payload, state.UserId));
+            await RaiseAsync(state, new WebSocketMessageReceived(Guid.NewGuid(), state.InstanceId, state.Slug, channel, key, payload, state.UserId));
         }
     }
 

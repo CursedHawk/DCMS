@@ -17,6 +17,8 @@ export function describeTrigger(trigger: Record<string, unknown>, t: TFunction):
       return t('triggers.every', { interval: s('interval') });
     case 'event':
       return t('triggers.event', { name: s('name') });
+    case 'websocket':
+      return t('triggers.websocket', { instance: s('instance'), channel: s('channel') });
     default:
       return s('kind');
   }

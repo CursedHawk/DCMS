@@ -1,6 +1,8 @@
 extern alias ScriptRunnerApp;
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Dcms.Plugins.WebSockets.Api;
 using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.Functions.Build;
@@ -530,7 +532,10 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
                 new ContractDescriptor("forms.submissions@1", "forms.submissions", 1, "Form submissions.",
                     [new OperationDescriptor("list", OpRisk.Read, "plugin:forms:read", OpExposure.Admin, false, "Lists them.",
                         JsonNode.Parse("""{ "type": "object", "properties": { "page": { "type": "integer" } } }""")!, null)], [], []),
-                new List<OperationDescriptor>())])]);
+                new List<OperationDescriptor>())])],
+            // A WebSockets app's channel: its payload is a record for WebSocketMessage<T> (ADR 0037).
+            [new SdkTypings.ChannelSet("rt", "Realtime", [new ChannelDefinition("chat", Schema: JsonDocument.Parse(
+                """{ "type": "object", "properties": { "text": { "type": "string" }, "kind": { "const": "text" } }, "required": ["text"] }""").RootElement)])]);
         model.Instances[0].Contracts[0].Operations.Add(model.Instances[0].Contracts[0].Contract.Operations[0]);
         var sdk = SdkTypings.CSharp(model);
         // A name cannot leave its comment, whatever line break C# knows it by.
@@ -541,6 +546,10 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
                 var created = await ctx.Db.Crm.Companies.Create(new CrmCompaniesRow { Name = "Acme", Employees = 12, Active = true, Tags = ["b2b"] });
                 var owner = created.Owner;
                 await ctx.Plugins.Forms.FormsSubmissions.List(new { page = 2 });
+                // Typed (ADR 0037): the input as a generated record, the untyped call still beside it.
+                await ctx.Plugins.Forms.FormsSubmissions.List(new FormsFormsSubmissionsListInput { Page = 3 });
+                WebSocketMessage<RtChatPayload> message = new() { Instance = "rt", Channel = "chat", Payload = new RtChatPayload { Text = "hi" } };
+                _ = message.Payload.Kind;
                 return new { created.Id, created.Name, created.Employees, created.Version, owner, card = created.IdCard };
                 """, """[UsesTable("crm.companies", "create")] [UsesContracts("forms.submissions@1")]"""), sdk: sdk, broker: (op, args) =>
             {
@@ -558,7 +567,8 @@ public sealed class CSharpFunctionTests(DenoBinary deno, FunctionRunnerTests.Esb
         undeclared.Diagnostics.Should().Contain(d => d.Code == "CS1061" && d.Message.Contains("[UsesTable(\"app.table\""));
         calls.Should().Equal(
             """{"path":["crm","companies","create"],"args":[{"name":"Acme","employees":12,"active":true,"tags":["b2b"]}]}""",
-            """{"path":["forms","forms.submissions","list"],"args":[{"page":2}]}""");
+            """{"path":["forms","forms.submissions","list"],"args":[{"page":2}]}""",
+            """{"path":["forms","forms.submissions","list"],"args":[{"page":3}]}""");
         JsonNode.DeepEquals(run.Done["result"], JsonNode.Parse("""{"id":"c1","name":"Acme","employees":12,"version":1,"owner":"u1","card":"X-1"}"""))
             .Should().BeTrue(run.Done["result"]!.ToJsonString());
     }

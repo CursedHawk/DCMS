@@ -197,6 +197,40 @@ public sealed class WebSocketsPlugin : IPlugin
             };
     }
 
+    /// <summary>
+    /// The channels for the tenant's OpenAPI document and generated site client (ADR 0037): no HTTP
+    /// operations, a <c>Realtime</c> surface naming the hub and each channel's access, and each
+    /// channel's payload schema as <c>{slug}_{channel}_payload</c>.
+    /// </summary>
+    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
+    {
+        var schemas = new Dictionary<string, JsonNode>();
+        var channels = new JsonObject();
+        foreach (var channel in Channels.Read(instance.Config.RootElement))
+        {
+            JsonNode payload = new JsonObject();
+            if (channel.Schema is { } schema)
+            {
+                var name = $"{instance.Slug}_{channel.Name}_payload";
+                schemas[name] = JsonNode.Parse(schema.GetRawText())!;
+                payload = new JsonObject { ["$ref"] = $"#/components/schemas/{name}" };
+            }
+            channels[channel.Name] = new JsonObject
+            {
+                ["description"] = channel.Description,
+                ["keyed"] = channel.Keyed,
+                ["subscribe"] = channel.Subscribe,
+                ["publish"] = channel.Publish,
+                ["payload"] = payload,
+            };
+        }
+        return OpenApiFragment.Empty with
+        {
+            Schemas = schemas,
+            Realtime = new JsonObject { ["hub"] = $"{HubPath}?instance={instance.Slug}", ["channels"] = channels },
+        };
+    }
+
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
         services.Configure<WebSocketsOptions>(host.SettingsFor(PluginId));

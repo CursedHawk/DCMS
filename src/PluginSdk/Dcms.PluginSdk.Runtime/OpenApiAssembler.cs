@@ -89,6 +89,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
         var paths = new JsonObject();
         var tags = new JsonArray();
         var schemas = new JsonObject();
+        var realtime = new JsonObject();
 
         foreach (var instance in instances.OrderBy(i => i.Slug, StringComparer.Ordinal))
         {
@@ -114,10 +115,14 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             {
                 schemas[name] = schema.DeepClone();
             }
+            if (fragment.Realtime is { } surface)
+            {
+                realtime[instance.Slug] = surface.DeepClone();
+            }
 
             // Only an instance with operations gets a tag: one without (Search, Google Analytics) would
             // leave an empty or unused tag in the document.
-            if (AddContractOperations(plugin, instance, tag, paths) || fragment.Paths.Count > 0)
+            if (AddContractOperations(plugin, instance, tag, paths) || fragment.Paths.Count > 0 || fragment.Realtime is not null)
             {
                 tags.Add(new JsonObject { ["name"] = tag, ["description"] = tagDescription });
             }
@@ -149,7 +154,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             servers.Add(new JsonObject { ["url"] = "/" });
         }
 
-        return new JsonObject
+        var document = new JsonObject
         {
             ["openapi"] = "3.1.0",
             ["info"] = new JsonObject
@@ -163,6 +168,12 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             ["paths"] = paths,
             ["components"] = new JsonObject { ["schemas"] = schemas },
         };
+        if (realtime.Count > 0)
+        {
+            // OpenAPI has no WebSocket operations; the realtime channels sit beside them (ADR 0037).
+            document["x-dcms-realtime"] = realtime;
+        }
+        return document;
     }
 
     /// <summary>

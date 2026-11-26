@@ -139,7 +139,38 @@ public static class TypeScriptClientEmitter
                 }
 
                 AddOperations(section, instance);
+                AddRealtime(section, instance);
             }
+        }
+
+        /// <summary>
+        /// A WebSockets instance's channels (<c>x-dcms-realtime</c>, ADR 0037) as one typed member,
+        /// <c>api.{slug}.realtime.connect()</c>: channel names, keys, payload types and which channels
+        /// a browser may publish on are all checked by the compiler.
+        /// </summary>
+        private void AddRealtime(Section section, GeneratedInstance instance)
+        {
+            if (openApi["x-dcms-realtime"]?[instance.Slug]?["channels"] is not JsonObject channels || channels.Count == 0)
+            {
+                return;
+            }
+            var specs = new List<string>();
+            foreach (var (name, node) in channels)
+            {
+                var channel = node as JsonObject ?? [];
+                var payload = TsType(channel["payload"] as JsonObject ?? []);
+                var keyed = channel["keyed"] is JsonValue k && k.TryGetValue<bool>(out var isKeyed) && isKeyed;
+                var publish = channel["publish"] is JsonValue p && p.TryGetValue<string>(out var who) && who != "none";
+                var doc = Str(channel, "description") is { Length: > 0 } d ? $"/** {Comment(d)} */ " : "";
+                specs.Add($"{doc}{PropertyKey(name)}: {{ payload: {payload}; keyed: {(keyed ? "true" : "false")}; publish: {(publish ? "true" : "false")} }}");
+                section.Notes.Add($"Channel `{name}`{(keyed ? " (keyed)" : "")}: subscribe {Str(channel, "subscribe") ?? "public"}, publish {Str(channel, "publish") ?? "none"}; payload `{payload}`.");
+            }
+            runtimeTypes.Add("RealtimeChannels");
+            var spec = "{ " + string.Join("; ", specs) + " }";
+            Add(section, new Leaf([instance.Slug, "realtime", "connect"],
+                $"(): RealtimeChannels<{spec}> => http.realtime<{spec}>({Lit(instance.Slug)})",
+                $"api.{Member(instance.Slug)}.realtime.connect()", "RealtimeChannels", "WebSocket /hub/ws",
+                "Live channels: `subscribe(channel, handler, key?)` returns an unsubscribe, `publish(channel, payload, key?)` where browsers may publish. One connection per call; close() it when done."));
         }
 
         private void Add(Section section, Leaf leaf)
@@ -731,7 +762,7 @@ public static class TypeScriptClientEmitter
     private static readonly string[] RuntimeTypeNames =
     [
         "AnalyticsEvent", "ChatMessage", "CollectionInfo", "ContentItem", "ContentRef", "FormInfo",
-        "ListParams", "MediaRef", "PagedResult", "SearchParams", "SearchResult", "TagIndex", "TenantClientOptions",
+        "ListParams", "MediaRef", "PagedResult", "RealtimeChannels", "SearchParams", "SearchResult", "TagIndex", "TenantClientOptions",
     ];
 
     /// <summary>The candidates that appear in <paramref name="code"/> as whole words, sorted.</summary>

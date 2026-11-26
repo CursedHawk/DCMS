@@ -103,6 +103,30 @@ public sealed class OnEventAttribute(string name) : Attribute
     public string Name { get; } = name;
 }
 
+/// <summary>
+/// What browsers publish on a WebSockets app's channel that raises events (ADR 0037). The input is a
+/// <see cref="WebSocketMessage{TPayload}"/> of the channel's payload record from Sdk.g.cs. Runs
+/// through the queue, about a second after the message: for moderating, storing and notifying.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class OnWebSocketAttribute(string instance, string channel) : Attribute
+{
+    public string Instance { get; } = instance;
+    public string Channel { get; } = channel;
+}
+
+/// <summary>What <see cref="OnWebSocketAttribute"/> gives a function.</summary>
+public sealed record WebSocketMessage<TPayload>
+{
+    public required string Instance { get; init; }
+    public required string Channel { get; init; }
+    /// <summary>The key, on a keyed channel.</summary>
+    public string? Key { get; init; }
+    public required TPayload Payload { get; init; }
+    /// <summary>The signed-in site user or visitor who published it; null when anonymous.</summary>
+    public string? Sender { get; init; }
+}
+
 public static class PlatformEvents
 {
     public const string FormSubmitted = "form.submitted";
