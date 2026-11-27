@@ -63,6 +63,7 @@ public static class JobsWorkerServices
         services.AddHostedService<DomainVerifiedNotificationConsumer>();
         services.AddHostedService<PluginInstanceNotificationConsumer>();
         services.AddHostedService<NotificationIngestConsumer>();
+        services.AddHostedService<ConsoleChangeRelay>();
         // Audit records from the services that cannot reach the audit schema, and the projection
         // of every record onto the log pipeline.
         services.AddHostedService<AuditIngestConsumer>();

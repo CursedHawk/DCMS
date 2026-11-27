@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@dcms/plugin-ui": "workspace:*",
-    "@microsoft/signalr": "^8",
     "@dcms/ui": "workspace:*",
     "@tanstack/react-query": "^5",
     "lucide-react": "^0.469",

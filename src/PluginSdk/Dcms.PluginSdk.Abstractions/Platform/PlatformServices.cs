@@ -141,7 +141,23 @@ public interface IPluginNotifications
 {
     [Operation(OpRisk.Safe)]
     Task RaiseAsync(NotificationRaise input, CancellationToken ct);
+
+    /// <summary>
+    /// Tells every console open on the tenant that this plugin's <paramref name="input"/> data
+    /// changed, so its screens refetch (the console's <c>ResourceChanged</c>, tag
+    /// <c>plugin:{plugin}:{tag}</c>). Carries no data: nothing is stored, nobody is interrupted,
+    /// and the refetch is an ordinary authorised request.
+    /// </summary>
+    [Operation(OpRisk.Safe)]
+    Task SignalChangeAsync(ConsoleChange input, CancellationToken ct);
 }
+
+/// <param name="Tag">Kebab-case name of a class of this plugin's data, e.g. <c>conversations</c>.</param>
+/// <param name="Id">
+/// The row that changed, where knowing it discloses nothing: the hint goes to every console of the
+/// tenant, whatever its viewer may read. Leave it out when an id is itself a capability.
+/// </param>
+public sealed record ConsoleChange(string Tag, string? Id = null);
 
 // ---------------------------------------------------------------------------------------------
 // dcms.media@1

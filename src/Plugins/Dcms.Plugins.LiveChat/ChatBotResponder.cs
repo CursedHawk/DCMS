@@ -13,7 +13,6 @@ using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -26,11 +25,11 @@ namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
 /// Generates the AI assistant's replies for the visitor chat. Triggered fire-and-forget
-/// by <see cref="ChatHub"/> after a visitor message: it reads the tenant's AI Chatbot
+/// by the visitor's message route (<see cref="ChatSiteEndpoints"/>) after a visitor message: it reads the tenant's AI Chatbot
 /// (<c>live-chat</c>) instance config, optionally grounds the answer in the tenant's
 /// published content (RAG over the search index), calls ai-gateway for a completion,
-/// persists the reply as a <see cref="ChatSender.Bot"/> message, and fans it out over
-/// SignalR into the same per-conversation / per-agent groups the hub uses.
+/// and posts the reply as a <see cref="ChatSender.Bot"/> message through <see cref="ChatFlow"/>,
+/// which delivers it to the widget and the consoles as any other message.
 ///
 /// Runs outside any HTTP request, so every DB query ignores the ambient tenant query
 /// filter and scopes explicitly by tenant id (there is no <c>ITenantContext</c> here).
@@ -39,9 +38,7 @@ namespace Dcms.Plugins.LiveChat;
 /// </summary>
 public sealed class ChatBotResponder(
     IServiceProvider services,
-    IHubContext<ChatHub> hub,
     IHttpClientFactory httpClientFactory,
-    DcmsMetrics metrics,
     ILogger<ChatBotResponder> logger)
 {
     private const string PluginId = "live-chat";
@@ -56,14 +53,14 @@ public sealed class ChatBotResponder(
         instance.Id, instance.TenantId, instance.PluginId, instance.Slug, instance.Name, instance.Description,
         JsonDocument.Parse(string.IsNullOrWhiteSpace(instance.ConfigJson) ? "{}" : instance.ConfigJson));
 
-    /// <summary>Fire-and-forget entry point; never throws into the caller (the hub).</summary>
-    public void Trigger(Guid tenantId, Guid conversationId, string visitorMessage)
+    /// <summary>Fire-and-forget entry point; never throws into the caller (the visitor's request).</summary>
+    public void Trigger(Guid tenantId, Guid environmentId, Guid conversationId, string visitorMessage)
     {
         _ = Task.Run(async () =>
         {
             try
             {
-                await RespondAsync(tenantId, conversationId, visitorMessage, CancellationToken.None);
+                await RespondAsync(tenantId, environmentId, conversationId, visitorMessage, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -72,10 +69,11 @@ public sealed class ChatBotResponder(
         });
     }
 
-    private async Task RespondAsync(Guid tenantId, Guid conversationId, string visitorMessage, CancellationToken ct)
+    private async Task RespondAsync(Guid tenantId, Guid environmentId, Guid conversationId, string visitorMessage, CancellationToken ct)
     {
-        // Runs off the request, with no ambient tenant; it knows exactly one (ADR 0015).
-        using var rls = RlsScope.Tenant(tenantId);
+        // Runs off the request, with no ambient tenant; it knows exactly one, and the
+        // conversation's environment (ADR 0015, 0028).
+        using var rls = RlsScope.Environment(tenantId, environmentId);
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
         var cms = sp.GetRequiredService<CmsDbContext>();
@@ -137,41 +135,7 @@ public sealed class ChatBotResponder(
             reply = reply[..8000];
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var message = new ChatMessage
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            ConversationId = conversationId,
-            Sender = ChatSender.Bot,
-            SenderId = null,
-            Body = reply,
-            SentAt = now,
-        };
-        chat.Messages.Add(message);
-        conversation.LastMessageAt = now;
-        await chat.SaveChangesAsync(ct);
-
-        metrics.ChatMessage(tenantId, ChatSender.Bot.ToString());
-        await ChatHub.PublishAsync(sp, tenantId, logger,
-            new Api.ChatMessageReceived(conversationId, message.Id, ChatSender.Bot.ToString()));
-
-        var dto = new
-        {
-            id = message.Id,
-            conversationId,
-            sender = ChatSender.Bot.ToString(),
-            body = reply,
-            sentAt = now,
-        };
-        await hub.Clients.Group(ChatHub.ConversationGroup(conversationId)).SendAsync("ReceiveMessage", dto, ct);
-        await hub.Clients.Group(ChatHub.AgentGroup(tenantId)).SendAsync("ConversationActivity", new
-        {
-            id = conversationId,
-            visitorName = conversation.VisitorName,
-            lastMessageAt = now,
-            preview = reply.Length > 120 ? reply[..120] : reply,
-        }, ct);
+        await ChatFlow.PostAsync(sp, tenantId, conversationId, reply, ChatSender.Bot, null, logger, ct);
     }
 
     /// <summary>

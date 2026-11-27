@@ -240,6 +240,7 @@ public sealed class WebSocketsPlugin : IPlugin
         services.Configure<WebSocketsOptions>(host.SettingsFor(PluginId));
         // Every plane: the site plane serves the hub, the admin plane sends through IHubContext.
         WebSocketsBackplane.Register(services, host.Configuration);
+        services.AddSingleton<IWebSocketPush, ChannelPush>();
         if (host.IsSite)
         {
             services.AddSignalR().AddHubOptions<WebSocketsHub>(o =>

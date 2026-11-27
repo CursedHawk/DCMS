@@ -8,9 +8,6 @@
   "scripts": {
     "build": "tsc -b"
   },
-  "dependencies": {
-    "@microsoft/signalr": "^8"
-  },
   "devDependencies": {
     "typescript": "^5"
   }

@@ -241,6 +241,17 @@ public sealed class PluginNotifications(IPluginContext caller, IEventPublisher e
             ResourceType: input.ResourceType,
             ResourceId: input.ResourceId), ct).AsTask();
     }
+
+    public Task SignalChangeAsync(ConsoleChange input, CancellationToken ct)
+    {
+        if (input.Tag.Length is 0 or > 64 || !PluginRegistry.IsKebabCase(input.Tag) || input.Id is { Length: > 100 })
+        {
+            throw new ContractValidationException("Tag must be kebab-case, at most 64 characters; Id at most 100.");
+        }
+        // Under the plugin's own id, so no plugin can make another's screens (or the core's) refetch.
+        return events.PublishAsync(Subjects.NotifyChanged, new ConsoleChangeRequested(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, caller.TenantId, $"plugin:{caller.PluginId}:{input.Tag}", input.Id), ct).AsTask();
+    }
 }
 
 /// <summary><see cref="IPluginContent"/> over <see cref="PublishedContentReader"/>: published only, tenant only.</summary>

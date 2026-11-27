@@ -209,6 +209,11 @@ public static class Subjects
     // consistent with the table that is already the system of record.
     public const string NotifyRaise = "notify.raise";
 
+    // A plugin's "this data changed" hint for open consoles (dcms.notifications@1
+    // SignalChange): relayed by jobs-worker to the notification hub as ResourceChanged. Not
+    // stored, so an ephemeral consumer and a missed one cost a refetch at the next navigation.
+    public const string NotifyChanged = "notify.changed";
+
     // PLUGIN_EVENTS / PLUGIN_JOBS
     //
     // "plugins." rather than "plugin.": TENANCY already owns plugin.instance.>, and JetStream

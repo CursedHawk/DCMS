@@ -32,6 +32,7 @@ namespace Dcms.Plugins.WebSockets;
 public sealed class WebSocketsHub(
     IServiceScopeFactory scopes,
     IOptions<WebSocketsOptions> options,
+    IEnumerable<WebSocketChannelSet> sets,
     ILogger<WebSocketsHub> logger) : Hub
 {
     /// <summary>The method a browser receives a message on: (channel, key, payload, sender).</summary>
@@ -65,7 +66,7 @@ public sealed class WebSocketsHub(
         var ct = Context.ConnectionAborted;
         var factory = http.RequestServices.GetRequiredService<PluginContextFactory>();
         var instance = (await factory.EnabledInstancesAsync(tenantId, ct))
-            .FirstOrDefault(i => i.PluginId == WebSocketsPlugin.PluginId && i.Slug == slug);
+            .FirstOrDefault(i => i.Slug == slug && Channels.Serves(i, sets));
         if (instance is null)
         {
             Context.Abort();
@@ -213,7 +214,7 @@ public sealed class WebSocketsHub(
             Context.Abort();
             throw new HubException("This realtime service is no longer available.");
         }
-        return Channels.Find(instance.Config.RootElement, channel) ?? throw new HubException("Unknown channel.");
+        return Channels.Find(instance, sets, channel) ?? throw new HubException("Unknown channel.");
     }
 
     /// <summary>Best effort: delivery already happened, and a bus problem must never cost a message.</summary>

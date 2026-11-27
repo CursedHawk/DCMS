@@ -180,3 +180,21 @@ public interface IWebSocketChannelAdmin
         Description = "Remove a channel. Sites and functions that use it stop compiling against the regenerated client.")]
     Task DeleteAsync(ChannelRef input, CancellationToken ct);
 }
+
+/// <summary>
+/// Channels a plugin declares in code for each of its own instances (ADR 0037), registered with
+/// <c>services.AddSingleton(new WebSocketChannelSet(pluginId, channels))</c>. Browsers reach them
+/// at <c>/hub/ws?instance={that instance's slug}</c> while the instance is enabled, with no
+/// WebSockets app of the tenant's own: what LiveChat speaks to visitors over.
+/// </summary>
+public sealed record WebSocketChannelSet(string PluginId, IReadOnlyList<ChannelDefinition> Channels);
+
+/// <summary>
+/// Server sends to a plugin's own <see cref="WebSocketChannelSet"/>, from any plane, over the
+/// hub's backplane. Registered by the WebSockets plugin; the payload is checked against the
+/// channel's schema as any send is.
+/// </summary>
+public interface IWebSocketPush
+{
+    Task SendAsync(string pluginId, Guid tenantId, Guid environmentId, string instanceSlug, ChannelMessage message, CancellationToken ct);
+}

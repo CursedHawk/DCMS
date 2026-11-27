@@ -33,7 +33,9 @@ export const LIVE_QUERY_MAP: TagQueryMap = {
   members: [['members'], ['roles'], ['me-permissions']],
   invitations: [['invitations']],
   forms: [['form-submissions'], ['forms-instances']],
-  chat: [['chat-conversations']],
+  // A new conversation's notification; every other chat change arrives as the live-chat
+  // plugin's own `plugin:live-chat:conversations` hint.
+  chat: [['plugin:live-chat:conversations']],
   analytics: [['analytics'], ['analytics-dimensions']],
 };
 

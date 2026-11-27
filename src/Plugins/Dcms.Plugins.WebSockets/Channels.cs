@@ -34,6 +34,16 @@ public static partial class Channels
     public static ChannelDefinition? Find(JsonElement config, string name) =>
         Read(config).FirstOrDefault(c => c.Name == name);
 
+    /// <summary>Whether the hub serves this instance: a WebSockets app, or an instance of a plugin that declares a channel set.</summary>
+    public static bool Serves(Dcms.PluginSdk.Abstractions.PluginInstanceContext instance, IEnumerable<WebSocketChannelSet> sets) =>
+        instance.PluginId == WebSocketsPlugin.PluginId || sets.Any(s => s.PluginId == instance.PluginId);
+
+    /// <summary>The instance's channel by name: from its config for a WebSockets app, from its plugin's set otherwise.</summary>
+    public static ChannelDefinition? Find(Dcms.PluginSdk.Abstractions.PluginInstanceContext instance, IEnumerable<WebSocketChannelSet> sets, string name) =>
+        instance.PluginId == WebSocketsPlugin.PluginId
+            ? Find(instance.Config.RootElement, name)
+            : sets.FirstOrDefault(s => s.PluginId == instance.PluginId)?.Channels.FirstOrDefault(c => c.Name == name);
+
     /// <summary>The config with <paramref name="channels"/> in place of its channel list; other keys are kept.</summary>
     public static JsonElement With(JsonElement config, IEnumerable<ChannelDefinition> channels)
     {

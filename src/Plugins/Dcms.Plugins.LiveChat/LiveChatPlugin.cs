@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using StackExchange.Redis;
 
 namespace Dcms.Plugins.LiveChat;
 
@@ -21,9 +20,10 @@ namespace Dcms.Plugins.LiveChat;
 /// that conversation (see <c>humanHandoff</c>).
 ///
 /// The plugin id stays <c>live-chat</c> for backward compatibility with existing
-/// installs. The plugin owns the whole of it: the realtime hub, the bot responder and the
-/// history replay on the site plane; the agent console and the new-conversation notice on
-/// the admin plane; and <see cref="ILiveChat"/> for everyone else.
+/// installs. The plugin owns the whole of it: the visitor's routes, the bot responder and a
+/// WebSockets channel set for the widget's realtime on the site plane; the agent console's routes
+/// (refreshed by notification-hub hints) and the new-conversation notice on the admin plane; and
+/// <see cref="ILiveChat"/> for everyone else.
 /// </summary>
 public sealed class LiveChatPlugin : IPlugin
 {
@@ -122,34 +122,21 @@ public sealed class LiveChatPlugin : IPlugin
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
-        if (!host.IsSite)
+        // Every plane: the site plane's WebSockets hub serves the set to visitors, and the admin
+        // plane's agent replies push to it over the hub's backplane (ADR 0037, #669).
+        services.AddSingleton(ChatChannels.Set);
+        if (host.IsSite)
         {
-            return;
+            services.AddSingleton<ChatBotResponder>();
         }
-        // SignalR with a Redis backplane so message fan-out crosses replicas.
-        var signalR = services.AddSignalR();
-        var redis = host.Configuration.GetConnectionString("Redis");
-        if (!string.IsNullOrWhiteSpace(redis))
-        {
-            signalR.AddStackExchangeRedis(redis + ",abortConnect=false",
-                options => options.Configuration.ChannelPrefix = RedisChannel.Literal("dcms-chat"));
-        }
-        services.AddSingleton<ChatBotResponder>();
     }
 
-    /// <summary>History replay when the widget (re)opens: <c>/api/{slug}/chat/conversations/{id}/messages</c>.</summary>
-    public void MapEndpoints(IPluginEndpointBuilder endpoints) => ChatHistoryEndpoints.Map(endpoints);
+    /// <summary>The visitor's routes: <c>/api/{slug}/chat/conversations[/{id}/messages]</c>.</summary>
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) => ChatSiteEndpoints.Map(endpoints);
 
     public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)
     {
-        if (host.IsSite)
-        {
-            // Tenant-wide: the connection names its tenant in the query string.
-            app.MapHub<ChatHub>("/hub/chat")
-                .AuditExempt("SignalR transport endpoint, not an action. Chat messages are recorded by the "
-                           + "hub methods that write them, where the conversation and author are known.");
-        }
-        else
+        if (!host.IsSite)
         {
             ChatConsoleEndpoints.Map(app);
         }

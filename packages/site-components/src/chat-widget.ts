@@ -1,44 +1,45 @@
 /**
  * Embeddable live-chat widget for published visitor sites. Vanilla TS (no React)
  * so it can be dropped into any prerendered Mode A page via a small bootstrap
- * script — `createChatWidget({ tenant: 'acme' })` — without a hydration runtime.
+ * script — `createChatWidget({ app: 'chat' })` — without a hydration runtime.
  *
- * It connects to content-api's SignalR hub through the site-host proxy
- * (`/hub/chat`), starts/persists a conversation in localStorage, and renders a
- * minimal floating panel. Realtime fan-out (including the agent's replies) is
- * delivered by the hub's per-conversation group.
+ * Writes are plain requests to the AI Chatbot app's routes (`/api/{app}/chat/…`); what comes
+ * back (the assistant's and agents' replies, the conversation closing) arrives on the app's
+ * WebSockets channel `conversation/{id}` at `/hub/ws?instance={app}` (ADR 0037). The socket
+ * speaks SignalR's JSON protocol directly, so the widget has no dependency.
  */
-import { HttpTransportType, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
-import type { HubConnection } from '@microsoft/signalr';
 
 export interface ChatWidgetOptions {
-  /** Tenant slug, passed to the hub's ?tenant= query. */
-  tenant: string;
-  /** Hub origin. Defaults to same-origin (site-host proxies /hub to content-api). */
-  hubBase?: string;
+  /** The AI Chatbot app's slug on this site (its `/api/{app}` routes). */
+  app: string;
+  /** Origin of the site's API and hub. Defaults to same-origin. */
+  apiBase?: string;
   heading?: string;
   greeting?: string;
   visitorName?: string;
 }
 
 interface IncomingMessage {
-  id: string;
+  kind: 'message' | 'closed';
+  id?: string;
   conversationId: string;
-  sender: 'Visitor' | 'Agent' | 'Bot';
-  body: string;
-  sentAt: string;
+  sender?: 'Visitor' | 'Agent' | 'Bot';
+  body?: string;
+  sentAt?: string;
 }
 
 export interface ChatWidgetHandle {
   destroy: () => void;
 }
 
-const STORAGE_KEY = (tenant: string) => `dcms.chat.conversation.${tenant}`;
+const STORAGE_KEY = (app: string) => `dcms.chat.conversation.${app}`;
+const RS = '\u001e';
 
 export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
   const heading = options.heading ?? 'Chat with us';
   const greeting = options.greeting ?? 'Hi! How can we help?';
-  const hubBase = options.hubBase ?? '';
+  const base = options.apiBase ?? location.origin;
+  const api = `${base}/api/${encodeURIComponent(options.app)}/chat/conversations`;
 
   const root = document.createElement('div');
   root.setAttribute('data-dcms-chat', '');
@@ -51,46 +52,87 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
   const toggle = root.querySelector('[data-toggle]') as HTMLButtonElement;
   const panel = root.querySelector('[data-panel]') as HTMLDivElement;
 
-  let conversationId = localStorage.getItem(STORAGE_KEY(options.tenant));
+  let conversationId = localStorage.getItem(STORAGE_KEY(options.app));
+  let socket: WebSocket | null = null;
+  let destroyed = false;
+  let retry = 0;
+  const seen = new Set<string>();
 
-  const connection: HubConnection = new HubConnectionBuilder()
-    // skipNegotiation + WebSockets: no server affinity required. See the same change in the
-    // admin console -- with negotiation, the handshake's two requests must reach the same
-    // content-api replica, and site-host's proxy does not pin them.
-    .withUrl(`${hubBase}/hub/chat?tenant=${encodeURIComponent(options.tenant)}`, {
-      skipNegotiation: true,
-      transport: HttpTransportType.WebSockets,
-    })
-    .withAutomaticReconnect()
-    .configureLogging(LogLevel.Error)
-    .build();
+  function show(m: { id?: string; sender?: string; body?: string }) {
+    if (m.id && seen.has(m.id)) return;
+    if (m.id) seen.add(m.id);
+    if (m.sender && m.sender !== 'Visitor') hideTyping(log);
+    appendMessage(log, m.sender ?? 'Bot', m.body ?? '');
+  }
 
-  connection.on('ReceiveMessage', (m: IncomingMessage) => {
-    if (m.conversationId === conversationId) {
-      // A reply (assistant or agent) ends the "typing…" state.
-      if (m.sender !== 'Visitor') hideTyping(log);
-      appendMessage(log, m.sender, m.body);
-    }
-  });
+  /** Listens on the conversation's channel; reconnects with backoff while the widget lives. */
+  function listen(id: string) {
+    socket?.close();
+    const ws = new WebSocket(`${base.replace(/^http/, 'ws')}/hub/ws?instance=${encodeURIComponent(options.app)}`);
+    socket = ws;
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ protocol: 'json', version: 1 }) + RS);
+      ws.send(JSON.stringify({ type: 1, invocationId: '1', target: 'Subscribe', arguments: ['conversation', id.replace(/-/g, '')] }) + RS);
+      retry = 0;
+    };
+    ws.onmessage = (e) => {
+      for (const frame of String(e.data).split(RS)) {
+        if (!frame) continue;
+        const m = JSON.parse(frame) as { type?: number; target?: string; arguments?: unknown[] };
+        if (m.type === 6) ws.send(JSON.stringify({ type: 6 }) + RS);
+        if (m.type !== 1 || m.target !== 'message') continue;
+        const payload = m.arguments?.[2] as IncomingMessage | undefined;
+        if (payload?.kind === 'message') show(payload);
+        if (payload?.kind === 'closed') forget();
+      }
+    };
+    ws.onclose = () => {
+      if (destroyed || socket !== ws || !conversationId) return;
+      setTimeout(() => conversationId && !destroyed && listen(conversationId), [1000, 2000, 5000, 10000, 30000][Math.min(retry++, 4)]);
+    };
+  }
+
+  function forget() {
+    conversationId = null;
+    localStorage.removeItem(STORAGE_KEY(options.app));
+    socket?.close();
+    socket = null;
+    hideTyping(log);
+  }
 
   async function ensureConversation(): Promise<string> {
-    if (conversationId) {
-      if (connection.state === HubConnectionState.Connected) {
-        await connection.invoke('JoinConversation', conversationId).catch(() => undefined);
-      }
-      return conversationId;
-    }
-    const result = await connection.invoke<{ id: string }>('StartConversation', options.visitorName ?? null);
-    conversationId = result.id;
-    localStorage.setItem(STORAGE_KEY(options.tenant), conversationId);
-    return conversationId;
+    if (conversationId) return conversationId;
+    const res = await fetch(api, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ visitorName: options.visitorName ?? null }),
+    });
+    if (!res.ok) throw new Error(`chat ${res.status}`);
+    const id = ((await res.json()) as { id: string }).id;
+    conversationId = id;
+    localStorage.setItem(STORAGE_KEY(options.app), id);
+    listen(id);
+    return id;
   }
 
   async function send() {
     const body = input.value.trim();
-    if (!body || connection.state !== HubConnectionState.Connected) return;
+    if (!body) return;
     const id = await ensureConversation();
-    await connection.invoke('SendMessage', id, body);
+    const res = await fetch(`${api}/${id}/messages`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+    if (res.status === 404) {
+      // Closed or gone: the next message opens a new conversation.
+      forget();
+      return;
+    }
+    if (!res.ok) return;
+    show((await res.json()) as IncomingMessage);
     input.value = '';
     showTyping(log);
   }
@@ -103,16 +145,23 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
     panel.hidden = !panel.hidden;
   });
 
-  connection
-    .start()
-    .then(() => {
-      if (conversationId) void ensureConversation();
-    })
-    .catch(() => undefined);
+  // A returning visitor: replay the conversation, then follow it.
+  if (conversationId) {
+    const id = conversationId;
+    void fetch(`${api}/${id}/messages`, { credentials: 'include' })
+      .then(async (res) => {
+        if (res.status === 404) return forget();
+        if (!res.ok) return;
+        for (const m of (await res.json()) as IncomingMessage[]) show(m);
+        listen(id);
+      })
+      .catch(() => undefined);
+  }
 
   return {
     destroy: () => {
-      void connection.stop();
+      destroyed = true;
+      socket?.close();
       root.remove();
     },
   };

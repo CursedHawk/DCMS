@@ -1,14 +1,7 @@
-import {
-  HttpTransportType,
-  HubConnection,
-  HubConnectionBuilder,
-  HubConnectionState,
-  LogLevel,
-} from '@microsoft/signalr';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, MessagesSquare, Send } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, cn, EmptyState, Input, setHubConnected, useHubRevalidation } from '@dcms/ui';
+import { useEffect, useRef, useState } from 'react';
+import { Badge, Button, cn, EmptyState, Input } from '@dcms/ui';
 import { usePluginHost, usePluginT } from '@dcms/plugin-ui';
 
 export interface ChatConversation {
@@ -27,120 +20,56 @@ export interface ChatMessage {
   readAt?: string | null;
 }
 
-/** The name this page's connection reports under, for `useHubRevalidation`. */
-const CHAT_HUB = 'chat';
+/**
+ * The plugin's console hint (`plugin:live-chat:conversations`, ADR 0037 / #669): every new
+ * conversation and message makes the console's notification hub invalidate this prefix, so the
+ * list and the open conversation refetch. No socket of this page's own.
+ */
+const KEY = 'plugin:live-chat:conversations';
 
 /**
  * The live chat console: every conversation as it happens, with takeover from the chatbot.
  * A screen of the AI Chatbot plugin (manifest screen "console"), at /apps/{slug}/console.
- * The hub is the plugin's own (content-api /hub/chat); history comes from its admin routes.
+ * Reads and writes are the plugin's admin routes; the visitor hears a reply on the app's
+ * WebSockets channel.
  */
 export function ConsoleScreen() {
   const { t } = usePluginT();
   const host = usePluginHost();
+  const qc = useQueryClient();
   const slug = host.tenant;
-  const contentApiBase = host.contentApiBase;
 
-  const [connected, setConnected] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
-  const connRef = useRef<HubConnection | null>(null);
+  const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const conversations = useQuery({
-    queryKey: ['chat-conversations'],
+    queryKey: [KEY],
     queryFn: () => host.api.get<ChatConversation[]>('/admin/chat/conversations'),
-    /*
-     * Never on a timer.
-     *
-     * The hub below refetches this list on `ConversationStarted` and `ConversationActivity`,
-     * which is every way it can change. The 15-second fallback that used to run while the
-     * socket was down has moved to `useHubRevalidation` underneath: it refetches when this
-     * connection comes back and when the tab becomes visible, which are the only two moments
-     * at which a missed message can actually be noticed.
-     */
+    enabled: !!slug,
   });
-
-  // `connected` is this page's own hub state; the presence registry is what lets the shared
-  // helper see it without the socket being lifted out of this component. Cleared on unmount,
-  // because the socket goes with the page and a registry still claiming `true` would be a lie
-  // to whatever reads it next.
-  useEffect(() => {
-    setHubConnected(CHAT_HUB, connected);
-    return () => setHubConnected(CHAT_HUB, false);
-  }, [connected]);
-  useHubRevalidation({ hub: CHAT_HUB, keys: [['chat-conversations']] });
-
-  useEffect(() => {
-    if (!slug) return;
-    let disposed = false;
-    const connection = new HubConnectionBuilder()
-      // skipNegotiation + WebSockets so the connection needs no server affinity.
-      //
-      // With negotiation, `POST /negotiate` and the follow-up transport connect must reach the
-      // SAME content-api replica -- nothing on the path (the edge, or site-host's YARP proxy)
-      // guarantees that, so a scaled content-api drops connections at random. The Redis
-      // backplane fans messages OUT across replicas; it does nothing about which replica a
-      // single client's two handshake requests land on.
-      //
-      // The access token still travels as the `access_token` query parameter, which is what
-      // content-api already reads for hub requests.
-      .withUrl(`${contentApiBase}/hub/chat?tenant=${encodeURIComponent(slug)}`, {
-        // No accessTokenFactory: the edge attaches the operator's bearer as it proxies the
-        // handshake (ADR 0014), which a browser cannot do for itself — a WebSocket handshake
-        // takes no custom headers. That is what retired the token-in-the-query-string.
-        skipNegotiation: true,
-        transport: HttpTransportType.WebSockets,
-      })
-      .withAutomaticReconnect()
-      .configureLogging(LogLevel.Warning)
-      .build();
-
-    connection.on('ReceiveMessage', (m: ChatMessage & { conversationId: string }) => {
-      setSelected((current) => {
-        if (current === m.conversationId) setMessages((prev) => [...prev, m]);
-        return current;
-      });
-    });
-    connection.on('ConversationStarted', () => void conversations.refetch());
-    connection.on('ConversationActivity', () => void conversations.refetch());
-    connection.onreconnected(() => setConnected(true));
-    connection.onclose(() => setConnected(false));
-
-    connRef.current = connection;
-    connection
-      .start()
-      .then(() => !disposed && setConnected(true))
-      .catch(() => setConnected(false));
-
-    return () => {
-      disposed = true;
-      void connection.stop();
-      connRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  const thread = useQuery({
+    queryKey: [KEY, selected, 'messages'],
+    queryFn: () => host.api.get<ChatMessage[]>(`/admin/chat/conversations/${selected}/messages`),
+    enabled: !!selected,
+  });
+  const messages = thread.data ?? [];
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const open = useCallback(
-    async (id: string) => {
-      setSelected(id);
-      setMessages(await host.api.get<ChatMessage[]>(`/admin/chat/conversations/${id}/messages`));
-      const conn = connRef.current;
-      if (conn?.state === HubConnectionState.Connected) await conn.invoke('JoinConversation', id);
-    },
-    [host.api],
-  );
+  }, [messages.length]);
 
   async function send() {
-    const conn = connRef.current;
-    if (!selected || !draft.trim() || conn?.state !== HubConnectionState.Connected) return;
-    await conn.invoke('SendAgentMessage', selected, draft.trim());
-    setDraft('');
+    if (!selected || !draft.trim() || sending) return;
+    setSending(true);
+    try {
+      await host.api.post(`/admin/chat/conversations/${selected}/messages`, { body: draft.trim() });
+      setDraft('');
+      await qc.invalidateQueries({ queryKey: [KEY] });
+    } finally {
+      setSending(false);
+    }
   }
 
   // The bot answers until a human agent replies; an Agent message means we've taken over.
@@ -154,7 +83,6 @@ export function ConsoleScreen() {
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
       <div className="flex h-12 items-center justify-between border-b bg-card px-4">
         <span className="font-semibold">{t('chat.title')}</span>
-        <Badge tone={connected ? 'success' : 'secondary'}>{connected ? '● live' : '○ offline'}</Badge>
       </div>
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-72 shrink-0 overflow-y-auto border-r bg-card">
@@ -162,7 +90,7 @@ export function ConsoleScreen() {
             <button
               key={c.id}
               type="button"
-              onClick={() => void open(c.id)}
+              onClick={() => setSelected(c.id)}
               className={cn(
                 'flex w-full flex-col items-start gap-0.5 border-b px-4 py-3 text-left text-sm hover:bg-accent/40',
                 selected === c.id && 'bg-accent',
@@ -230,7 +158,7 @@ export function ConsoleScreen() {
                     onKeyDown={(e) => e.key === 'Enter' && void send()}
                     placeholder={t('chat.message')}
                   />
-                  <Button onClick={() => void send()} disabled={!draft.trim()}>
+                  <Button onClick={() => void send()} disabled={!draft.trim() || sending}>
                     <Send className="h-4 w-4" /> {t('chat.send')}
                   </Button>
                 </div>

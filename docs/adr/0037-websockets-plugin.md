@@ -72,4 +72,32 @@ generation for React sites; never mixed with admin-api's SignalR.
   per connection, a per-tenant connection cap per replica (to move to Redis when replicas ship).
 - A function triggered by a browser message runs through the run queue (about a second or more):
   fit for moderation and persistence, not request/response — that is what HTTP functions are for.
-- LiveChat keeps `/hub/chat` for now; moving it onto WebSockets is a follow-up (kanban #669).
+- LiveChat moved onto WebSockets (#669, below); `/hub/chat` and its process-wide Redis backplane
+  are gone.
+
+## Addendum (2026-11-27): plugin channel sets, and LiveChat on them (#669)
+
+User decisions: console agents are served by admin-api's notification hub, and a tenant sets
+nothing up for live chat (no WebSockets app of its own).
+
+- **A plugin may declare channels in code** for each of its own instances:
+  `services.AddSingleton(new WebSocketChannelSet(pluginId, channels))` (WebSockets.Api). The hub
+  serves them at `/hub/ws?instance={that instance's slug}` while the instance is enabled, with the
+  same groups, caps and schema checks as a WebSockets app. Server sends go through
+  `IWebSocketPush` (registered by the WebSockets plugin on every plane), so the admin plane sends
+  over the `dcms-ws` backplane like `websockets.channels@1` does.
+- **LiveChat** declares one channel, `conversation` (keyed by the conversation id, public
+  subscribe, server-only publish). Every write is HTTP: the visitor's
+  `POST /api/{app}/chat/conversations[/{id}/messages]` (capped per address and per conversation),
+  the agents' `POST /api/admin/chat/conversations/{id}/messages|close` (chat:manage, audited) and
+  the chatbot all go through one `ChatFlow`: store, push to the widget, hint the consoles, publish
+  the plugin events.
+- **Consoles hear of changes as hints, not content.** `dcms.notifications@1` gained
+  `SignalChange(tag, id)`: it publishes `notify.changed`, which jobs-worker relays to the
+  notification hub as `ResourceChanged` with tag `plugin:{pluginId}:{tag}` (namespaced by the
+  sender, so a plugin cannot refresh another's screens). The console invalidates queries keyed by
+  an unmapped `plugin:` tag, so any plugin screen can follow its own data with no map entry; the
+  chat console keys its queries `plugin:live-chat:conversations`. A hint carries no text, so it
+  goes to every console of the tenant; the refetch is an ordinary `chat:read` request.
+- The widget (`@dcms/site-components`) is now `createChatWidget({ app })` with no dependency; the
+  console screen has no socket of its own.

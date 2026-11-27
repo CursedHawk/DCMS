@@ -276,23 +276,18 @@ a separate per-tenant identity pool. content-api endpoints
 `VisitorAuthEndpoints.AuthenticateAsync`. The token service is unit-tested
 (issue/validate, cross-tenant rejection, tamper rejection).
 
-### Live chat (Phase 12)
+### Live chat
 
-The LiveChat plugin runs a SignalR hub in content-api at `/hub/chat` with a Redis
-backplane (cross-replica fan-out). Connect with `?tenant={slug}`; agents
-additionally pass a platform JWT via `access_token` and are recognised as agents
-only if they are members of that tenant (checked against the `tenancy` schema —
-see ADR 0004). Visitor methods: `StartConversation`, `JoinConversation`,
-`SendMessage`; agent methods: `JoinConversation`, `SendAgentMessage`,
-`CloseConversation`. Client events: `ReceiveMessage`, `ConversationStarted`,
-`ConversationActivity`, `ConversationClosed`. Every message is also the LiveChat
-plugin's `live-chat.message.received` event (a visitor's first, `live-chat.conversation.started`)
-on **PLUGIN_EVENTS**; the plugin's own subscription raises the agents' notification, and any
-other plugin can subscribe (ADR 0017). The agent console (admin SPA `/chat`)
-lists/loads conversations from admin-api (`GET /api/admin/chat/conversations[/{id}/messages]`,
-`chat:read`) and connects to the hub for realtime. The visitor widget is the
-embeddable `createChatWidget({ tenant })` from `@dcms/site-components` (vanilla
-TS, reaches the hub through site-host's `/hub` proxy).
+The AI Chatbot (LiveChat plugin) has no hub of its own any more (ADR 0037 addendum, #669). The
+visitor's widget, `createChatWidget({ app })` from `@dcms/site-components`, writes over HTTP to
+the app's routes (`POST /api/{app}/chat/conversations`, `POST|GET
+/api/{app}/chat/conversations/{id}/messages`; capped per address and per conversation) and listens
+on the plugin's WebSockets channel `conversation/{id}` at `/hub/ws?instance={app}`. Agents answer
+from the console (`GET /api/admin/chat/conversations[/{id}/messages]`, `chat:read`; `POST
+/api/admin/chat/conversations/{id}/messages|close`, `chat:manage`); the console refetches on the
+notification hub's `plugin:live-chat:conversations` hint, which jobs-worker relays from
+`notify.changed`. Every message is still the plugin's `live-chat.message.received` event (a
+visitor's first, `live-chat.conversation.started`) on **PLUGIN_EVENTS**.
 
 ### Hardening (Phase 12)
 

@@ -27,7 +27,7 @@ namespace Dcms.AdminApi.Sites;
 /// <para><b>Tenant and site come from the query string</b> rather than the
 /// <c>X-Dcms-Tenant</c> header, because the WebSocket transport cannot set custom headers.
 /// Every read here therefore names its tenant explicitly with <c>IgnoreQueryFilters</c> instead
-/// of leaning on the ambient filter, matching <c>NotificationHub</c> and <c>ChatHub</c>.</para>
+/// of leaning on the ambient filter, matching <c>NotificationHub</c>.</para>
 /// </summary>
 [Authorize]
 public sealed class SiteHub(IServiceProvider services, ILogger<SiteHub> logger) : Hub

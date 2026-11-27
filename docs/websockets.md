@@ -98,6 +98,22 @@ Consume `websockets.channels@1` (`ContractRequirement.Of<IWebSocketChannels>()`)
 `SendAsync(new ChannelMessage(channel, payload, key))` or `SendToUserAsync(...)`; subscribe to
 `websockets.message.received` for what browsers publish.
 
+### A plugin's own channels
+
+A plugin that wants realtime for its instances without the tenant creating a WebSockets app
+declares a channel set in code and sends to it:
+
+```csharp
+services.AddSingleton(new WebSocketChannelSet(PluginId,
+    [new ChannelDefinition("conversation", Keyed: true, Subscribe: SubscribeAccess.Public, Publish: PublishAccess.None)]));
+// later, on any plane:
+await sp.GetRequiredService<IWebSocketPush>().SendAsync(PluginId, tenantId, environmentId, instanceSlug,
+    new ChannelMessage("conversation", payload, key), ct);
+```
+
+Browsers subscribe at `/hub/ws?instance={the plugin's instance slug}`. The AI Chatbot (live chat)
+works this way.
+
 ## Limits
 
 16 KB per browser frame, 32 KB per server send, 50 subscriptions and 20 publishes per 10 s per

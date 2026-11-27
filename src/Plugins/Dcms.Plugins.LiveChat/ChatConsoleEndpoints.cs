@@ -1,15 +1,20 @@
+using System.Security.Claims;
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Data.Chat;
+using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
-/// Agent console REST surface (admin plane). Realtime send/receive is over the site plane's
-/// SignalR hub; these endpoints back the conversation list and history panes.
+/// Agent console REST surface (admin plane): the conversation list and history, and answering and
+/// closing. A reply reaches the visitor's widget over the plugin's WebSockets channel; open
+/// consoles hear of every change as the <c>plugin:live-chat:conversations</c> hint and refetch.
 /// Tenant is the ambient (header-resolved) tenant, so ChatDbContext's query
 /// filter scopes every read automatically.
 /// </summary>
@@ -58,6 +63,27 @@ internal static class ChatConsoleEndpoints
         }).RequirePermission(PlatformPermissions.ChatRead)
           .Cli("chat.messages", "One chat conversation's messages.", CliRisk.Read, externalText: true);
 
+        app.MapPost("/api/admin/chat/conversations/{conversationId:guid}/messages", async (
+            Guid conversationId, AgentReply body, HttpContext http, ITenantContext tenant, ILogger<LiveChatPlugin> logger, CancellationToken ct) =>
+        {
+            Guid? agent = Guid.TryParse(http.User.FindFirstValue("sub"), out var id) ? id : null;
+            var sent = await ChatFlow.PostAsync(http.RequestServices, tenant.TenantId!.Value, conversationId, body.Body, ChatSender.Agent, agent, logger, ct);
+            return sent is null ? Results.NotFound() : Results.Ok(sent.Dto);
+        }).RequirePermission(PlatformPermissions.ChatManage)
+          .AuditAs("reply.sent")
+          .Cli("chat.reply", "Answer a chat conversation as an agent; the chatbot then stays quiet in it.", CliRisk.Safe);
+
+        app.MapPost("/api/admin/chat/conversations/{conversationId:guid}/close", async (
+            Guid conversationId, HttpContext http, ITenantContext tenant, ILogger<LiveChatPlugin> logger, CancellationToken ct) =>
+            await ChatFlow.CloseAsync(http.RequestServices, tenant.TenantId!.Value, conversationId, logger, ct)
+                ? Results.NoContent()
+                : Results.NotFound())
+          .RequirePermission(PlatformPermissions.ChatManage)
+          .AuditAs("conversation.closed")
+          .Cli("chat.close", "Close a chat conversation; the visitor can no longer write into it.", CliRisk.Safe);
+
         return app;
     }
+
+    public sealed record AgentReply(string Body);
 }

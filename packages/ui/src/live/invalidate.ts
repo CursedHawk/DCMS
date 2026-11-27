@@ -35,7 +35,9 @@ export function createResourceInvalidator(
   const lastHandled = new Map<string, number>();
 
   return (change) => {
-    const keys = map[change.tag];
+    // A plugin's own hint (dcms.notifications@1 SignalChange) names the query key its screens
+    // use, so plugins need no entry here.
+    const keys = map[change.tag] ?? (change.tag.startsWith('plugin:') ? [[change.tag]] : undefined);
     if (!keys) return;
 
     const limit = throttleMs[change.tag];

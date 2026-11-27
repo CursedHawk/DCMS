@@ -228,8 +228,6 @@ public sealed class ContentApiPermissionCoverageTests : PermissionCoverageTestsB
     [
         "ANY /health",
         "ANY /health/live",
-        "ANY /hub/chat",
-        "ANY /hub/chat/negotiate",
     ];
 }
 

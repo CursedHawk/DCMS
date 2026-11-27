@@ -38,3 +38,17 @@ public sealed record NotificationRaiseRequested(
 {
     public int Version => 1;
 }
+
+/// <summary>
+/// <c>notify.changed</c>: tell the tenant's open consoles that a class of data changed
+/// (<c>ResourceChanged</c>). <see cref="Tag"/> is already namespaced by the sender.
+/// </summary>
+public sealed record ConsoleChangeRequested(
+    Guid EventId,
+    DateTimeOffset OccurredAt,
+    Guid TenantId,
+    string Tag,
+    string? Id) : ITenantEvent
+{
+    public int Version => 1;
+}

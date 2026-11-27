@@ -532,8 +532,8 @@ requirement. ⚠️ A new hub client that omits it will drop connections at rand
 once a service is scaled past one replica, and will do so intermittently enough
 to look like a network problem.
 
-Note the two hubs live in different services: `/hub/chat` in content-api,
-`/api/hub/notifications` in admin-api. Scaling either scales its own hub. Note
+Note the hubs live in different services: `/hub/ws` (WebSockets, and live chat's visitors) in
+content-api, `/api/hub/notifications` in admin-api. Scaling either scales its own hub. Note
 also that the rate limiter is in-process, so the effective limit is
 `RateLimiting:PermitLimit` × replicas.
 

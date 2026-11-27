@@ -23,7 +23,7 @@ namespace Dcms.AdminApi.Notifications;
 /// <para><b>Tenant comes from the query string</b>, not the <c>X-Dcms-Tenant</c> header the
 /// rest of admin-api uses: the WebSocket transport cannot set custom headers. Every database
 /// read here therefore names its tenant explicitly with <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{TEntity}"/>
-/// rather than leaning on the ambient filter, matching <c>ChatHub</c>.</para>
+/// rather than leaning on the ambient filter, matching the other hubs.</para>
 /// </summary>
 [Authorize]
 public sealed class NotificationHub(IServiceProvider services, ILogger<NotificationHub> logger) : Hub
