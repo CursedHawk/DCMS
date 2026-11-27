@@ -104,7 +104,7 @@ public static partial class Channels
         }
         return Flatten(result)
             .Where(d => d.Errors is { Count: > 0 })
-            .SelectMany(d => d.Errors!.Select(e => $"{d.InstanceLocation}: {e.Value}"))
+            .SelectMany(d => d.Errors!.Select(e => d.InstanceLocation.ToString() is { Length: > 0 } at ? $"{at}: {e.Value}" : e.Value))
             .DefaultIfEmpty("The payload does not match the channel's schema.")
             .Take(10)
             .ToList();
