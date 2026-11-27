@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Kernel.Abstractions;
 
 using Dcms.Shared.Data;
 namespace Dcms.Plugins.LiveChat;
@@ -25,9 +26,10 @@ namespace Dcms.Plugins.LiveChat;
 /// <c>live-chat.conversation.started</c>) for anything off the realtime path — the admin's
 /// new-conversation notice, and any other plugin that listens.
 ///
-/// Tenant is resolved from the <c>?tenant={slug}</c> query string at connect time
-/// (the SignalR WebSocket transport can't carry custom headers), so DB access uses
-/// explicit tenant predicates rather than the ambient query filter.
+/// The connection names its tenant in <c>?tenant={slug}</c> (the console's agents connect off any
+/// site); on a tenant site it must be the tenant the site's domain resolved, and off a site only
+/// an agent of that tenant is admitted. DB access uses explicit tenant predicates rather than
+/// the ambient query filter.
 /// </summary>
 public sealed class ChatHub(
     IServiceProvider services,
@@ -38,6 +40,7 @@ public sealed class ChatHub(
     private const string TenantItemKey = "dcms.tenantId";
     private const string RoleItemKey = "dcms.role";
     private const string ManageItemKey = "dcms.chatManage";
+    private const string SiteHeader = "X-Dcms-Site";
 
     // Public so the out-of-band bot responder can fan replies into the same groups.
     public static string ConversationGroup(Guid conversationId) => $"conv:{conversationId}";
@@ -75,7 +78,7 @@ public sealed class ChatHub(
     {
         var http = Context.GetHttpContext();
         var slug = http?.Request.Query["tenant"].ToString();
-        if (string.IsNullOrWhiteSpace(slug))
+        if (http is null || string.IsNullOrWhiteSpace(slug))
         {
             Context.Abort();
             return;
@@ -88,6 +91,28 @@ public sealed class ChatHub(
         {
             Context.Abort();
             return;
+        }
+
+        // On a tenant site the tenant is the one the site's domain resolved (the edge sets
+        // X-Dcms-Site and scrubs it from callers): ?tenant= may only repeat it, so a page on one
+        // tenant's site cannot open another tenant's conversations. Off a site (the console's
+        // /hub/** route) only an agent may connect, checked against that tenant's roles below.
+        var onSite = http.Request.Headers.ContainsKey(SiteHeader);
+        if (onSite && http.RequestServices.GetRequiredService<ITenantContext>().TenantId != tenantId)
+        {
+            Context.Abort();
+            return;
+        }
+        // Hub endpoints skip the plugin instance filter: a tenant that has not enabled live
+        // chat has no hub.
+        using (RlsScope.Tenant(tenantId))
+        {
+            var enabled = await scope.ServiceProvider.GetRequiredService<PluginContextFactory>().EnabledInstancesAsync(tenantId, Context.ConnectionAborted);
+            if (!enabled.Any(i => i.PluginId == LiveChatPlugin.PluginId))
+            {
+                Context.Abort();
+                return;
+            }
         }
         Context.Items[TenantItemKey] = tenantId;
 
@@ -112,6 +137,12 @@ public sealed class ChatHub(
                 Context.Items[ManageItemKey] = canManage;
                 await Groups.AddToGroupAsync(Context.ConnectionId, AgentGroup(tenantId));
             }
+        }
+
+        if (!onSite && !IsAgent)
+        {
+            Context.Abort();
+            return;
         }
 
         await base.OnConnectedAsync();
